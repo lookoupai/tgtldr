@@ -10,11 +10,14 @@ import {
   MetricRail,
   Surface,
 } from "@/components/dashboard-page";
+import { Modal } from "@/components/modal";
+import { SummaryMarkdown } from "@/components/summary-markdown";
 import { useToast } from "@/components/toast";
 import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
 import {
   Chat,
   KnowledgeFact,
+  KnowledgeQueryResult,
   KnowledgeRun,
   KnowledgeSpace,
   KnowledgeSubject,
@@ -218,6 +221,9 @@ export function KnowledgePanel() {
   const [runs, setRuns] = useState<KnowledgeRun[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
+  const [knowledgeQueryPreview, setKnowledgeQueryPreview] =
+    useState<KnowledgeQueryResult | null>(null);
+  const [previewingKnowledgeQuery, setPreviewingKnowledgeQuery] = useState(false);
   const [sendingKnowledgeQuery, setSendingKnowledgeQuery] = useState(false);
   const [selectedSpaceId, setSelectedSpaceId] = useState<number | "all">("all");
   const [statusFilter, setStatusFilter] = useState<FactStatusFilter>("all");
@@ -356,16 +362,32 @@ export function KnowledgePanel() {
     }
   }
 
+  function currentKnowledgeQueryFilters() {
+    return {
+      q: deferredFactQuery,
+      spaceId: selectedSpaceId === "all" ? undefined : selectedSpaceId,
+      chatId: factChatId === "all" ? undefined : factChatId,
+      factType: deferredFactTypeFilter,
+      limit: 20,
+    };
+  }
+
+  async function previewKnowledgeQuery() {
+    setPreviewingKnowledgeQuery(true);
+    try {
+      const result = await api.renderKnowledgeQuery(currentKnowledgeQueryFilters());
+      setKnowledgeQueryPreview(result);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setPreviewingKnowledgeQuery(false);
+    }
+  }
+
   async function sendKnowledgeQueryToBot() {
     setSendingKnowledgeQuery(true);
     try {
-      const result = await api.sendKnowledgeQuery({
-        q: deferredFactQuery,
-        spaceId: selectedSpaceId === "all" ? undefined : selectedSpaceId,
-        chatId: factChatId === "all" ? undefined : factChatId,
-        factType: deferredFactTypeFilter,
-        limit: 20,
-      });
+      const result = await api.sendKnowledgeQuery(currentKnowledgeQueryFilters());
       toast.showSuccess(result.message || "知识查询结果已发送。");
     } catch (err) {
       toast.showError(asMessage(err));
@@ -733,14 +755,24 @@ export function KnowledgePanel() {
         title="用户画像"
         description="按用户聚合 active 事实，后续查询机器人可复用同一类结果。"
         actions={
-          <Button
-            disabled={sendingKnowledgeQuery}
-            onClick={() => startTransition(() => void sendKnowledgeQueryToBot())}
-            type="button"
-            variant="secondary"
-          >
-            {sendingKnowledgeQuery ? "发送中..." : "发送到 Bot"}
-          </Button>
+          <>
+            <Button
+              disabled={previewingKnowledgeQuery}
+              onClick={() => startTransition(() => void previewKnowledgeQuery())}
+              type="button"
+              variant="ghost"
+            >
+              {previewingKnowledgeQuery ? "正在预览..." : "预览"}
+            </Button>
+            <Button
+              disabled={sendingKnowledgeQuery}
+              onClick={() => startTransition(() => void sendKnowledgeQueryToBot())}
+              type="button"
+              variant="secondary"
+            >
+              {sendingKnowledgeQuery ? "发送中..." : "发送到 Bot"}
+            </Button>
+          </>
         }
       >
         {subjects.length === 0 ? (
@@ -918,6 +950,36 @@ export function KnowledgePanel() {
           </div>
         )}
       </Surface>
+
+      <Modal
+        actions={
+          <>
+            <Button
+              disabled={sendingKnowledgeQuery}
+              onClick={() => startTransition(() => void sendKnowledgeQueryToBot())}
+              type="button"
+              variant="secondary"
+            >
+              {sendingKnowledgeQuery ? "发送中..." : "发送到 Bot"}
+            </Button>
+            <Button onClick={() => setKnowledgeQueryPreview(null)} type="button">
+              关闭
+            </Button>
+          </>
+        }
+        description={
+          knowledgeQueryPreview
+            ? formatKnowledgeQueryPreviewDescription(knowledgeQueryPreview)
+            : undefined
+        }
+        onClose={() => setKnowledgeQueryPreview(null)}
+        open={knowledgeQueryPreview !== null}
+        title="知识查询预览"
+      >
+        {knowledgeQueryPreview ? (
+          <SummaryMarkdown content={knowledgeQueryPreview.content} />
+        ) : null}
+      </Modal>
     </DashboardPage>
   );
 }
@@ -1040,6 +1102,10 @@ function formatFactExpiry(fact: KnowledgeFact) {
     return "长期保留";
   }
   return formatDateTime(fact.expiresAt);
+}
+
+function formatKnowledgeQueryPreviewDescription(result: KnowledgeQueryResult) {
+  return `匹配 ${result.facts.length} 条事实，关联 ${result.subjects.length} 个用户。`;
 }
 
 function factStatusTone(status: KnowledgeFact["status"]) {

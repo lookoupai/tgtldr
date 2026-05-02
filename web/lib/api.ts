@@ -229,6 +229,22 @@ export const api = {
         })}`,
       ),
     ),
+  renderKnowledgeQuery: (filters?: {
+    q?: string;
+    spaceId?: number;
+    chatId?: number;
+    factType?: string;
+    limit?: number;
+  }) =>
+    request<KnowledgeQueryResult>(
+      `/api/knowledge/query${buildQuery({
+        q: filters?.q?.trim() || undefined,
+        spaceId: filters?.spaceId,
+        chatId: filters?.chatId,
+        type: filters?.factType?.trim() || undefined,
+        limit: filters?.limit,
+      })}`,
+    ),
   sendKnowledgeQuery: (filters?: {
     q?: string;
     spaceId?: number;
