@@ -204,3 +204,4 @@ server {
 
 - [架构方案](docs/ARCHITECTURE.md)
 - [产品流程与实施计划](docs/PRODUCT_FLOW.md)
+- [知识空间配置与示例](docs/knowledge-spaces.md)

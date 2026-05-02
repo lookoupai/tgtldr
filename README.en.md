@@ -204,3 +204,4 @@ You may use, fork, modify, and distribute this project for noncommercial purpose
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Product flow and implementation plan](docs/PRODUCT_FLOW.md)
+- [Knowledge space configuration and examples](docs/knowledge-spaces.md)
