@@ -257,6 +257,12 @@ type KnowledgeRunRepository struct {
 	pool *pgxpool.Pool
 }
 
+type KnowledgeRunFilter struct {
+	SpaceID int64
+	ChatID  int64
+	Limit   int
+}
+
 func (r *KnowledgeFactRepository) UpsertMany(ctx context.Context, facts []model.KnowledgeFact) error {
 	if len(facts) == 0 {
 		return nil
@@ -343,6 +349,48 @@ func (r *KnowledgeRunRepository) Create(ctx context.Context, run model.Knowledge
 		return model.KnowledgeRun{}, fmt.Errorf("create knowledge run: %w", err)
 	}
 	return saved, nil
+}
+
+func (r *KnowledgeRunRepository) List(ctx context.Context, filter KnowledgeRunFilter) ([]model.KnowledgeRun, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	query := `
+		select id, space_id, chat_id, range_start, range_end, status,
+		       input_message_count, extracted_count, error_message,
+		       started_at, finished_at, created_at, updated_at
+		from knowledge_runs
+		where 1 = 1
+	`
+	args := make([]any, 0, 3)
+	if filter.SpaceID > 0 {
+		args = append(args, filter.SpaceID)
+		query += fmt.Sprintf(" and space_id = $%d", len(args))
+	}
+	if filter.ChatID > 0 {
+		args = append(args, filter.ChatID)
+		query += fmt.Sprintf(" and chat_id = $%d", len(args))
+	}
+	args = append(args, limit)
+	query += fmt.Sprintf(" order by created_at desc, id desc limit $%d", len(args))
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query knowledge runs: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.KnowledgeRun, 0)
+	for rows.Next() {
+		run, err := scanKnowledgeRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan knowledge run: %w", err)
+		}
+		items = append(items, run)
+	}
+	return items, rows.Err()
 }
 
 func (r *KnowledgeRunRepository) Finish(ctx context.Context, id int64, status model.KnowledgeRunStatus, inputCount int, extractedCount int, errorMessage string, finishedAt time.Time) (model.KnowledgeRun, error) {

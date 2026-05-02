@@ -162,6 +162,32 @@ func (r *Router) handleKnowledgeFacts(w http.ResponseWriter, req *http.Request) 
 	httpx.JSON(w, http.StatusOK, items)
 }
 
+func (r *Router) handleKnowledgeRuns(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	query := req.URL.Query()
+	filter := store.KnowledgeRunFilter{}
+	if spaceID, err := strconv.ParseInt(strings.TrimSpace(query.Get("spaceId")), 10, 64); err == nil {
+		filter.SpaceID = spaceID
+	}
+	if chatID, err := strconv.ParseInt(strings.TrimSpace(query.Get("chatId")), 10, 64); err == nil {
+		filter.ChatID = chatID
+	}
+	if limit, err := strconv.Atoi(strings.TrimSpace(query.Get("limit"))); err == nil {
+		filter.Limit = limit
+	}
+
+	items, err := r.store.KnowledgeRuns.List(req.Context(), filter)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, items)
+}
+
 func (r *Router) handleKnowledgeFactByID(w http.ResponseWriter, req *http.Request) {
 	path := strings.TrimPrefix(req.URL.Path, "/api/knowledge/facts/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")

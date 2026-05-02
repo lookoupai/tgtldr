@@ -68,6 +68,7 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/telegram/chats/sync", r.handleSyncChats)
 	mux.HandleFunc("/api/chats", r.handleChats)
 	mux.HandleFunc("/api/chats/", r.handleChatByID)
+	mux.HandleFunc("/api/knowledge/runs", r.handleKnowledgeRuns)
 	mux.HandleFunc("/api/knowledge/spaces", r.handleKnowledgeSpaces)
 	mux.HandleFunc("/api/knowledge/spaces/", r.handleKnowledgeSpaceByID)
 	mux.HandleFunc("/api/knowledge/facts", r.handleKnowledgeFacts)

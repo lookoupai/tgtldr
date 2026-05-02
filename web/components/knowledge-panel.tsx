@@ -12,7 +12,7 @@ import {
 } from "@/components/dashboard-page";
 import { useToast } from "@/components/toast";
 import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
-import { Chat, KnowledgeFact, KnowledgeSpace } from "@/lib/types";
+import { Chat, KnowledgeFact, KnowledgeRun, KnowledgeSpace } from "@/lib/types";
 
 type FactStatusFilter = "all" | KnowledgeFact["status"];
 
@@ -43,6 +43,7 @@ const defaultSchema = `{
 export function KnowledgePanel() {
   const [spaces, setSpaces] = useState<KnowledgeSpace[]>([]);
   const [facts, setFacts] = useState<KnowledgeFact[]>([]);
+  const [runs, setRuns] = useState<KnowledgeRun[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
   const [selectedSpaceId, setSelectedSpaceId] = useState<number | "all">("all");
@@ -59,6 +60,10 @@ export function KnowledgePanel() {
     void loadFacts();
   }, [selectedSpaceId, statusFilter]);
 
+  useEffect(() => {
+    void loadRuns();
+  }, [selectedSpaceId]);
+
   async function load() {
     try {
       const [spaceItems, chatItems] = await Promise.all([
@@ -68,20 +73,32 @@ export function KnowledgePanel() {
       setSpaces(spaceItems.map(normalizeSpace));
       setChats(chatItems);
       setEditing((current) => current ?? (spaceItems[0] ? normalizeSpace(spaceItems[0]) : null));
-      await loadFacts();
+      await Promise.all([loadFacts(), loadRuns()]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
   }
 
-  async function loadFacts() {
+  async function loadFacts(spaceId: number | "all" = selectedSpaceId) {
     try {
       const items = await api.listKnowledgeFacts({
-        spaceId: selectedSpaceId === "all" ? undefined : selectedSpaceId,
+        spaceId: spaceId === "all" ? undefined : spaceId,
         status: statusFilter,
         limit: 100,
       });
       setFacts(items);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    }
+  }
+
+  async function loadRuns(spaceId: number | "all" = selectedSpaceId) {
+    try {
+      const items = await api.listKnowledgeRuns({
+        spaceId: spaceId === "all" ? undefined : spaceId,
+        limit: 20,
+      });
+      setRuns(items);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -123,7 +140,7 @@ export function KnowledgePanel() {
         toast.showSuccess(`知识抽取完成：读取 ${run.inputMessageCount} 条消息，写入 ${run.extractedCount} 条事实。`);
       }
       setSelectedSpaceId(editing.id);
-      await loadFacts();
+      await Promise.all([loadFacts(editing.id), loadRuns(editing.id)]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -145,6 +162,14 @@ export function KnowledgePanel() {
   const selectedSpace = useMemo(
     () => spaces.find((space) => space.id === selectedSpaceId) ?? null,
     [selectedSpaceId, spaces],
+  );
+  const chatTitleByID = useMemo(
+    () => new Map(chats.map((chat) => [chat.id, chat.title])),
+    [chats],
+  );
+  const spaceNameByID = useMemo(
+    () => new Map(spaces.map((space) => [space.id, space.name])),
+    [spaces],
   );
 
   return (
@@ -417,6 +442,47 @@ export function KnowledgePanel() {
         </Surface>
       </div>
 
+      <Surface title="抽取记录" description="展示最近的手动和自动抽取结果。">
+        {runs.length === 0 ? (
+          <EmptyState title="暂无抽取记录" description="运行抽取或生成摘要后会写入记录。" />
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>知识空间</th>
+                  <th>群组</th>
+                  <th>范围</th>
+                  <th>状态</th>
+                  <th>消息</th>
+                  <th>事实</th>
+                  <th>完成时间</th>
+                  <th>错误</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <tr className="data-row" key={run.id}>
+                    <td>{spaceNameByID.get(run.spaceId) ?? run.spaceId}</td>
+                    <td>{chatTitleByID.get(run.chatId) ?? run.chatId}</td>
+                    <td>{formatRunRange(run)}</td>
+                    <td>
+                      <StatusPill tone={runStatusTone(run.status)}>{run.status}</StatusPill>
+                    </td>
+                    <td>{run.inputMessageCount}</td>
+                    <td>{run.extractedCount}</td>
+                    <td>{formatDateTime(run.finishedAt ?? run.updatedAt)}</td>
+                    <td>
+                      <span className="muted">{run.errorMessage || "无"}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Surface>
+
       <Surface
         title="事实列表"
         description={
@@ -582,6 +648,35 @@ function formatSubject(fact: KnowledgeFact) {
     return String(fact.subjectSenderId);
   }
   return "未记录";
+}
+
+function formatRunRange(run: KnowledgeRun) {
+  return `${formatDateTime(run.rangeStart)} - ${formatDateTime(run.rangeEnd)}`;
+}
+
+function formatDateTime(value?: string) {
+  if (!value) {
+    return "未完成";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function runStatusTone(status: KnowledgeRun["status"]) {
+  switch (status) {
+    case "succeeded":
+      return "good";
+    case "failed":
+      return "bad";
+    case "running":
+    case "pending":
+      return "warn";
+    default:
+      return "neutral";
+  }
 }
 
 function localDateInputValue() {

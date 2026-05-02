@@ -205,6 +205,20 @@ export const api = {
         })}`,
       ),
     ),
+  listKnowledgeRuns: async (filters?: {
+    spaceId?: number;
+    chatId?: number;
+    limit?: number;
+  }) =>
+    normalizeList(
+      await request<KnowledgeRun[] | null>(
+        `/api/knowledge/runs${buildQuery({
+          spaceId: filters?.spaceId,
+          chatId: filters?.chatId,
+          limit: filters?.limit,
+        })}`,
+      ),
+    ),
   runKnowledgeExtraction: (spaceId: number, chatId: number, date: string) =>
     request<KnowledgeRun>(`/api/knowledge/spaces/${spaceId}/run`, {
       method: "POST",
