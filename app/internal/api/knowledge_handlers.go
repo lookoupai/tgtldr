@@ -515,6 +515,10 @@ func normalizeKnowledgeQueryLimit(limit int) int {
 func (r *Router) handleKnowledgeFactByID(w http.ResponseWriter, req *http.Request) {
 	path := strings.TrimPrefix(req.URL.Path, "/api/knowledge/facts/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 2 && parts[1] == "sources" {
+		r.handleKnowledgeFactSources(w, req, parts[0])
+		return
+	}
 	if len(parts) != 2 || parts[1] != "status" {
 		httpx.Error(w, http.StatusNotFound, "not found")
 		return
@@ -558,6 +562,49 @@ func (r *Router) handleKnowledgeFactByID(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	httpx.JSON(w, http.StatusOK, item)
+}
+
+func (r *Router) handleKnowledgeFactSources(w http.ResponseWriter, req *http.Request, idValue string) {
+	if req.Method != http.MethodGet {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := strconv.ParseInt(idValue, 10, 64)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid knowledge fact id")
+		return
+	}
+
+	fact, err := r.store.KnowledgeFacts.GetByID(req.Context(), id)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if store.IsNotFound(err) {
+			statusCode = http.StatusNotFound
+		}
+		httpx.Error(w, statusCode, err.Error())
+		return
+	}
+	lookup, err := r.store.Messages.LookupByTelegramIDs(req.Context(), fact.ChatID, fact.SourceMessageIDs)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"fact":     fact,
+		"messages": orderedSourceMessages(fact.SourceMessageIDs, lookup),
+	})
+}
+
+func orderedSourceMessages(ids []int, lookup map[int]model.Message) []model.Message {
+	messages := make([]model.Message, 0, len(ids))
+	for _, id := range ids {
+		message, ok := lookup[id]
+		if !ok {
+			continue
+		}
+		messages = append(messages, message)
+	}
+	return messages
 }
 
 func normalizeKnowledgeFactStatusForUpdate(status model.KnowledgeFactStatus) model.KnowledgeFactStatus {

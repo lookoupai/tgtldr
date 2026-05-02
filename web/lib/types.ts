@@ -208,6 +208,29 @@ export type KnowledgeFact = {
   updatedAt: string;
 };
 
+export type Message = {
+  id: number;
+  chatId: number;
+  telegramMessageId: number;
+  telegramSenderId: number;
+  senderName: string;
+  senderUsername: string;
+  senderIsBot: boolean;
+  textContent: string;
+  caption: string;
+  messageType: string;
+  mediaKind: string;
+  replyToMessageId: number;
+  messageTime: string;
+  rawJson: string;
+  createdAt: string;
+};
+
+export type KnowledgeFactSources = {
+  fact: KnowledgeFact;
+  messages: Message[];
+};
+
 export type KnowledgeSubject = {
   key: string;
   displayName: string;

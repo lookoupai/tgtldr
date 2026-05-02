@@ -32,3 +32,16 @@ func TestNormalizeKnowledgeQueryLimit(t *testing.T) {
 		So(normalizeKnowledgeQueryLimit(101), ShouldEqual, 100)
 	})
 }
+
+func TestOrderedSourceMessages(t *testing.T) {
+	Convey("来源消息应按事实中的消息 ID 顺序返回并跳过缺失项", t, func() {
+		messages := orderedSourceMessages([]int{5, 3, 8}, map[int]model.Message{
+			3: {TelegramMessageID: 3, TextContent: "three"},
+			5: {TelegramMessageID: 5, TextContent: "five"},
+		})
+
+		So(messages, ShouldHaveLength, 2)
+		So(messages[0].TelegramMessageID, ShouldEqual, 5)
+		So(messages[1].TelegramMessageID, ShouldEqual, 3)
+	})
+}

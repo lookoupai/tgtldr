@@ -24,12 +24,14 @@ import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
 import {
   Chat,
   KnowledgeFact,
+  KnowledgeFactSources,
   KnowledgeMaintenanceEvent,
   KnowledgeMaintenanceResult,
   KnowledgeQueryResult,
   KnowledgeRun,
   KnowledgeSpace,
   KnowledgeSubject,
+  Message,
 } from "@/lib/types";
 
 type FactStatusFilter = "all" | KnowledgeFact["status"];
@@ -335,6 +337,7 @@ export function KnowledgePanel() {
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
   const [knowledgeQueryPreview, setKnowledgeQueryPreview] =
     useState<KnowledgeQueryResult | null>(null);
+  const [factSources, setFactSources] = useState<KnowledgeFactSources | null>(null);
   const [maintenancePreview, setMaintenancePreview] =
     useState<KnowledgeMaintenanceResult | null>(null);
   const [previewingKnowledgeQuery, setPreviewingKnowledgeQuery] = useState(false);
@@ -499,6 +502,19 @@ export function KnowledgePanel() {
       await api.updateKnowledgeFactStatus(fact.id, status);
       toast.showSuccess(status === "active" ? "已恢复这条事实。" : "已忽略这条事实。");
       await Promise.all([loadFacts(), loadSubjects(), loadMaintenanceEvents()]);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    }
+  }
+
+  async function showFactSources(fact: KnowledgeFact) {
+    if (fact.sourceMessageIds.length === 0) {
+      toast.showError("这条事实没有记录来源消息。");
+      return;
+    }
+    try {
+      const result = await api.getKnowledgeFactSources(fact.id);
+      setFactSources(result);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -1332,6 +1348,15 @@ export function KnowledgePanel() {
                     </td>
                     <td>
                       <div className="table-row-actions">
+                        <button
+                          className="text-link-button"
+                          onClick={() =>
+                            startTransition(() => void showFactSources(fact))
+                          }
+                          type="button"
+                        >
+                          来源
+                        </button>
                         {fact.status === "active" ? (
                           <button
                             className="text-link-button"
@@ -1392,6 +1417,42 @@ export function KnowledgePanel() {
       >
         {knowledgeQueryPreview ? (
           <SummaryMarkdown content={knowledgeQueryPreview.content} />
+        ) : null}
+      </Modal>
+
+      <Modal
+        actions={
+          <Button onClick={() => setFactSources(null)} type="button">
+            关闭
+          </Button>
+        }
+        description={
+          factSources
+            ? `共 ${factSources.messages.length} 条来源消息。`
+            : undefined
+        }
+        onClose={() => setFactSources(null)}
+        open={factSources !== null}
+        title={factSources ? `来源消息：${factSources.fact.title}` : "来源消息"}
+      >
+        {factSources ? (
+          factSources.messages.length === 0 ? (
+            <EmptyState title="未找到来源消息" description="来源消息可能还没有被同步或已被清理。" />
+          ) : (
+            <div className="form-stack">
+              {factSources.messages.map((message) => (
+                <div className="knowledge-run-panel" key={message.id}>
+                  <div>
+                    <strong>{formatMessageSender(message)}</strong>
+                    <p className="muted">
+                      #{message.telegramMessageId} / {formatDateTime(message.messageTime)}
+                    </p>
+                  </div>
+                  <p>{messageSummaryText(message)}</p>
+                </div>
+              ))}
+            </div>
+          )
         ) : null}
       </Modal>
     </DashboardPage>
@@ -1608,6 +1669,30 @@ function formatFactExpiry(fact: KnowledgeFact) {
     return "长期保留";
   }
   return formatDateTime(fact.expiresAt);
+}
+
+function formatMessageSender(message: Message) {
+  if (message.senderUsername) {
+    return `@${message.senderUsername}`;
+  }
+  if (message.senderName) {
+    return message.senderName;
+  }
+  if (message.telegramSenderId) {
+    return String(message.telegramSenderId);
+  }
+  return "未知用户";
+}
+
+function messageSummaryText(message: Message) {
+  const text = message.textContent || message.caption;
+  if (text.trim()) {
+    return text;
+  }
+  if (message.mediaKind) {
+    return `[${message.mediaKind}]`;
+  }
+  return "[非文本消息]";
 }
 
 function formatKnowledgeQueryPreviewDescription(result: KnowledgeQueryResult) {

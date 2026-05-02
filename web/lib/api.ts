@@ -6,6 +6,7 @@ import {
   Chat,
   HistoryBackfillTask,
   KnowledgeFact,
+  KnowledgeFactSources,
   KnowledgeMaintenanceEvent,
   KnowledgeMaintenanceResult,
   KnowledgeQueryResult,
@@ -330,6 +331,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ status }),
     }),
+  getKnowledgeFactSources: (factId: number) =>
+    request<KnowledgeFactSources>(`/api/knowledge/facts/${factId}/sources`),
   startHistoryBackfill: (chatId: number, fromDate: string, toDate: string) =>
     request<HistoryBackfillTask>("/api/history-backfills", {
       method: "POST",
