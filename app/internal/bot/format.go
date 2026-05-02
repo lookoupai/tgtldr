@@ -115,12 +115,12 @@ func formatInlineTelegramHTML(input string) string {
 	return escaped
 }
 
-func formatTelegramMessage(markdown string, language model.Language) string {
+func formatTelegramMessage(markdown string, language any) string {
 	parts := formatTelegramMessages(markdown, language)
 	return strings.Join(parts, "\n\n")
 }
 
-func formatTelegramMessages(markdown string, _ model.Language) []string {
+func formatTelegramMessages(markdown string, _ any) []string {
 	formatted := formatTelegramHTML(markdown)
 	return splitTelegramHTML(formatted, telegramMessageVisibleLimit)
 }

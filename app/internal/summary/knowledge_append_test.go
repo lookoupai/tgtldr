@@ -11,7 +11,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 	Convey("没有事实时不改变摘要正文", t, func() {
 		content := "## 今日主要结论\n- 暂无"
 
-		So(appendKnowledgeFacts(content, nil, model.LanguageZhCN), ShouldEqual, content)
+		So(appendKnowledgeFacts(content, nil, model.SummaryLanguageZhCN), ShouldEqual, content)
 	})
 
 	Convey("中文摘要会按类型追加可点击用户名和置信度", t, func() {
@@ -37,7 +37,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 			},
 		}
 
-		result := appendKnowledgeFacts(content, facts, model.LanguageZhCN)
+		result := appendKnowledgeFacts(content, facts, model.SummaryLanguageZhCN)
 
 		So(result, ShouldContainSubstring, "## 当前有效情报")
 		So(result, ShouldContainSubstring, "### 供应")
@@ -56,7 +56,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 			},
 		}
 
-		result := appendKnowledgeFacts("", facts, model.LanguageEN)
+		result := appendKnowledgeFacts("", facts, model.SummaryLanguageEN)
 
 		So(result, ShouldContainSubstring, "## Active Knowledge")
 		So(result, ShouldContainSubstring, "### Supply")

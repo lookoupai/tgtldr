@@ -18,4 +18,10 @@ func TestNormalizeAppSettingsLanguage(t *testing.T) {
 
 		So(settings.Language, ShouldEqual, model.LanguageEN)
 	})
+
+	Convey("摘要输出语言支持内置语言和自定义语言", t, func() {
+		So(normalizeAppSettings(model.AppSettings{}).SummaryOutputLanguage, ShouldEqual, model.SummaryLanguageZhCN)
+		So(normalizeAppSettings(model.AppSettings{SummaryOutputLanguage: model.SummaryLanguageAR}).SummaryOutputLanguage, ShouldEqual, model.SummaryLanguageAR)
+		So(normalizeAppSettings(model.AppSettings{SummaryOutputLanguage: "Japanese"}).SummaryOutputLanguage, ShouldEqual, model.SummaryOutputLanguage("Japanese"))
+	})
 }

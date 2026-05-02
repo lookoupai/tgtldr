@@ -21,7 +21,7 @@ type knowledgeFactGroup struct {
 	facts []model.KnowledgeFact
 }
 
-func appendKnowledgeFacts(content string, facts []model.KnowledgeFact, language model.Language) string {
+func appendKnowledgeFacts(content string, facts []model.KnowledgeFact, language model.SummaryOutputLanguage) string {
 	normalized := normalizeKnowledgeFacts(facts)
 	if len(normalized) == 0 {
 		return content
@@ -82,7 +82,7 @@ func normalizeKnowledgeFacts(facts []model.KnowledgeFact) []model.KnowledgeFact 
 	return out
 }
 
-func formatKnowledgeFacts(facts []model.KnowledgeFact, language model.Language) string {
+func formatKnowledgeFacts(facts []model.KnowledgeFact, language model.SummaryOutputLanguage) string {
 	groups := groupKnowledgeFacts(facts)
 	multipleSpaces := hasMultipleKnowledgeSpaces(facts)
 	lines := []string{knowledgeFactsSectionTitle(language)}
@@ -127,7 +127,7 @@ func hasMultipleKnowledgeSpaces(facts []model.KnowledgeFact) bool {
 	return false
 }
 
-func formatKnowledgeFact(fact model.KnowledgeFact, language model.Language) string {
+func formatKnowledgeFact(fact model.KnowledgeFact, language model.SummaryOutputLanguage) string {
 	subject := knowledgeFactSubject(fact, language)
 	title := compactKnowledgeText(fact.Title)
 	if subject != "" {
@@ -139,14 +139,22 @@ func formatKnowledgeFact(fact model.KnowledgeFact, language model.Language) stri
 	return title
 }
 
-func knowledgeFactsSectionTitle(language model.Language) string {
-	if language == model.LanguageEN {
+func knowledgeFactsSectionTitle(language model.SummaryOutputLanguage) string {
+	switch model.NormalizeSummaryOutputLanguage(language) {
+	case model.SummaryLanguageEN:
+		return "## Active Knowledge"
+	case model.SummaryLanguageRU:
+		return "## Актуальные сведения"
+	case model.SummaryLanguageAR:
+		return "## معلومات نشطة"
+	case model.SummaryLanguageZhCN:
+		return "## 当前有效情报"
+	default:
 		return "## Active Knowledge"
 	}
-	return "## 当前有效情报"
 }
 
-func knowledgeFactsGroupTitle(key knowledgeFactGroupKey, multipleSpaces bool, language model.Language) string {
+func knowledgeFactsGroupTitle(key knowledgeFactGroupKey, multipleSpaces bool, language model.SummaryOutputLanguage) string {
 	factType := key.factType
 	if factType == "" {
 		factType = knowledgeFactsOtherLabel(language)
@@ -157,28 +165,36 @@ func knowledgeFactsGroupTitle(key knowledgeFactGroupKey, multipleSpaces bool, la
 	return factType
 }
 
-func knowledgeFactsOtherLabel(language model.Language) string {
-	if language == model.LanguageEN {
+func knowledgeFactsOtherLabel(language model.SummaryOutputLanguage) string {
+	switch model.NormalizeSummaryOutputLanguage(language) {
+	case model.SummaryLanguageEN:
+		return "Other"
+	case model.SummaryLanguageRU:
+		return "Другое"
+	case model.SummaryLanguageAR:
+		return "أخرى"
+	case model.SummaryLanguageZhCN:
+		return "其他"
+	default:
 		return "Other"
 	}
-	return "其他"
 }
 
-func knowledgeFactSubject(fact model.KnowledgeFact, language model.Language) string {
-	if ref := telegramfmt.UserReference(language, fact.SubjectSenderID, fact.SubjectSenderName, fact.SubjectUsername); ref != "" {
+func knowledgeFactSubject(fact model.KnowledgeFact, language model.SummaryOutputLanguage) string {
+	if ref := telegramfmt.UserReference(summaryReferenceLanguage(language), fact.SubjectSenderID, fact.SubjectSenderName, fact.SubjectUsername); ref != "" {
 		return ref
 	}
-	return telegramfmt.UnknownUserLabel(language)
+	return telegramfmt.UnknownUserLabel(summaryReferenceLanguage(language))
 }
 
-func knowledgeFactSeparator(language model.Language) string {
-	if language == model.LanguageEN {
+func knowledgeFactSeparator(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return ": "
 	}
 	return "："
 }
 
-func knowledgeFactConfidence(confidence float64, language model.Language) string {
+func knowledgeFactConfidence(confidence float64, language model.SummaryOutputLanguage) string {
 	if confidence <= 0 {
 		return ""
 	}
@@ -186,10 +202,25 @@ func knowledgeFactConfidence(confidence float64, language model.Language) string
 		confidence = 1
 	}
 	percent := int(math.Round(confidence * 100))
-	if language == model.LanguageEN {
+	switch model.NormalizeSummaryOutputLanguage(language) {
+	case model.SummaryLanguageEN:
+		return fmt.Sprintf(" (confidence %d%%)", percent)
+	case model.SummaryLanguageRU:
+		return fmt.Sprintf(" (уверенность %d%%)", percent)
+	case model.SummaryLanguageAR:
+		return fmt.Sprintf(" (الثقة %d%%)", percent)
+	case model.SummaryLanguageZhCN:
+		return fmt.Sprintf("（置信度 %d%%）", percent)
+	default:
 		return fmt.Sprintf(" (confidence %d%%)", percent)
 	}
-	return fmt.Sprintf("（置信度 %d%%）", percent)
+}
+
+func summaryReferenceLanguage(language model.SummaryOutputLanguage) model.Language {
+	if model.NormalizeSummaryOutputLanguage(language) == model.SummaryLanguageEN {
+		return model.LanguageEN
+	}
+	return model.LanguageZhCN
 }
 
 func compactKnowledgeText(value string) string {

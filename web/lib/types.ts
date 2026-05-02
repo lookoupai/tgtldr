@@ -1,5 +1,6 @@
 export type AuthStep = "idle" | "code" | "password" | "done";
 export type Language = "zh-CN" | "en";
+export type SummaryOutputLanguage = "zh-CN" | "en" | "ru" | "ar" | string;
 
 export type AppSettings = {
   id: number;
@@ -14,6 +15,7 @@ export type AppSettings = {
   summaryParallelism: number;
   defaultTimezone: string;
   language: Language;
+  summaryOutputLanguage: SummaryOutputLanguage;
   botEnabled: boolean;
   botToken?: string;
   botTargetChatId: string;
@@ -82,6 +84,7 @@ export type Chat = {
   summaryContext: string;
   summaryPrompt: string;
   summaryMode: SummaryMode;
+  summaryLanguage: SummaryOutputLanguage;
   topicGroups: TopicGroup[];
   summaryTimeLocal: string;
   deliveryMode: DeliveryMode;

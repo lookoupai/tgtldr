@@ -170,6 +170,7 @@ export const api = {
         summaryContext: chat.summaryContext,
         summaryPrompt: chat.summaryPrompt,
         summaryMode: chat.summaryMode,
+        summaryLanguage: chat.summaryLanguage,
         topicGroups: chat.topicGroups,
         summaryTimeLocal: chat.summaryTimeLocal,
         deliveryMode: chat.deliveryMode,

@@ -21,6 +21,7 @@ import { useToast } from "@/components/toast";
 import { Button, Field, Input, StatusPill } from "@/components/ui";
 import { listTimezoneOptions } from "@/lib/timezones";
 import { normalizeLanguage, useI18n } from "@/lib/i18n";
+import { SummaryLanguageControl } from "@/components/summary-language-control";
 
 type SecretPlaceholders = {
   botToken: string;
@@ -87,6 +88,7 @@ export function SettingsPanel() {
       setSettings({
         ...settingsData,
         language: normalizeLanguage(settingsData.language),
+        summaryOutputLanguage: settingsData.summaryOutputLanguage || "zh-CN",
         openAIOutputMode: settingsData.openAIOutputMode || "auto",
         summaryParallelism: settingsData.summaryParallelism || 2,
         botToken: "",
@@ -553,6 +555,17 @@ export function SettingsPanel() {
                     { value: "en", label: dict.language.en },
                   ]}
                   value={settings.language}
+                />
+              </Field>
+              <Field
+                label="默认摘要输出语言"
+                hint="控制 AI 摘要和 Bot 推送正文的语言；群组配置可单独覆盖。"
+              >
+                <SummaryLanguageControl
+                  onChange={(summaryOutputLanguage) =>
+                    setSettings({ ...settings, summaryOutputLanguage })
+                  }
+                  value={settings.summaryOutputLanguage || "zh-CN"}
                 />
               </Field>
             </div>

@@ -25,7 +25,7 @@ type DictShape<T> = {
 export const zh = {
   language: {
     label: "界面语言",
-    hint: "控制网页端、默认摘要输出和 Bot 推送文案。",
+    hint: "控制网页端语言。摘要输出语言可在下面单独配置。",
     zhCN: "中文",
     en: "English",
   },
@@ -34,7 +34,7 @@ export const zh = {
 export const en = {
   language: {
     label: "Language",
-    hint: "Sets the language for the web UI, default summaries, and Bot delivery messages.",
+    hint: "Sets the web UI language. Configure the summary output language separately below.",
     zhCN: "中文",
     en: "English",
   },
@@ -332,7 +332,13 @@ const textTranslations = {
   "超级群": "Supergroup",
   "协调世界时": "Coordinated Universal Time",
   "界面语言": "Language",
-  "控制网页端、默认摘要输出和 Bot 推送文案。": "Sets the language for the web UI, default summaries, and Bot delivery messages.",
+  "控制网页端语言。摘要输出语言可在下面单独配置。": "Sets the web UI language. Configure the summary output language separately below.",
+  "默认摘要输出语言": "Default summary output language",
+  "控制 AI 摘要和 Bot 推送正文的语言；群组配置可单独覆盖。": "Sets the language for AI summaries and Bot-delivered summary content; groups can override it.",
+  "控制 AI 摘要和 Bot 推送正文的语言，之后可在群组里覆盖。": "Sets the language for AI summaries and Bot-delivered summary content; you can override it per group later.",
+  "摘要输出语言": "Summary output language",
+  "留空时跟随系统默认摘要输出语言。": "Leave empty to inherit the system default summary output language.",
+  "跟随全局": "Inherit global",
   "仅在网页端查看摘要": "View summaries in the web app only",
   "在这里搜索和筛选摘要记录；点开某条摘要后，会从右侧展开完整正文。": "Search and filter summary records here. Select a summary to open the full content from the right.",
   "知识空间": "Knowledge Spaces",

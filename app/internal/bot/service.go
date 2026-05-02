@@ -26,6 +26,14 @@ func (s *Service) SendMessage(ctx context.Context, token, chatID, text string) e
 }
 
 func (s *Service) SendMessageWithLanguage(ctx context.Context, token, chatID, text string, language model.Language) error {
+	return s.sendMessageParts(ctx, token, chatID, text, language)
+}
+
+func (s *Service) SendMessageWithSummaryLanguage(ctx context.Context, token, chatID, text string, language model.SummaryOutputLanguage) error {
+	return s.sendMessageParts(ctx, token, chatID, text, language)
+}
+
+func (s *Service) sendMessageParts(ctx context.Context, token, chatID, text string, language any) error {
 	if strings.TrimSpace(token) == "" || strings.TrimSpace(chatID) == "" {
 		return fmt.Errorf("missing bot token or chat id")
 	}

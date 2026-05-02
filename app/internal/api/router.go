@@ -287,6 +287,7 @@ func (r *Router) handleSettings(w http.ResponseWriter, req *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "语言必须是 zh-CN 或 en。", "Language must be zh-CN or en."))
 		return
 	}
+	payload.SummaryOutputLanguage = model.NormalizeSummaryOutputLanguage(payload.SummaryOutputLanguage)
 	if payload.OpenAIOutputMode == "" {
 		payload.OpenAIOutputMode = model.OutputModeAuto
 	}
@@ -514,18 +515,19 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var payload struct {
-		Enabled          bool               `json:"enabled"`
-		SummaryEnabled   bool               `json:"summaryEnabled"`
-		SummaryContext   string             `json:"summaryContext"`
-		SummaryPrompt    string             `json:"summaryPrompt"`
-		SummaryMode      model.SummaryMode  `json:"summaryMode"`
-		TopicGroups      []model.TopicGroup `json:"topicGroups"`
-		SummaryTimeLocal string             `json:"summaryTimeLocal"`
-		DeliveryMode     model.DeliveryMode `json:"deliveryMode"`
-		ModelOverride    string             `json:"modelOverride"`
-		KeepBotMessages  bool               `json:"keepBotMessages"`
-		FilteredSenders  []string           `json:"filteredSenders"`
-		FilteredKeywords []string           `json:"filteredKeywords"`
+		Enabled          bool                        `json:"enabled"`
+		SummaryEnabled   bool                        `json:"summaryEnabled"`
+		SummaryContext   string                      `json:"summaryContext"`
+		SummaryPrompt    string                      `json:"summaryPrompt"`
+		SummaryMode      model.SummaryMode           `json:"summaryMode"`
+		SummaryLanguage  model.SummaryOutputLanguage `json:"summaryLanguage"`
+		TopicGroups      []model.TopicGroup          `json:"topicGroups"`
+		SummaryTimeLocal string                      `json:"summaryTimeLocal"`
+		DeliveryMode     model.DeliveryMode          `json:"deliveryMode"`
+		ModelOverride    string                      `json:"modelOverride"`
+		KeepBotMessages  bool                        `json:"keepBotMessages"`
+		FilteredSenders  []string                    `json:"filteredSenders"`
+		FilteredKeywords []string                    `json:"filteredKeywords"`
 	}
 	if err := httpx.DecodeJSON(req, &payload); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
@@ -537,6 +539,7 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 	current.SummaryContext = payload.SummaryContext
 	current.SummaryPrompt = payload.SummaryPrompt
 	current.SummaryMode = model.NormalizeSummaryMode(payload.SummaryMode)
+	current.SummaryLanguage = model.NormalizeOptionalSummaryOutputLanguage(payload.SummaryLanguage)
 	current.TopicGroups = compactTopicGroups(payload.TopicGroups)
 	current.SummaryTimeLocal = payload.SummaryTimeLocal
 	current.DeliveryMode = payload.DeliveryMode

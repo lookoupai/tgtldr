@@ -53,8 +53,9 @@ func (s *Service) BuildContextPreview(ctx context.Context, summary model.Summary
 	if err != nil {
 		return model.SummaryContextPreview{}, err
 	}
-	stagePrompt := buildStagePromptForChat(settings.Language, chat)
-	finalPrompt := buildFinalPromptForChat(settings.Language, chat)
+	summaryLanguage := model.ResolveSummaryOutputLanguage(settings, chat)
+	stagePrompt := buildStagePromptForChat(summaryLanguage, chat)
+	finalPrompt := buildFinalPromptForChat(summaryLanguage, chat)
 	budget := resolveSummaryBudget(settings, resolveSummaryModel(chat, settings), stagePrompt)
 	chunks := SplitMessages(filteredMessages, budget.ChunkTokenBudget)
 	preview := model.SummaryContextPreview{
@@ -66,15 +67,15 @@ func (s *Service) BuildContextPreview(ctx context.Context, summary model.Summary
 		FinalPrompt:      finalPrompt,
 		MessageCount:     len(filteredMessages),
 		ChunkCount:       len(chunks),
-		FinalInputNotice: finalInputNotice(settings.Language),
-		PreviewNotice:    previewNotice(settings.Language),
+		FinalInputNotice: finalInputNotice(summaryLanguage),
+		PreviewNotice:    previewNotice(summaryLanguage),
 	}
 
 	for _, chunk := range chunks {
 		preview.Chunks = append(preview.Chunks, model.SummaryContextChunk{
 			Index:        chunk.Index,
 			MessageCount: len(chunk.Messages),
-			Content:      BuildTranscript(chunk.Messages, messageLookup, location, settings.Language),
+			Content:      BuildTranscript(chunk.Messages, messageLookup, location, summaryLanguage),
 		})
 	}
 	if len(chunks) <= 1 {
@@ -89,6 +90,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 	if err != nil {
 		return model.Summary{}, err
 	}
+	summaryLanguage := model.ResolveSummaryOutputLanguage(settings, chat)
 
 	timezone := resolveSummaryTimezone(chat, settings.DefaultTimezone)
 	location, err := loadLocation(timezone)
@@ -118,8 +120,8 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		GeneratedAt:        s.clock.Now(),
 	}
 	if len(filteredMessages) == 0 {
-		summary.Content = emptySummaryContent(settings.Language)
-		if err := s.appendKnowledgeFacts(ctx, &summary, settings.Language); err != nil {
+		summary.Content = emptySummaryContent(summaryLanguage)
+		if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage); err != nil {
 			return model.Summary{}, err
 		}
 		return summary, nil
@@ -132,8 +134,8 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		Timeout: s.openAITimeout,
 	})
 
-	stagePrompt := buildStagePromptForChat(settings.Language, chat)
-	finalPrompt := buildFinalPromptForChat(settings.Language, chat)
+	stagePrompt := buildStagePromptForChat(summaryLanguage, chat)
+	finalPrompt := buildFinalPromptForChat(summaryLanguage, chat)
 	budget := resolveSummaryBudget(settings, resolveSummaryModel(chat, settings), stagePrompt)
 	chunks := SplitMessages(filteredMessages, budget.ChunkTokenBudget)
 	summary.ChunkCount = len(chunks)
@@ -146,7 +148,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		index := index
 		chunk := chunk
 		group.Go(func() error {
-			transcript := BuildTranscript(chunk.Messages, messageLookup, location, settings.Language)
+			transcript := BuildTranscript(chunk.Messages, messageLookup, location, summaryLanguage)
 			resp, err := client.Chat(groupCtx, openai.ChatRequest{
 				SystemPrompt: stagePrompt,
 				UserPrompt:   transcript,
@@ -181,13 +183,13 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 
 	summary.Content = strings.TrimSpace(finalResp.Content)
 	summary.Model = finalResp.Model
-	if err := s.appendKnowledgeFacts(ctx, &summary, settings.Language); err != nil {
+	if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage); err != nil {
 		return model.Summary{}, err
 	}
 	return summary, nil
 }
 
-func (s *Service) appendKnowledgeFacts(ctx context.Context, summary *model.Summary, language model.Language) error {
+func (s *Service) appendKnowledgeFacts(ctx context.Context, summary *model.Summary, language model.SummaryOutputLanguage) error {
 	if s.store == nil || s.store.KnowledgeFacts == nil || summary == nil || summary.Status != model.SummaryStatusSucceeded {
 		return nil
 	}

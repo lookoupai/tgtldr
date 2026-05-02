@@ -7,6 +7,7 @@ import { Chat } from "@/lib/types";
 import { DashboardPage, EmptyState, MetricCard, MetricRail, Surface } from "@/components/dashboard-page";
 import { useToast } from "@/components/toast";
 import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
+import { SummaryLanguageControl } from "@/components/summary-language-control";
 
 type ChatTypeFilter = "all" | Chat["chatType"];
 type SwitchFilter = "all" | "yes" | "no";
@@ -230,6 +231,7 @@ function normalizeChat(chat: Chat): Chat {
   return {
     ...chat,
     summaryMode: chat.summaryMode === "chat_topic" ? "chat_topic" : "channel",
+    summaryLanguage: chat.summaryLanguage ?? "",
     summaryContext: chat.summaryContext ?? "",
     topicGroups: Array.isArray(chat.topicGroups) ? chat.topicGroups : [],
     filteredKeywords: Array.isArray(chat.filteredKeywords) ? chat.filteredKeywords : [],
@@ -405,6 +407,19 @@ function ChatTableRow({
                               { value: "chat_topic", label: "按 AI 话题分组" }
                             ]}
                             value={chat.summaryMode}
+                          />
+                        </Field>
+
+                        <Field
+                          label="摘要输出语言"
+                          hint="留空时跟随系统默认摘要输出语言。"
+                        >
+                          <SummaryLanguageControl
+                            includeInherit
+                            onChange={(summaryLanguage) =>
+                              onPatch({ summaryLanguage })
+                            }
+                            value={chat.summaryLanguage ?? ""}
                           />
                         </Field>
 

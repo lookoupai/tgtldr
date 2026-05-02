@@ -6,17 +6,17 @@ import (
 	"github.com/frederic/tgtldr/app/internal/model"
 )
 
-func buildStagePrompt(language model.Language, summaryContext string, prompt string) string {
+func buildStagePrompt(language model.SummaryOutputLanguage, summaryContext string, prompt string) string {
 	base := stagePromptBase(language)
 	return buildSystemPrompt(language, base, summaryContext, prompt)
 }
 
-func buildFinalPrompt(language model.Language, summaryContext string, prompt string) string {
+func buildFinalPrompt(language model.SummaryOutputLanguage, summaryContext string, prompt string) string {
 	base := finalPromptBase(language)
 	return buildSystemPrompt(language, base, summaryContext, prompt)
 }
 
-func buildStagePromptForChat(language model.Language, chat model.Chat) string {
+func buildStagePromptForChat(language model.SummaryOutputLanguage, chat model.Chat) string {
 	if model.NormalizeSummaryMode(chat.SummaryMode) == model.SummaryModeChatTopic {
 		base := stageTopicPromptBase(language, chat.TopicGroups)
 		return buildSystemPrompt(language, base, chat.SummaryContext, chat.SummaryPrompt)
@@ -24,7 +24,7 @@ func buildStagePromptForChat(language model.Language, chat model.Chat) string {
 	return buildStagePrompt(language, chat.SummaryContext, chat.SummaryPrompt)
 }
 
-func buildFinalPromptForChat(language model.Language, chat model.Chat) string {
+func buildFinalPromptForChat(language model.SummaryOutputLanguage, chat model.Chat) string {
 	if model.NormalizeSummaryMode(chat.SummaryMode) == model.SummaryModeChatTopic {
 		base := finalTopicPromptBase(language, chat.TopicGroups)
 		return buildSystemPrompt(language, base, chat.SummaryContext, chat.SummaryPrompt)
@@ -32,8 +32,8 @@ func buildFinalPromptForChat(language model.Language, chat model.Chat) string {
 	return buildFinalPrompt(language, chat.SummaryContext, chat.SummaryPrompt)
 }
 
-func stagePromptBase(language model.Language) string {
-	if language == model.LanguageEN {
+func stagePromptBase(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return `
 You are TGTLDR's stage summarizer. You will read one segment of a Telegram group chat transcript and extract the discussion that actually contains useful information.
 
@@ -43,6 +43,8 @@ This group may be a free-form discussion group rather than a formal collaboratio
 3. Whether a relatively clear consensus formed
 4. Whether there are obvious disagreements or unresolved points
 5. Which scattered details are mentioned briefly but may still matter
+
+The transcript may contain any language, including Chinese, English, Russian, Arabic, or mixed-language messages. Understand the original messages first, then follow the requested output language.
 
 Prioritize:
 - Topics discussed by multiple people
@@ -59,7 +61,7 @@ Ignore or downplay:
 
 If a message includes reply_to and reply_excerpt, use them to understand context. Do not interpret replies in isolation.
 
-Write in English and use this structure:
+` + outputLanguageInstruction(language) + ` and use this structure:
 
 ## Main Topics
 - List the main topics in this segment
@@ -84,6 +86,8 @@ Write in English and use this structure:
 3. 是否形成了相对明确的共识
 4. 是否存在明显分歧或尚无定论的内容
 5. 哪些信息只是零散提及，但可能值得注意
+
+群聊记录可能包含中文、英文、俄语、阿拉伯语或多语言混合消息。请先理解原文内容，再按要求的输出语言整理摘要。
 
 请优先关注：
 - 被多人讨论的话题
@@ -117,13 +121,14 @@ Write in English and use this structure:
 `
 }
 
-func stageTopicPromptBase(language model.Language, groups []model.TopicGroup) string {
+func stageTopicPromptBase(language model.SummaryOutputLanguage, groups []model.TopicGroup) string {
 	definitions := topicGroupDefinitions(language, groups)
-	if language == model.LanguageEN {
+	if language != model.SummaryLanguageZhCN {
 		return `
 You are TGTLDR's topic-aware stage summarizer. You will read one segment of a Telegram group chat transcript and extract useful discussion items grouped by topic.
 
 This group may be a free-form discussion group. Do not mechanically restate messages. Identify topic-level information, judgments, links, disagreements, and unresolved points.
+The transcript may contain any language, including Chinese, English, Russian, Arabic, or mixed-language messages. Understand the original messages first, then follow the requested output language.
 
 Topic grouping rules:
 ` + definitions + `
@@ -135,7 +140,7 @@ Rules:
 - Preserve evidence level. Do not turn scattered claims into certain facts.
 - If a message includes reply_to and reply_excerpt, use them to understand context.
 
-Write in English and use this structure:
+` + outputLanguageInstruction(language) + ` and use this structure:
 
 ## Topic Candidates
 ### <Topic or group name>
@@ -152,6 +157,7 @@ Write in English and use this structure:
 你是 TGTLDR 的分话题阶段摘要器。你将阅读一段 Telegram 群聊记录，并按话题提炼有信息价值的讨论内容。
 
 这个群聊可能是自由讨论群。不要机械复述消息，而是识别话题层面的信息、判断、链接、分歧和未解决点。
+群聊记录可能包含中文、英文、俄语、阿拉伯语或多语言混合消息。请先理解原文内容，再按要求的输出语言整理摘要。
 
 话题分组规则：
 ` + definitions + `
@@ -177,10 +183,10 @@ Write in English and use this structure:
 `
 }
 
-func finalPromptBase(language model.Language) string {
-	if language == model.LanguageEN {
+func finalPromptBase(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return `
-You are TGTLDR's final summarizer. You will receive multiple stage summaries and turn them into a concise English daily digest for fast reading.
+You are TGTLDR's final summarizer. You will receive multiple stage summaries and turn them into a concise daily digest for fast reading.
 
 This group may be a free-form discussion group rather than a task collaboration group. Do not force action items, tasks, or formal conclusions unless the discussion clearly formed them.
 
@@ -198,7 +204,7 @@ Writing requirements:
 4. Do not turn scattered messages into certain facts
 5. Keep the language concise, direct, and suitable for a daily digest
 
-Write in English and use this format:
+` + outputLanguageInstruction(language) + ` and use this format:
 
 ## Key Takeaways
 - Summarize the 3-6 most important pieces of information and judgment from today
@@ -270,9 +276,9 @@ Write in English and use this format:
 `
 }
 
-func finalTopicPromptBase(language model.Language, groups []model.TopicGroup) string {
+func finalTopicPromptBase(language model.SummaryOutputLanguage, groups []model.TopicGroup) string {
 	definitions := topicGroupDefinitions(language, groups)
-	if language == model.LanguageEN {
+	if language != model.SummaryLanguageZhCN {
 		return `
 You are TGTLDR's final topic digest writer. You will receive stage summaries from one Telegram group and produce one daily digest organized by AI-detected topics.
 
@@ -286,7 +292,7 @@ Writing requirements:
 4. Keep the digest concise and useful for fast reading.
 5. Clearly mark weak evidence, disagreements, and unresolved points.
 
-Write in English and use this format:
+` + outputLanguageInstruction(language) + ` and use this format:
 
 ## Key Takeaways
 - Summarize the 3-6 most important topic-level conclusions from today
@@ -340,7 +346,7 @@ Write in English and use this format:
 `
 }
 
-func buildSystemPrompt(language model.Language, base string, summaryContext string, prompt string) string {
+func buildSystemPrompt(language model.SummaryOutputLanguage, base string, summaryContext string, prompt string) string {
 	sections := []string{strings.TrimSpace(base)}
 
 	if contextText := strings.TrimSpace(summaryContext); contextText != "" {
@@ -354,7 +360,22 @@ func buildSystemPrompt(language model.Language, base string, summaryContext stri
 	return strings.Join(sections, "\n\n")
 }
 
-func topicGroupDefinitions(language model.Language, groups []model.TopicGroup) string {
+func outputLanguageInstruction(language model.SummaryOutputLanguage) string {
+	switch model.NormalizeSummaryOutputLanguage(language) {
+	case model.SummaryLanguageEN:
+		return "Write in English"
+	case model.SummaryLanguageRU:
+		return "Write the entire output in Russian"
+	case model.SummaryLanguageAR:
+		return "Write the entire output in Arabic"
+	case model.SummaryLanguageZhCN:
+		return "Write the entire output in Simplified Chinese"
+	default:
+		return "Write the entire output in " + strings.TrimSpace(string(language))
+	}
+}
+
+func topicGroupDefinitions(language model.SummaryOutputLanguage, groups []model.TopicGroup) string {
 	normalized := make([]string, 0, len(groups))
 	for _, group := range groups {
 		name := strings.TrimSpace(group.Name)
@@ -371,49 +392,57 @@ func topicGroupDefinitions(language model.Language, groups []model.TopicGroup) s
 	if len(normalized) > 0 {
 		return strings.Join(normalized, "\n")
 	}
-	if language == model.LanguageEN {
+	if language != model.SummaryLanguageZhCN {
 		return "- No fixed topic groups are configured. Infer concise topic names from the messages.\n- Always include Other for useful unmatched items."
 	}
 	return "- 当前没有配置固定话题组，请从消息中自行推断简洁的话题名称。\n- 对无法归入主要话题但有价值的内容，使用“其他”。"
 }
 
-func sectionLabel(language model.Language, label string) string {
-	if language == model.LanguageEN {
+func sectionLabel(language model.SummaryOutputLanguage, label string) string {
+	if language != model.SummaryLanguageZhCN {
 		return label + ":"
 	}
 	return label + "："
 }
 
-func contextLabel(language model.Language) string {
-	if language == model.LanguageEN {
+func contextLabel(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "Group context"
 	}
 	return "群聊背景"
 }
 
-func extraPromptLabel(language model.Language) string {
-	if language == model.LanguageEN {
+func extraPromptLabel(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "Additional requirements"
 	}
 	return "额外要求"
 }
 
-func emptySummaryContent(language model.Language) string {
-	if language == model.LanguageEN {
+func emptySummaryContent(language model.SummaryOutputLanguage) string {
+	switch model.NormalizeSummaryOutputLanguage(language) {
+	case model.SummaryLanguageEN:
+		return "There were no messages available for summarization on this date."
+	case model.SummaryLanguageRU:
+		return "В эту дату не было сообщений, доступных для создания сводки."
+	case model.SummaryLanguageAR:
+		return "لم تكن هناك رسائل متاحة للتلخيص في هذا التاريخ."
+	case model.SummaryLanguageZhCN:
+		return "该日期没有可用于生成摘要的消息。"
+	default:
 		return "There were no messages available for summarization on this date."
 	}
-	return "该日期没有可用于生成摘要的消息。"
 }
 
-func finalInputNotice(language model.Language) string {
-	if language == model.LanguageEN {
+func finalInputNotice(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "The final merge input comes from the stage summaries of each chunk. Because the system does not persist stage-summary snapshots, this preview cannot replay the exact merge input."
 	}
 	return "最终合并输入来自各分块的阶段摘要。由于系统当前不会持久化阶段摘要快照，这里无法精确回放合并输入。"
 }
 
-func previewNotice(language model.Language) string {
-	if language == model.LanguageEN {
+func previewNotice(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "This preview rebuilds the original message context sent to AI for each chunk using the current rules."
 	}
 	return "该预览会基于当前规则重建每个分块发送给 AI 的原始消息上下文。"

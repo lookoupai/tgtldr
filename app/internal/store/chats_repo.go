@@ -19,7 +19,7 @@ type ChatRepository struct {
 func (r *ChatRepository) List(ctx context.Context) ([]model.Chat, error) {
 	rows, err := r.pool.Query(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
 		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
@@ -62,10 +62,10 @@ func (r *ChatRepository) UpsertMany(ctx context.Context, chats []model.Chat) err
 		_, err := tx.Exec(ctx, `
 			insert into chats (
 				telegram_chat_id, telegram_access_hash, title, username, chat_type,
-				enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups,
+				enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups,
 				summary_time_local, summary_timezone, delivery_mode, model_override,
 				keep_bot_messages, filtered_senders, filtered_keywords
-			) values ($1, $2, $3, $4, $5, false, false, '', '', 'channel', '[]'::jsonb, '09:00', 'Asia/Shanghai', 'dashboard', '', true, '{}', '{}')
+			) values ($1, $2, $3, $4, $5, false, false, '', '', 'channel', '', '[]'::jsonb, '09:00', 'Asia/Shanghai', 'dashboard', '', true, '{}', '{}')
 			on conflict (telegram_chat_id) do update
 			set telegram_access_hash = excluded.telegram_access_hash,
 			    title = excluded.title,
@@ -102,17 +102,18 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		    summary_context = $3,
 		    summary_prompt = $4,
 		    summary_mode = $5,
-		    topic_groups = $6::jsonb,
-		    summary_time_local = $7,
-		    delivery_mode = $8,
-		    model_override = $9,
-		    keep_bot_messages = $10,
-		    filtered_senders = $11,
-		    filtered_keywords = $12,
+		    summary_language = $6,
+		    topic_groups = $7::jsonb,
+		    summary_time_local = $8,
+		    delivery_mode = $9,
+		    model_override = $10,
+		    keep_bot_messages = $11,
+		    filtered_senders = $12,
+		    filtered_keywords = $13,
 		    updated_at = now()
-		where id = $13
+		where id = $14
 		returning id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		          enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		          enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
 		          summary_time_local, summary_timezone,
 		          delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		          created_at, updated_at
@@ -122,6 +123,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		chat.SummaryContext,
 		chat.SummaryPrompt,
 		model.NormalizeSummaryMode(chat.SummaryMode),
+		normalizeChatSummaryLanguage(chat.SummaryLanguage),
 		topicGroups,
 		chat.SummaryTimeLocal,
 		chat.DeliveryMode,
@@ -140,7 +142,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 func (r *ChatRepository) GetByID(ctx context.Context, id int64) (model.Chat, error) {
 	chat, err := scanChat(rowScanner{row: r.pool.QueryRow(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
 		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
@@ -156,7 +158,7 @@ func (r *ChatRepository) GetByID(ctx context.Context, id int64) (model.Chat, err
 func (r *ChatRepository) ListSummaryEnabled(ctx context.Context) ([]model.Chat, error) {
 	rows, err := r.pool.Query(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
 		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
@@ -183,7 +185,7 @@ func (r *ChatRepository) ListSummaryEnabled(ctx context.Context) ([]model.Chat, 
 func (r *ChatRepository) GetByTelegramID(ctx context.Context, telegramID int64) (model.Chat, error) {
 	chat, err := scanChat(rowScanner{row: r.pool.QueryRow(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
 		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
@@ -234,6 +236,7 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 		&chat.SummaryContext,
 		&chat.SummaryPrompt,
 		&chat.SummaryMode,
+		&chat.SummaryLanguage,
 		&topicGroupsJSON,
 		&chat.SummaryTimeLocal,
 		&chat.SummaryTimezone,
@@ -249,8 +252,13 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 		return model.Chat{}, err
 	}
 	chat.SummaryMode = model.NormalizeSummaryMode(chat.SummaryMode)
+	chat.SummaryLanguage = normalizeChatSummaryLanguage(chat.SummaryLanguage)
 	chat.TopicGroups = unmarshalTopicGroups(topicGroupsJSON)
 	return chat, nil
+}
+
+func normalizeChatSummaryLanguage(language model.SummaryOutputLanguage) model.SummaryOutputLanguage {
+	return model.NormalizeOptionalSummaryOutputLanguage(language)
 }
 
 func marshalTopicGroups(groups []model.TopicGroup) (string, error) {

@@ -19,7 +19,7 @@ func estimateTokens(text string) int {
 	return msgchunk.EstimateTokens(text)
 }
 
-func BuildTranscript(messages []model.Message, lookup map[int]model.Message, location *time.Location, language model.Language) string {
+func BuildTranscript(messages []model.Message, lookup map[int]model.Message, location *time.Location, language model.SummaryOutputLanguage) string {
 	if len(messages) == 0 {
 		return ""
 	}
@@ -97,7 +97,7 @@ func resolveReplyReference(
 	lookup map[int]model.Message,
 	externalRefs map[int]string,
 	externalOrder *[]int,
-	language model.Language,
+	language model.SummaryOutputLanguage,
 ) (string, string) {
 	if localRef, ok := localRefs[replyToMessageID]; ok {
 		reference := lookup[replyToMessageID]
@@ -133,7 +133,7 @@ func compactReplyExcerpt(text string) string {
 	return string(runes[:96]) + "…"
 }
 
-func referenceSummaryText(message model.Message, language model.Language) string {
+func referenceSummaryText(message model.Message, language model.SummaryOutputLanguage) string {
 	if text := strings.TrimSpace(message.SummaryText()); text != "" {
 		return text
 	}
@@ -152,36 +152,36 @@ func referenceSummaryText(message model.Message, language model.Language) string
 	return emptyTextPlaceholder(language)
 }
 
-func missingReplyMessage(language model.Language) string {
-	if language == model.LanguageEN {
+func missingReplyMessage(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "[Original message was not found in the current database]"
 	}
 	return "[原始消息未在当前数据库中找到]"
 }
 
-func photoPlaceholder(language model.Language) string {
-	if language == model.LanguageEN {
+func photoPlaceholder(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "[Photo message without text]"
 	}
 	return "[图片消息，无文字说明]"
 }
 
-func documentPlaceholder(language model.Language) string {
-	if language == model.LanguageEN {
+func documentPlaceholder(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "[File message without text]"
 	}
 	return "[文件消息，无文字说明]"
 }
 
-func nonTextPlaceholder(language model.Language) string {
-	if language == model.LanguageEN {
+func nonTextPlaceholder(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "[Non-text message without text]"
 	}
 	return "[非文本消息，无文字说明]"
 }
 
-func emptyTextPlaceholder(language model.Language) string {
-	if language == model.LanguageEN {
+func emptyTextPlaceholder(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
 		return "[No readable text content]"
 	}
 	return "[无可读文本内容]"

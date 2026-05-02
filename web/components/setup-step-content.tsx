@@ -16,6 +16,7 @@ import { Button, Card, Field, Input } from "@/components/ui";
 import { knownOpenAIModels, LoginStage } from "@/components/setup-wizard-types";
 import { Language } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
+import { SummaryLanguageControl } from "@/components/summary-language-control";
 
 type ConfigStepProps = {
   settings: AppSettings;
@@ -259,6 +260,17 @@ export function ConfigStep({
                     { value: "en", label: dict.language.en },
                   ]}
                   value={settings.language}
+                />
+              </Field>
+              <Field
+                label="默认摘要输出语言"
+                hint="控制 AI 摘要和 Bot 推送正文的语言，之后可在群组里覆盖。"
+              >
+                <SummaryLanguageControl
+                  onChange={(summaryOutputLanguage) =>
+                    setSettings({ ...settings, summaryOutputLanguage })
+                  }
+                  value={settings.summaryOutputLanguage || "zh-CN"}
                 />
               </Field>
             </div>

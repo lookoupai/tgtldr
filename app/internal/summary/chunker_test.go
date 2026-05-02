@@ -63,7 +63,7 @@ func TestBuildTranscriptReferenceFallback(t *testing.T) {
 				101: reply,
 			},
 			time.Local,
-			model.LanguageZhCN,
+			model.SummaryLanguageZhCN,
 		)
 
 		So(transcript, ShouldContainSubstring, "[Referenced Messages]")
@@ -87,7 +87,7 @@ func TestBuildTranscriptReferenceFallback(t *testing.T) {
 				101: reply,
 			},
 			time.Local,
-			model.LanguageZhCN,
+			model.SummaryLanguageZhCN,
 		)
 
 		So(transcript, ShouldContainSubstring, "reply_to=[msg:999]")
@@ -108,7 +108,7 @@ func TestBuildTranscriptReferenceFallback(t *testing.T) {
 			[]model.Message{reply},
 			map[int]model.Message{101: reply},
 			time.Local,
-			model.LanguageEN,
+			model.SummaryLanguageEN,
 		)
 
 		So(transcript, ShouldContainSubstring, `reply_excerpt="[Original message was not found in the current database]"`)

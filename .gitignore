@@ -11,6 +11,7 @@ web/.next/
 web/node_modules/
 
 *.log
+*.tsbuildinfo
 *.sql.gz
 .env
 .env.local

@@ -13,6 +13,7 @@ This project exists because many Telegram groups are large, noisy communities th
 - Monitor Telegram groups you have joined and store messages in a local database
 - Configure daily summary time, prompts, filters, and summary model per group
 - Summarize by channel, or group summaries by AI-detected topics or configured topic groups
+- Read multilingual channels and configure the default summary output language or override it per group
 - Generate group summaries through an OpenAI-compatible API
 - Read summaries in the web app, with optional Telegram Bot delivery; long Bot messages are split automatically
 - Manually trigger summaries, view historical summaries, and retry failed Bot deliveries
@@ -106,6 +107,7 @@ Each group can configure its own summary behavior:
 
 - `Channel`: the default mode, producing one summary for the previous day's messages
 - `Topics`: AI groups discussions by topic; you can also configure topic names and descriptions per group
+- `Summary output language`: built-in options include Chinese, English, Russian, and Arabic; you can also enter a custom language name, and groups inherit the global default when left blank
 - Bot delivery respects Telegram's single-message limit and automatically splits content above 4096 visible characters
 
 Knowledge spaces maintain long-lived information instead of one-off summaries. Each space has its own JSON schema, extraction instructions, target groups, confidence threshold, and retention period. This makes the feature reusable for demand/supply channels, hiring, skill profiles, event signups, project leads, or other custom scenarios.

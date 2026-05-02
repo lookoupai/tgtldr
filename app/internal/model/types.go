@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type DeliveryMode string
 type SummaryMode string
@@ -23,13 +26,18 @@ const (
 
 type OutputMode string
 type Language string
+type SummaryOutputLanguage string
 
 const (
-	OutputModeAuto       OutputMode = "auto"
-	OutputModeManual     OutputMode = "manual"
-	LanguageZhCN         Language   = "zh-CN"
-	LanguageEN           Language   = "en"
-	DefaultOpenAIBaseURL            = "https://api.openai.com/v1"
+	OutputModeAuto       OutputMode            = "auto"
+	OutputModeManual     OutputMode            = "manual"
+	LanguageZhCN         Language              = "zh-CN"
+	LanguageEN           Language              = "en"
+	SummaryLanguageZhCN  SummaryOutputLanguage = "zh-CN"
+	SummaryLanguageEN    SummaryOutputLanguage = "en"
+	SummaryLanguageRU    SummaryOutputLanguage = "ru"
+	SummaryLanguageAR    SummaryOutputLanguage = "ar"
+	DefaultOpenAIBaseURL                       = "https://api.openai.com/v1"
 )
 
 func NormalizeLanguage(language Language) Language {
@@ -37,6 +45,36 @@ func NormalizeLanguage(language Language) Language {
 		return LanguageEN
 	}
 	return LanguageZhCN
+}
+
+func NormalizeSummaryOutputLanguage(language SummaryOutputLanguage) SummaryOutputLanguage {
+	switch strings.TrimSpace(string(language)) {
+	case string(SummaryLanguageEN):
+		return SummaryLanguageEN
+	case string(SummaryLanguageRU):
+		return SummaryLanguageRU
+	case string(SummaryLanguageAR):
+		return SummaryLanguageAR
+	case "", string(SummaryLanguageZhCN):
+		return SummaryLanguageZhCN
+	default:
+		return SummaryOutputLanguage(strings.TrimSpace(string(language)))
+	}
+}
+
+func NormalizeOptionalSummaryOutputLanguage(language SummaryOutputLanguage) SummaryOutputLanguage {
+	trimmed := strings.TrimSpace(string(language))
+	if trimmed == "" {
+		return ""
+	}
+	return NormalizeSummaryOutputLanguage(SummaryOutputLanguage(trimmed))
+}
+
+func ResolveSummaryOutputLanguage(settings AppSettings, chat Chat) SummaryOutputLanguage {
+	if language := NormalizeOptionalSummaryOutputLanguage(chat.SummaryLanguage); language != "" {
+		return language
+	}
+	return NormalizeSummaryOutputLanguage(settings.SummaryOutputLanguage)
 }
 
 func NormalizeSummaryMode(mode SummaryMode) SummaryMode {
@@ -47,23 +85,24 @@ func NormalizeSummaryMode(mode SummaryMode) SummaryMode {
 }
 
 type AppSettings struct {
-	ID                   int64      `json:"id"`
-	TelegramAPIID        int        `json:"telegramApiId"`
-	TelegramAPIHash      string     `json:"telegramApiHash,omitempty"`
-	OpenAIBaseURL        string     `json:"openAIBaseUrl"`
-	OpenAIAPIKey         string     `json:"openAIApiKey,omitempty"`
-	OpenAIModel          string     `json:"openAIModel"`
-	OpenAITemperature    float64    `json:"openAITemperature"`
-	OpenAIOutputMode     OutputMode `json:"openAIOutputMode"`
-	OpenAIMaxOutputToken int        `json:"openAIMaxOutputTokens"`
-	SummaryParallelism   int        `json:"summaryParallelism"`
-	DefaultTimezone      string     `json:"defaultTimezone"`
-	Language             Language   `json:"language"`
-	BotEnabled           bool       `json:"botEnabled"`
-	BotToken             string     `json:"botToken,omitempty"`
-	BotTargetChatID      string     `json:"botTargetChatId"`
-	CreatedAt            time.Time  `json:"createdAt"`
-	UpdatedAt            time.Time  `json:"updatedAt"`
+	ID                    int64                 `json:"id"`
+	TelegramAPIID         int                   `json:"telegramApiId"`
+	TelegramAPIHash       string                `json:"telegramApiHash,omitempty"`
+	OpenAIBaseURL         string                `json:"openAIBaseUrl"`
+	OpenAIAPIKey          string                `json:"openAIApiKey,omitempty"`
+	OpenAIModel           string                `json:"openAIModel"`
+	OpenAITemperature     float64               `json:"openAITemperature"`
+	OpenAIOutputMode      OutputMode            `json:"openAIOutputMode"`
+	OpenAIMaxOutputToken  int                   `json:"openAIMaxOutputTokens"`
+	SummaryParallelism    int                   `json:"summaryParallelism"`
+	DefaultTimezone       string                `json:"defaultTimezone"`
+	Language              Language              `json:"language"`
+	SummaryOutputLanguage SummaryOutputLanguage `json:"summaryOutputLanguage"`
+	BotEnabled            bool                  `json:"botEnabled"`
+	BotToken              string                `json:"botToken,omitempty"`
+	BotTargetChatID       string                `json:"botTargetChatId"`
+	CreatedAt             time.Time             `json:"createdAt"`
+	UpdatedAt             time.Time             `json:"updatedAt"`
 }
 
 func (s AppSettings) Sanitized() AppSettings {
@@ -105,27 +144,28 @@ type TelegramAuth struct {
 }
 
 type Chat struct {
-	ID               int64        `json:"id"`
-	TelegramChatID   int64        `json:"telegramChatId"`
-	TelegramAccess   int64        `json:"telegramAccessHash"`
-	Title            string       `json:"title"`
-	Username         string       `json:"username"`
-	ChatType         string       `json:"chatType"`
-	Enabled          bool         `json:"enabled"`
-	SummaryEnabled   bool         `json:"summaryEnabled"`
-	SummaryContext   string       `json:"summaryContext"`
-	SummaryPrompt    string       `json:"summaryPrompt"`
-	SummaryMode      SummaryMode  `json:"summaryMode"`
-	TopicGroups      []TopicGroup `json:"topicGroups"`
-	SummaryTimeLocal string       `json:"summaryTimeLocal"`
-	SummaryTimezone  string       `json:"summaryTimezone"`
-	DeliveryMode     DeliveryMode `json:"deliveryMode"`
-	ModelOverride    string       `json:"modelOverride"`
-	KeepBotMessages  bool         `json:"keepBotMessages"`
-	FilteredSenders  []string     `json:"filteredSenders"`
-	FilteredKeywords []string     `json:"filteredKeywords"`
-	CreatedAt        time.Time    `json:"createdAt"`
-	UpdatedAt        time.Time    `json:"updatedAt"`
+	ID               int64                 `json:"id"`
+	TelegramChatID   int64                 `json:"telegramChatId"`
+	TelegramAccess   int64                 `json:"telegramAccessHash"`
+	Title            string                `json:"title"`
+	Username         string                `json:"username"`
+	ChatType         string                `json:"chatType"`
+	Enabled          bool                  `json:"enabled"`
+	SummaryEnabled   bool                  `json:"summaryEnabled"`
+	SummaryContext   string                `json:"summaryContext"`
+	SummaryPrompt    string                `json:"summaryPrompt"`
+	SummaryMode      SummaryMode           `json:"summaryMode"`
+	SummaryLanguage  SummaryOutputLanguage `json:"summaryLanguage"`
+	TopicGroups      []TopicGroup          `json:"topicGroups"`
+	SummaryTimeLocal string                `json:"summaryTimeLocal"`
+	SummaryTimezone  string                `json:"summaryTimezone"`
+	DeliveryMode     DeliveryMode          `json:"deliveryMode"`
+	ModelOverride    string                `json:"modelOverride"`
+	KeepBotMessages  bool                  `json:"keepBotMessages"`
+	FilteredSenders  []string              `json:"filteredSenders"`
+	FilteredKeywords []string              `json:"filteredKeywords"`
+	CreatedAt        time.Time             `json:"createdAt"`
+	UpdatedAt        time.Time             `json:"updatedAt"`
 }
 
 type TopicGroup struct {

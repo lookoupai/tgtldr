@@ -54,6 +54,7 @@ export const emptySettings: AppSettings = {
   summaryParallelism: 2,
   defaultTimezone: "Asia/Shanghai",
   language: "zh-CN",
+  summaryOutputLanguage: "zh-CN",
   botEnabled: false,
   botToken: "",
   botTargetChatId: "",

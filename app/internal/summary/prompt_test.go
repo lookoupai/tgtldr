@@ -10,7 +10,7 @@ import (
 
 func TestBuildStagePrompt(t *testing.T) {
 	Convey("默认阶段提示词面向自由讨论群并保留额外要求", t, func() {
-		prompt := buildStagePrompt(model.LanguageZhCN, "群里常说的 ATL 指的是 All Time Low。", "重点关注体验反馈。")
+		prompt := buildStagePrompt(model.SummaryLanguageZhCN, "群里常说的 ATL 指的是 All Time Low。", "重点关注体验反馈。")
 
 		So(prompt, ShouldContainSubstring, "自由发散讨论")
 		So(prompt, ShouldContainSubstring, "群聊背景：\n群里常说的 ATL 指的是 All Time Low。")
@@ -21,7 +21,7 @@ func TestBuildStagePrompt(t *testing.T) {
 	})
 
 	Convey("分话题阶段提示词包含用户配置的话题组", t, func() {
-		prompt := buildStagePromptForChat(model.LanguageZhCN, model.Chat{
+		prompt := buildStagePromptForChat(model.SummaryLanguageZhCN, model.Chat{
 			SummaryMode: model.SummaryModeChatTopic,
 			TopicGroups: []model.TopicGroup{
 				{Name: "新闻", Description: "政策、市场、突发事件"},
@@ -38,7 +38,7 @@ func TestBuildStagePrompt(t *testing.T) {
 
 func TestBuildFinalPrompt(t *testing.T) {
 	Convey("默认最终提示词聚焦话题与群体判断", t, func() {
-		prompt := buildFinalPrompt(model.LanguageZhCN, "", "")
+		prompt := buildFinalPrompt(model.SummaryLanguageZhCN, "", "")
 
 		So(prompt, ShouldContainSubstring, "自由讨论群")
 		So(prompt, ShouldContainSubstring, "## 今日主要结论")
@@ -48,7 +48,7 @@ func TestBuildFinalPrompt(t *testing.T) {
 	})
 
 	Convey("英文最终提示词要求英文输出", t, func() {
-		prompt := buildFinalPrompt(model.LanguageEN, "ATL means All Time Low.", "Keep important links.")
+		prompt := buildFinalPrompt(model.SummaryLanguageEN, "ATL means All Time Low.", "Keep important links.")
 
 		So(prompt, ShouldContainSubstring, "Write in English")
 		So(prompt, ShouldContainSubstring, "## Key Takeaways")
@@ -57,8 +57,14 @@ func TestBuildFinalPrompt(t *testing.T) {
 		So(strings.Contains(prompt, "## 今日主要结论"), ShouldBeFalse)
 	})
 
+	Convey("俄语、阿拉伯语和自定义语言会写入明确输出语言要求", t, func() {
+		So(buildFinalPrompt(model.SummaryLanguageRU, "", ""), ShouldContainSubstring, "Write the entire output in Russian")
+		So(buildFinalPrompt(model.SummaryLanguageAR, "", ""), ShouldContainSubstring, "Write the entire output in Arabic")
+		So(buildFinalPrompt(model.SummaryOutputLanguage("Japanese"), "", ""), ShouldContainSubstring, "Write the entire output in Japanese")
+	})
+
 	Convey("分话题最终提示词要求按话题日报输出", t, func() {
-		prompt := buildFinalPromptForChat(model.LanguageZhCN, model.Chat{
+		prompt := buildFinalPromptForChat(model.SummaryLanguageZhCN, model.Chat{
 			SummaryMode: model.SummaryModeChatTopic,
 			TopicGroups: []model.TopicGroup{
 				{Name: "体育", Description: "比赛、转会、赛事讨论"},
