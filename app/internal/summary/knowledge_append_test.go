@@ -31,6 +31,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 				SpaceName:         "供需频道",
 				FactType:          "供应",
 				Title:             "出售二手显示器",
+				SubjectSenderID:   9,
 				SubjectSenderName: "Bob",
 				Confidence:        0.91,
 			},
@@ -40,7 +41,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 
 		So(result, ShouldContainSubstring, "## 当前有效情报")
 		So(result, ShouldContainSubstring, "### 供应")
-		So(result, ShouldContainSubstring, "- Bob：出售二手显示器（置信度 91%）")
+		So(result, ShouldContainSubstring, "- [Bob](tg://user?id=9)：出售二手显示器（置信度 91%）")
 		So(result, ShouldContainSubstring, "### 需求")
 		So(result, ShouldContainSubstring, "- @alice_001：需要 RTX 4090（置信度 86%）")
 	})
@@ -59,6 +60,6 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 
 		So(result, ShouldContainSubstring, "## Active Knowledge")
 		So(result, ShouldContainSubstring, "### Supply")
-		So(result, ShouldContainSubstring, "- User 42: Selling a camera (confidence 80%)")
+		So(result, ShouldContainSubstring, "- [User 42](tg://user?id=42): Selling a camera (confidence 80%)")
 	})
 }

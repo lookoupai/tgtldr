@@ -15,25 +15,26 @@ func TestFormatQueryResult(t *testing.T) {
 			FactType:          "demand",
 			Title:             "需要 RTX 4090",
 			ChatTitle:         "供需群",
+			SubjectSenderID:   7,
 			SubjectSenderName: "Alice",
-			SubjectUsername:   "alice_001",
 			LastSeenAt:        seenAt,
 		}
 		subject := model.KnowledgeSubject{
-			DisplayName:     "@alice_001",
-			FactCount:       1,
-			FactTypes:       []string{"demand"},
-			LastSeenAt:      seenAt,
-			Facts:           []model.KnowledgeFact{fact},
-			SubjectUsername: "alice_001",
+			DisplayName:       "Alice",
+			FactCount:         1,
+			FactTypes:         []string{"demand"},
+			LastSeenAt:        seenAt,
+			Facts:             []model.KnowledgeFact{fact},
+			SubjectSenderID:   7,
+			SubjectSenderName: "Alice",
 		}
 
 		content := FormatQueryResult(model.LanguageZhCN, "4090", "demand", []model.KnowledgeFact{fact}, []model.KnowledgeSubject{subject})
 
 		So(content, ShouldContainSubstring, "## 知识查询结果")
 		So(content, ShouldContainSubstring, "条件：关键词「4090」，类型「demand」")
-		So(content, ShouldContainSubstring, "- @alice_001：需要 RTX 4090（demand，供需群，2026-05-02 09:30）")
-		So(content, ShouldContainSubstring, "- @alice_001：1 条；类型：demand；代表：需要 RTX 4090")
+		So(content, ShouldContainSubstring, "- [Alice](tg://user?id=7)：需要 RTX 4090（demand，供需群，2026-05-02 09:30）")
+		So(content, ShouldContainSubstring, "- [Alice](tg://user?id=7)：1 条；类型：demand；代表：需要 RTX 4090")
 	})
 
 	Convey("没有事实时应返回空结果提示", t, func() {

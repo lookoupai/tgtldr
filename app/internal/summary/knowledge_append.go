@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/frederic/tgtldr/app/internal/model"
+	"github.com/frederic/tgtldr/app/internal/telegramfmt"
 )
 
 type knowledgeFactGroupKey struct {
@@ -164,36 +165,10 @@ func knowledgeFactsOtherLabel(language model.Language) string {
 }
 
 func knowledgeFactSubject(fact model.KnowledgeFact, language model.Language) string {
-	if username := telegramUsername(fact.SubjectUsername); username != "" {
-		return "@" + username
+	if ref := telegramfmt.UserReference(language, fact.SubjectSenderID, fact.SubjectSenderName, fact.SubjectUsername); ref != "" {
+		return ref
 	}
-	if name := compactKnowledgeText(fact.SubjectSenderName); name != "" {
-		return name
-	}
-	if fact.SubjectSenderID != 0 {
-		if language == model.LanguageEN {
-			return fmt.Sprintf("User %d", fact.SubjectSenderID)
-		}
-		return fmt.Sprintf("用户 %d", fact.SubjectSenderID)
-	}
-	if language == model.LanguageEN {
-		return "Unknown user"
-	}
-	return "未知用户"
-}
-
-func telegramUsername(username string) string {
-	trimmed := strings.TrimPrefix(strings.TrimSpace(username), "@")
-	if len([]rune(trimmed)) < 5 {
-		return ""
-	}
-	for _, r := range trimmed {
-		if r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || ('0' <= r && r <= '9') {
-			continue
-		}
-		return ""
-	}
-	return trimmed
+	return telegramfmt.UnknownUserLabel(language)
 }
 
 func knowledgeFactSeparator(language model.Language) string {

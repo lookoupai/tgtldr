@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/frederic/tgtldr/app/internal/model"
+	"github.com/frederic/tgtldr/app/internal/telegramfmt"
 )
 
 func FormatQueryResult(language model.Language, query string, factType string, facts []model.KnowledgeFact, subjects []model.KnowledgeSubject) string {
@@ -111,12 +112,12 @@ func formatQueryFact(language model.Language, fact model.KnowledgeFact) string {
 }
 
 func formatQuerySubject(language model.Language, subject model.KnowledgeSubject) string {
-	name := compactText(subject.DisplayName)
+	name := querySubjectName(language, subject.SubjectSenderID, subject.SubjectSenderName, subject.SubjectUsername)
 	if name == "" {
-		name = querySubjectName(language, subject.SubjectSenderID, subject.SubjectSenderName, subject.SubjectUsername)
+		name = compactText(subject.DisplayName)
 	}
 	if name == "" {
-		name = unknownSubject(language)
+		name = telegramfmt.UnknownUserLabel(language)
 	}
 
 	factWord := "条"
@@ -154,19 +155,7 @@ func formatQuerySubject(language model.Language, subject model.KnowledgeSubject)
 }
 
 func querySubjectName(language model.Language, senderID int64, senderName string, username string) string {
-	if normalized := telegramUsername(username); normalized != "" {
-		return "@" + normalized
-	}
-	if name := compactText(senderName); name != "" {
-		return name
-	}
-	if senderID != 0 {
-		if language == model.LanguageEN {
-			return fmt.Sprintf("User %d", senderID)
-		}
-		return fmt.Sprintf("用户 %d", senderID)
-	}
-	return ""
+	return telegramfmt.UserReference(language, senderID, senderName, username)
 }
 
 func subjectFactTitles(subject model.KnowledgeSubject) string {
@@ -180,27 +169,6 @@ func subjectFactTitles(subject model.KnowledgeSubject) string {
 		}
 	}
 	return strings.Join(titles, "；")
-}
-
-func telegramUsername(username string) string {
-	trimmed := strings.TrimPrefix(strings.TrimSpace(username), "@")
-	if len([]rune(trimmed)) < 5 {
-		return ""
-	}
-	for _, r := range trimmed {
-		if r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || ('0' <= r && r <= '9') {
-			continue
-		}
-		return ""
-	}
-	return trimmed
-}
-
-func unknownSubject(language model.Language) string {
-	if language == model.LanguageEN {
-		return "Unknown user"
-	}
-	return "未知用户"
 }
 
 func querySeparator(language model.Language) string {

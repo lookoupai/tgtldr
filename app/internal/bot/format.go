@@ -14,7 +14,7 @@ var (
 	mdHeadingPattern = regexp.MustCompile(`^(#{1,6})\s+(.+)$`)
 	mdBulletPattern  = regexp.MustCompile(`^\s*[-*+]\s+(.+)$`)
 	mdNumberPattern  = regexp.MustCompile(`^\s*(\d+)\.\s+(.+)$`)
-	mdLinkPattern    = regexp.MustCompile(`\[(.*?)\]\((https?://[^\s)]+)\)`)
+	mdLinkPattern    = regexp.MustCompile(`\[(.*?)\]\((https?://[^\s)]+|tg://user\?id=\d+)\)`)
 	mdCodePattern    = regexp.MustCompile("`([^`]+)`")
 	mdBoldPattern    = regexp.MustCompile(`\*\*([^*]+)\*\*`)
 	htmlTagPattern   = regexp.MustCompile(`<[^>]+>`)
