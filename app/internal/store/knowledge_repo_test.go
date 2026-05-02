@@ -135,6 +135,21 @@ func TestNormalizeKnowledgeFactForUpsert(t *testing.T) {
 	})
 }
 
+func TestNormalizeKnowledgeFactForManualCreate(t *testing.T) {
+	Convey("人工事实默认应补 active 状态和 JSON 数据", t, func() {
+		normalized := normalizeKnowledgeFactForUpsert(model.KnowledgeFact{
+			FactType:   " skill ",
+			Title:      " 了解炒币 ",
+			Confidence: 1,
+		})
+
+		So(normalized.FactType, ShouldEqual, "skill")
+		So(normalized.Title, ShouldEqual, "了解炒币")
+		So(normalized.DataJSON, ShouldEqual, "{}")
+		So(normalized.Status, ShouldEqual, model.KnowledgeFactStatusActive)
+	})
+}
+
 func TestNormalizeKnowledgeMaintenanceEvent(t *testing.T) {
 	Convey("维护事件写入前应清理文本并补默认来源", t, func() {
 		event := normalizeKnowledgeMaintenanceEvent(model.KnowledgeMaintenanceEvent{

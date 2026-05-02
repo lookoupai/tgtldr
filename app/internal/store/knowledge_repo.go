@@ -213,6 +213,54 @@ func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFact
 	return items, rows.Err()
 }
 
+func (r *KnowledgeFactRepository) Create(ctx context.Context, fact model.KnowledgeFact) (model.KnowledgeFact, error) {
+	if fact.FirstSeenAt.IsZero() {
+		fact.FirstSeenAt = time.Now()
+	}
+	if fact.LastSeenAt.IsZero() {
+		fact.LastSeenAt = fact.FirstSeenAt
+	}
+	normalized := normalizeKnowledgeFactForUpsert(fact)
+	if !json.Valid([]byte(normalized.DataJSON)) {
+		return model.KnowledgeFact{}, fmt.Errorf("knowledge fact data must be valid JSON")
+	}
+	saved, err := scanKnowledgeFact(rowScanner{row: r.pool.QueryRow(ctx, `
+		with inserted as (
+			insert into knowledge_facts (
+				space_id, chat_id, fact_type, title, data_json, subject_sender_id,
+				subject_sender_name, subject_username, confidence, status,
+				source_message_ids, first_seen_at, last_seen_at, expires_at
+			) values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			returning *
+		)
+		select f.id, f.space_id, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
+		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
+		       f.subject_username, f.confidence, f.status, f.source_message_ids,
+		       f.first_seen_at, f.last_seen_at, f.expires_at, f.created_at, f.updated_at
+		from inserted f
+		left join chats c on c.id = f.chat_id
+	`,
+		normalized.SpaceID,
+		normalized.ChatID,
+		normalized.FactType,
+		normalized.Title,
+		normalized.DataJSON,
+		normalized.SubjectSenderID,
+		normalized.SubjectSenderName,
+		normalized.SubjectUsername,
+		normalized.Confidence,
+		normalized.Status,
+		normalized.SourceMessageIDs,
+		normalized.FirstSeenAt,
+		normalized.LastSeenAt,
+		normalized.ExpiresAt,
+	)})
+	if err != nil {
+		return model.KnowledgeFact{}, fmt.Errorf("create knowledge fact: %w", err)
+	}
+	return saved, nil
+}
+
 func (r *KnowledgeFactRepository) ListSubjects(ctx context.Context, filter KnowledgeSubjectFilter) ([]model.KnowledgeSubject, error) {
 	limit := filter.Limit
 	if limit <= 0 || limit > 100 {

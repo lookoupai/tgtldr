@@ -136,8 +136,12 @@ func (r *Router) handleKnowledgeRun(w http.ResponseWriter, req *http.Request, id
 }
 
 func (r *Router) handleKnowledgeFacts(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodGet {
+	if req.Method != http.MethodGet && req.Method != http.MethodPost {
 		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if req.Method == http.MethodPost {
+		r.handleCreateKnowledgeFact(w, req)
 		return
 	}
 
@@ -167,6 +171,72 @@ func (r *Router) handleKnowledgeFacts(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 	httpx.JSON(w, http.StatusOK, items)
+}
+
+func (r *Router) handleCreateKnowledgeFact(w http.ResponseWriter, req *http.Request) {
+	var payload model.KnowledgeFact
+	if err := httpx.DecodeJSON(req, &payload); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if payload.SpaceID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请选择知识空间。", "Choose a knowledge space."))
+		return
+	}
+	if payload.ChatID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请选择群组。", "Choose a chat."))
+		return
+	}
+	if strings.TrimSpace(payload.FactType) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写事实类型。", "Enter fact type."))
+		return
+	}
+	if strings.TrimSpace(payload.Title) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写事实标题。", "Enter fact title."))
+		return
+	}
+	if strings.TrimSpace(payload.DataJSON) == "" {
+		payload.DataJSON = "{}"
+	}
+	if payload.Confidence <= 0 {
+		payload.Confidence = 1
+	}
+	if payload.Confidence > 1 {
+		payload.Confidence = 1
+	}
+	payload.Status = model.KnowledgeFactStatusActive
+	now := time.Now()
+	payload.FirstSeenAt = now
+	payload.LastSeenAt = now
+
+	space, err := r.store.KnowledgeSpaces.GetByID(req.Context(), payload.SpaceID)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if store.IsNotFound(err) {
+			statusCode = http.StatusNotFound
+		}
+		httpx.Error(w, statusCode, err.Error())
+		return
+	}
+	if _, err := r.store.Chats.GetByID(req.Context(), payload.ChatID); err != nil {
+		statusCode := http.StatusInternalServerError
+		if store.IsNotFound(err) {
+			statusCode = http.StatusNotFound
+		}
+		httpx.Error(w, statusCode, err.Error())
+		return
+	}
+	if !knowledgeSpaceAppliesToChat(space, payload.ChatID) {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "该知识空间不适用于所选群组。", "Knowledge space does not apply to the selected chat."))
+		return
+	}
+
+	saved, err := r.store.KnowledgeFacts.Create(req.Context(), payload)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, saved)
 }
 
 func (r *Router) handleKnowledgeRuns(w http.ResponseWriter, req *http.Request) {
@@ -623,4 +693,16 @@ func knowledgeFactTypeParam(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func knowledgeSpaceAppliesToChat(space model.KnowledgeSpace, chatID int64) bool {
+	if len(space.ChatIDs) == 0 {
+		return true
+	}
+	for _, id := range space.ChatIDs {
+		if id == chatID {
+			return true
+		}
+	}
+	return false
 }

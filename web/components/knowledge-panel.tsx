@@ -66,6 +66,8 @@ type KnowledgeSpaceExport = {
 
 const defaultTemplateKey: KnowledgeTemplateKey = "general";
 
+const defaultManualFactType = "skill";
+
 const knowledgeSpaceTemplates: KnowledgeSpaceTemplate[] = [
   {
     key: "general",
@@ -352,6 +354,8 @@ export function KnowledgePanel() {
   const [factQuery, setFactQuery] = useState("");
   const [naturalQuery, setNaturalQuery] = useState("");
   const [maintenanceText, setMaintenanceText] = useState("");
+  const [manualFact, setManualFact] = useState<KnowledgeFact>(() => newManualFact());
+  const [creatingManualFact, setCreatingManualFact] = useState(false);
   const [runChatId, setRunChatId] = useState<number | "">("");
   const [runDate, setRunDate] = useState(localDateInputValue());
   const deferredFactQuery = useDeferredValue(factQuery);
@@ -520,6 +524,33 @@ export function KnowledgePanel() {
     }
   }
 
+  async function createManualFact() {
+    const error = validateManualFact(manualFact);
+    if (error) {
+      toast.showError(error);
+      return;
+    }
+    setCreatingManualFact(true);
+    try {
+      const saved = await api.createKnowledgeFact({
+        ...manualFact,
+        factType: manualFact.factType.trim(),
+        title: manualFact.title.trim(),
+        dataJson: manualFact.dataJson.trim() || "{}",
+        subjectSenderName: manualFact.subjectSenderName.trim(),
+        subjectUsername: manualFact.subjectUsername.trim().replace(/^@/, ""),
+      });
+      toast.showSuccess(`已新增知识事实「${saved.title}」。`);
+      setSelectedSpaceId(saved.spaceId);
+      setManualFact(newManualFact({ spaceId: saved.spaceId, chatId: saved.chatId }));
+      await Promise.all([loadFacts(saved.spaceId), loadSubjects(saved.spaceId)]);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setCreatingManualFact(false);
+    }
+  }
+
   function exportCurrentSpace() {
     if (!editing) {
       return;
@@ -655,6 +686,13 @@ export function KnowledgePanel() {
     () => new Map(chats.map((chat) => [chat.id, chat.title])),
     [chats],
   );
+  const manualFactChatOptions = useMemo(() => {
+    const space = spaces.find((item) => item.id === manualFact.spaceId);
+    if (!space || space.chatIds.length === 0) {
+      return chats;
+    }
+    return chats.filter((chat) => space.chatIds.includes(chat.id));
+  }, [chats, manualFact.spaceId, spaces]);
   const spaceNameByID = useMemo(
     () => new Map(spaces.map((space) => [space.id, space.name])),
     [spaces],
@@ -1133,6 +1171,144 @@ export function KnowledgePanel() {
       </Surface>
 
       <Surface
+        title="人工新增事实"
+        description="用于补录 AI 没抽到、但长期有价值的知识。"
+      >
+        <div className="form-stack">
+          <div className="form-grid">
+            <Field label="知识空间" required>
+              <AppSelect
+                onChange={(value) =>
+                  setManualFact((current) => ({
+                    ...current,
+                    spaceId: Number(value) || 0,
+                    chatId: 0,
+                  }))
+                }
+                options={[
+                  { value: "", label: "选择知识空间" },
+                  ...spaces.map((space) => ({
+                    value: String(space.id),
+                    label: space.name,
+                  })),
+                ]}
+                value={manualFact.spaceId ? String(manualFact.spaceId) : ""}
+              />
+            </Field>
+            <Field label="群组" required>
+              <AppSelect
+                onChange={(value) =>
+                  setManualFact((current) => ({
+                    ...current,
+                    chatId: Number(value) || 0,
+                  }))
+                }
+                options={[
+                  { value: "", label: "选择群组" },
+                  ...manualFactChatOptions.map((chat) => ({
+                    value: String(chat.id),
+                    label: chat.title,
+                  })),
+                ]}
+                value={manualFact.chatId ? String(manualFact.chatId) : ""}
+              />
+            </Field>
+            <Field label="类型" required>
+              <Input
+                onChange={(event) =>
+                  setManualFact((current) => ({
+                    ...current,
+                    factType: event.target.value,
+                  }))
+                }
+                placeholder="skill / demand / supply"
+                value={manualFact.factType}
+              />
+            </Field>
+            <Field label="置信度">
+              <Input
+                max={1}
+                min={0.1}
+                onChange={(event) =>
+                  setManualFact((current) => ({
+                    ...current,
+                    confidence: Number(event.target.value),
+                  }))
+                }
+                step={0.05}
+                type="number"
+                value={manualFact.confidence}
+              />
+            </Field>
+          </div>
+
+          <Field label="标题" required>
+            <Input
+              onChange={(event) =>
+                setManualFact((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+              placeholder="Alice 了解炒币"
+              value={manualFact.title}
+            />
+          </Field>
+
+          <div className="form-grid">
+            <Field label="用户名">
+              <Input
+                onChange={(event) =>
+                  setManualFact((current) => ({
+                    ...current,
+                    subjectUsername: event.target.value,
+                  }))
+                }
+                placeholder="@alice"
+                value={manualFact.subjectUsername}
+              />
+            </Field>
+            <Field label="显示名">
+              <Input
+                onChange={(event) =>
+                  setManualFact((current) => ({
+                    ...current,
+                    subjectSenderName: event.target.value,
+                  }))
+                }
+                placeholder="Alice"
+                value={manualFact.subjectSenderName}
+              />
+            </Field>
+          </div>
+
+          <Field label="数据 JSON">
+            <Textarea
+              onChange={(event) =>
+                setManualFact((current) => ({
+                  ...current,
+                  dataJson: event.target.value,
+                }))
+              }
+              rows={5}
+              value={manualFact.dataJson}
+            />
+          </Field>
+
+          <div className="editor-footer">
+            <p className="muted">人工新增的事实会立即进入 active 状态，并参与后续查询和摘要附加。</p>
+            <Button
+              disabled={creatingManualFact}
+              onClick={() => startTransition(() => void createManualFact())}
+              type="button"
+            >
+              {creatingManualFact ? "保存中..." : "新增事实"}
+            </Button>
+          </div>
+        </div>
+      </Surface>
+
+      <Surface
         title="维护记录"
         description="记录事实被恢复、过期或忽略的来源，便于排查知识库状态变化。"
       >
@@ -1477,6 +1653,28 @@ function newKnowledgeSpace(): KnowledgeSpace {
   }, defaultTemplateKey);
 }
 
+function newManualFact(overrides: Partial<KnowledgeFact> = {}): KnowledgeFact {
+  return {
+    id: 0,
+    spaceId: 0,
+    chatId: 0,
+    factType: defaultManualFactType,
+    title: "",
+    dataJson: schemaString({ area: "", evidence: "", level: "" }),
+    subjectSenderId: 0,
+    subjectSenderName: "",
+    subjectUsername: "",
+    confidence: 1,
+    status: "active",
+    sourceMessageIds: [],
+    firstSeenAt: "",
+    lastSeenAt: "",
+    createdAt: "",
+    updatedAt: "",
+    ...overrides,
+  };
+}
+
 function applyKnowledgeTemplate(
   space: KnowledgeSpace,
   templateKey: KnowledgeTemplateKey,
@@ -1616,6 +1814,30 @@ function validateSpace(space: KnowledgeSpace) {
   }
   if (space.retentionDays <= 0) {
     return "默认保留天数必须大于 0。";
+  }
+  return "";
+}
+
+function validateManualFact(fact: KnowledgeFact) {
+  if (!fact.spaceId) {
+    return "请选择知识空间。";
+  }
+  if (!fact.chatId) {
+    return "请选择群组。";
+  }
+  if (!fact.factType.trim()) {
+    return "请填写事实类型。";
+  }
+  if (!fact.title.trim()) {
+    return "请填写事实标题。";
+  }
+  try {
+    JSON.parse(fact.dataJson || "{}");
+  } catch {
+    return "数据 JSON 必须是合法 JSON。";
+  }
+  if (fact.confidence <= 0 || fact.confidence > 1) {
+    return "置信度必须在 0 到 1 之间。";
   }
   return "";
 }

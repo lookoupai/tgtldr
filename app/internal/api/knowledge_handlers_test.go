@@ -24,6 +24,19 @@ func TestKnowledgeFactTypeParam(t *testing.T) {
 	})
 }
 
+func TestKnowledgeSpaceAppliesToChat(t *testing.T) {
+	Convey("空群组绑定适用于所有群组", t, func() {
+		So(knowledgeSpaceAppliesToChat(model.KnowledgeSpace{}, 42), ShouldBeTrue)
+	})
+
+	Convey("存在群组绑定时只允许匹配群组", t, func() {
+		space := model.KnowledgeSpace{ChatIDs: []int64{1, 2}}
+
+		So(knowledgeSpaceAppliesToChat(space, 2), ShouldBeTrue)
+		So(knowledgeSpaceAppliesToChat(space, 3), ShouldBeFalse)
+	})
+}
+
 func TestNormalizeKnowledgeQueryLimit(t *testing.T) {
 	Convey("知识查询限制应有默认值和上限", t, func() {
 		So(normalizeKnowledgeQueryLimit(0), ShouldEqual, 20)

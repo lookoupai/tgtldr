@@ -215,6 +215,11 @@ export const api = {
         })}`,
       ),
     ),
+  createKnowledgeFact: (payload: KnowledgeFact) =>
+    request<KnowledgeFact>("/api/knowledge/facts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   listKnowledgeSubjects: async (filters?: {
     q?: string;
     spaceId?: number;
