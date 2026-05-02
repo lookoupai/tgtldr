@@ -23,3 +23,12 @@ func TestKnowledgeFactTypeParam(t *testing.T) {
 		So(knowledgeFactTypeParam(" ", ""), ShouldEqual, "")
 	})
 }
+
+func TestNormalizeKnowledgeQueryLimit(t *testing.T) {
+	Convey("知识查询限制应有默认值和上限", t, func() {
+		So(normalizeKnowledgeQueryLimit(0), ShouldEqual, 20)
+		So(normalizeKnowledgeQueryLimit(-1), ShouldEqual, 20)
+		So(normalizeKnowledgeQueryLimit(30), ShouldEqual, 30)
+		So(normalizeKnowledgeQueryLimit(101), ShouldEqual, 100)
+	})
+}

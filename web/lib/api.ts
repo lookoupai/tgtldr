@@ -6,6 +6,7 @@ import {
   Chat,
   HistoryBackfillTask,
   KnowledgeFact,
+  KnowledgeQueryResult,
   KnowledgeRun,
   KnowledgeSpace,
   KnowledgeSubject,
@@ -228,6 +229,23 @@ export const api = {
         })}`,
       ),
     ),
+  sendKnowledgeQuery: (filters?: {
+    q?: string;
+    spaceId?: number;
+    chatId?: number;
+    factType?: string;
+    limit?: number;
+  }) =>
+    request<KnowledgeQueryResult>("/api/knowledge/query/send", {
+      method: "POST",
+      body: JSON.stringify({
+        q: filters?.q?.trim() || "",
+        spaceId: filters?.spaceId,
+        chatId: filters?.chatId,
+        type: filters?.factType?.trim() || "",
+        limit: filters?.limit,
+      }),
+    }),
   listKnowledgeRuns: async (filters?: {
     spaceId?: number;
     chatId?: number;

@@ -53,6 +53,7 @@ export function KnowledgePanel() {
   const [runs, setRuns] = useState<KnowledgeRun[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
+  const [sendingKnowledgeQuery, setSendingKnowledgeQuery] = useState(false);
   const [selectedSpaceId, setSelectedSpaceId] = useState<number | "all">("all");
   const [statusFilter, setStatusFilter] = useState<FactStatusFilter>("all");
   const [factChatId, setFactChatId] = useState<number | "all">("all");
@@ -187,6 +188,24 @@ export function KnowledgePanel() {
       await Promise.all([loadFacts(), loadSubjects()]);
     } catch (err) {
       toast.showError(asMessage(err));
+    }
+  }
+
+  async function sendKnowledgeQueryToBot() {
+    setSendingKnowledgeQuery(true);
+    try {
+      const result = await api.sendKnowledgeQuery({
+        q: deferredFactQuery,
+        spaceId: selectedSpaceId === "all" ? undefined : selectedSpaceId,
+        chatId: factChatId === "all" ? undefined : factChatId,
+        factType: deferredFactTypeFilter,
+        limit: 20,
+      });
+      toast.showSuccess(result.message || "知识查询结果已发送。");
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setSendingKnowledgeQuery(false);
     }
   }
 
@@ -527,6 +546,16 @@ export function KnowledgePanel() {
       <Surface
         title="用户画像"
         description="按用户聚合 active 事实，后续查询机器人可复用同一类结果。"
+        actions={
+          <Button
+            disabled={sendingKnowledgeQuery}
+            onClick={() => startTransition(() => void sendKnowledgeQueryToBot())}
+            type="button"
+            variant="secondary"
+          >
+            {sendingKnowledgeQuery ? "发送中..." : "发送到 Bot"}
+          </Button>
+        }
       >
         {subjects.length === 0 ? (
           <EmptyState title="暂无用户画像" description="有带用户信息的 active 事实后会在这里聚合展示。" />

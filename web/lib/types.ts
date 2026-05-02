@@ -218,6 +218,15 @@ export type KnowledgeSubject = {
   facts: KnowledgeFact[];
 };
 
+export type KnowledgeQueryResult = {
+  query: string;
+  factType: string;
+  facts: KnowledgeFact[];
+  subjects: KnowledgeSubject[];
+  content: string;
+  message?: string;
+};
+
 export type KnowledgeRun = {
   id: number;
   spaceId: number;

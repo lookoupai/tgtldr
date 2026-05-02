@@ -234,32 +234,117 @@ func (r *Router) handleKnowledgeQuery(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	query := req.URL.Query()
-	limit := 20
-	if parsed, err := strconv.Atoi(strings.TrimSpace(query.Get("limit"))); err == nil && parsed > 0 && parsed <= 100 {
-		limit = parsed
-	}
-	filter := store.KnowledgeFactFilter{
-		Status:   model.KnowledgeFactStatusActive,
-		FactType: knowledgeFactTypeParam(query.Get("type"), query.Get("factType")),
-		Query:    strings.TrimSpace(query.Get("q")),
-		Limit:    limit,
-	}
-	if spaceID, err := strconv.ParseInt(strings.TrimSpace(query.Get("spaceId")), 10, 64); err == nil {
-		filter.SpaceID = spaceID
-	}
-	if chatID, err := strconv.ParseInt(strings.TrimSpace(query.Get("chatId")), 10, 64); err == nil {
-		filter.ChatID = chatID
-	}
-
-	if err := r.store.KnowledgeFacts.ExpireDue(req.Context(), time.Now()); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	facts, err := r.store.KnowledgeFacts.List(req.Context(), filter)
+	result, err := r.buildKnowledgeQueryResult(req, knowledgeQueryRequestFromQuery(req))
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	httpx.JSON(w, http.StatusOK, result)
+}
+
+func (r *Router) handleSendKnowledgeQuery(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var payload knowledgeQueryRequest
+	if err := httpx.DecodeJSON(req, &payload); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := r.buildKnowledgeQueryResult(req, payload)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	settings, err := r.store.Settings.Get(req.Context())
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !settings.BotEnabled {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "Bot 推送未启用。", "Bot delivery is disabled."))
+		return
+	}
+	if strings.TrimSpace(settings.BotToken) == "" || strings.TrimSpace(settings.BotTargetChatID) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "Bot Token 或目标 Chat ID 未配置。", "Bot token or target chat id is not configured."))
+		return
+	}
+	if r.bot == nil {
+		httpx.Error(w, http.StatusInternalServerError, "bot service is not configured")
+		return
+	}
+
+	if err := r.bot.SendMessageWithLanguage(req.Context(), settings.BotToken, settings.BotTargetChatID, result.Content, r.currentLanguage(req.Context())); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"message":  r.localized(req.Context(), "知识查询结果已发送。", "Knowledge query result sent."),
+		"query":    result.Query,
+		"factType": result.FactType,
+		"facts":    result.Facts,
+		"subjects": result.Subjects,
+		"content":  result.Content,
+	})
+}
+
+type knowledgeQueryRequest struct {
+	Query          string `json:"q"`
+	FactType       string `json:"type"`
+	LegacyFactType string `json:"factType"`
+	SpaceID        int64  `json:"spaceId"`
+	ChatID         int64  `json:"chatId"`
+	Limit          int    `json:"limit"`
+}
+
+type knowledgeQueryResult struct {
+	Query    string                   `json:"query"`
+	FactType string                   `json:"factType"`
+	Facts    []model.KnowledgeFact    `json:"facts"`
+	Subjects []model.KnowledgeSubject `json:"subjects"`
+	Content  string                   `json:"content"`
+}
+
+func knowledgeQueryRequestFromQuery(req *http.Request) knowledgeQueryRequest {
+	query := req.URL.Query()
+	payload := knowledgeQueryRequest{
+		Query:    strings.TrimSpace(query.Get("q")),
+		FactType: knowledgeFactTypeParam(query.Get("type"), query.Get("factType")),
+	}
+	if spaceID, err := strconv.ParseInt(strings.TrimSpace(query.Get("spaceId")), 10, 64); err == nil {
+		payload.SpaceID = spaceID
+	}
+	if chatID, err := strconv.ParseInt(strings.TrimSpace(query.Get("chatId")), 10, 64); err == nil {
+		payload.ChatID = chatID
+	}
+	if limit, err := strconv.Atoi(strings.TrimSpace(query.Get("limit"))); err == nil {
+		payload.Limit = limit
+	}
+	return payload
+}
+
+func (r *Router) buildKnowledgeQueryResult(req *http.Request, payload knowledgeQueryRequest) (knowledgeQueryResult, error) {
+	limit := normalizeKnowledgeQueryLimit(payload.Limit)
+	filter := store.KnowledgeFactFilter{
+		SpaceID:  payload.SpaceID,
+		ChatID:   payload.ChatID,
+		Status:   model.KnowledgeFactStatusActive,
+		FactType: knowledgeFactTypeParam(payload.FactType, payload.LegacyFactType),
+		Query:    strings.TrimSpace(payload.Query),
+		Limit:    limit,
+	}
+
+	if err := r.store.KnowledgeFacts.ExpireDue(req.Context(), time.Now()); err != nil {
+		return knowledgeQueryResult{}, err
+	}
+	facts, err := r.store.KnowledgeFacts.List(req.Context(), filter)
+	if err != nil {
+		return knowledgeQueryResult{}, err
 	}
 	subjects, err := r.store.KnowledgeFacts.ListSubjects(req.Context(), store.KnowledgeSubjectFilter{
 		SpaceID:  filter.SpaceID,
@@ -269,17 +354,26 @@ func (r *Router) handleKnowledgeQuery(w http.ResponseWriter, req *http.Request) 
 		Limit:    limit,
 	})
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, err.Error())
-		return
+		return knowledgeQueryResult{}, err
 	}
 
-	httpx.JSON(w, http.StatusOK, map[string]any{
-		"query":    filter.Query,
-		"factType": filter.FactType,
-		"facts":    facts,
-		"subjects": subjects,
-		"content":  knowledge.FormatQueryResult(r.currentLanguage(req.Context()), filter.Query, filter.FactType, facts, subjects),
-	})
+	return knowledgeQueryResult{
+		Query:    filter.Query,
+		FactType: filter.FactType,
+		Facts:    facts,
+		Subjects: subjects,
+		Content:  knowledge.FormatQueryResult(r.currentLanguage(req.Context()), filter.Query, filter.FactType, facts, subjects),
+	}, nil
+}
+
+func normalizeKnowledgeQueryLimit(limit int) int {
+	if limit <= 0 {
+		return 20
+	}
+	if limit > 100 {
+		return 100
+	}
+	return limit
 }
 
 func (r *Router) handleKnowledgeFactByID(w http.ResponseWriter, req *http.Request) {
