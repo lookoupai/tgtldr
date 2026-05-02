@@ -38,7 +38,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 
 		result := appendKnowledgeFacts(content, facts, model.LanguageZhCN)
 
-		So(result, ShouldContainSubstring, "## 今日新增情报")
+		So(result, ShouldContainSubstring, "## 当前有效情报")
 		So(result, ShouldContainSubstring, "### 供应")
 		So(result, ShouldContainSubstring, "- Bob：出售二手显示器（置信度 91%）")
 		So(result, ShouldContainSubstring, "### 需求")
@@ -57,7 +57,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 
 		result := appendKnowledgeFacts("", facts, model.LanguageEN)
 
-		So(result, ShouldContainSubstring, "## Newly Captured Knowledge")
+		So(result, ShouldContainSubstring, "## Active Knowledge")
 		So(result, ShouldContainSubstring, "### Supply")
 		So(result, ShouldContainSubstring, "- User 42: Selling a camera (confidence 80%)")
 	})

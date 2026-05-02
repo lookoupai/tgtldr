@@ -327,7 +327,7 @@ func (r *KnowledgeFactRepository) ExpireDue(ctx context.Context, now time.Time) 
 	return nil
 }
 
-func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int64, start, end, now time.Time) ([]model.KnowledgeFact, error) {
+func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int64, now time.Time) ([]model.KnowledgeFact, error) {
 	rows, err := r.pool.Query(ctx, `
 		select f.id, f.space_id, s.name, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
 		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
@@ -338,27 +338,12 @@ func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int
 		left join chats c on c.id = f.chat_id
 		where f.chat_id = $1
 		  and f.status = $2
-		  and (f.expires_at is null or f.expires_at > $5)
+		  and (f.expires_at is null or f.expires_at > $3)
 		  and s.enabled = true
 		  and s.include_in_summary = true
 		  and (cardinality(s.chat_ids) = 0 or $1 = any(s.chat_ids))
-		  and (
-		      exists (
-		          select 1
-		          from messages m
-		          where m.chat_id = f.chat_id
-		            and m.telegram_message_id = any(f.source_message_ids)
-		            and m.message_time >= $3
-		            and m.message_time < $4
-		      )
-		      or (
-		          cardinality(f.source_message_ids) = 0
-		          and f.first_seen_at >= $3
-		          and f.first_seen_at < $4
-		      )
-		  )
 		order by lower(s.name) asc, lower(f.fact_type) asc, f.confidence desc, f.last_seen_at desc, f.id desc
-	`, chatID, model.KnowledgeFactStatusActive, start, end, now)
+	`, chatID, model.KnowledgeFactStatusActive, now)
 	if err != nil {
 		return nil, fmt.Errorf("query summary knowledge facts: %w", err)
 	}

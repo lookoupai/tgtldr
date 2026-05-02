@@ -140,9 +140,9 @@ func formatKnowledgeFact(fact model.KnowledgeFact, language model.Language) stri
 
 func knowledgeFactsSectionTitle(language model.Language) string {
 	if language == model.LanguageEN {
-		return "## Newly Captured Knowledge"
+		return "## Active Knowledge"
 	}
-	return "## 今日新增情报"
+	return "## 当前有效情报"
 }
 
 func knowledgeFactsGroupTitle(key knowledgeFactGroupKey, multipleSpaces bool, language model.Language) string {
