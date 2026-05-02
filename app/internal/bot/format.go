@@ -116,9 +116,13 @@ func formatInlineTelegramHTML(input string) string {
 }
 
 func formatTelegramMessage(markdown string, language model.Language) string {
+	parts := formatTelegramMessages(markdown, language)
+	return strings.Join(parts, "\n\n")
+}
+
+func formatTelegramMessages(markdown string, _ model.Language) []string {
 	formatted := formatTelegramHTML(markdown)
-	truncated, _ := truncateTelegramHTML(formatted, telegramMessageVisibleLimit, language)
-	return truncated
+	return splitTelegramHTML(formatted, telegramMessageVisibleLimit)
 }
 
 func telegramVisibleLength(input string) int {
@@ -180,6 +184,127 @@ func telegramTruncationNotice(language model.Language) string {
 		return "Note: This Telegram message was truncated because of the single-message length limit. Open the web app to read the full summary."
 	}
 	return "注：由于 Telegram 单条消息长度限制，后续内容已截断，请到网页端查看完整摘要。"
+}
+
+type telegramOpenTag struct {
+	name string
+	raw  string
+}
+
+func splitTelegramHTML(input string, limit int) []string {
+	if strings.TrimSpace(input) == "" {
+		return []string{input}
+	}
+	if limit <= 0 || telegramVisibleLength(input) <= limit {
+		return []string{input}
+	}
+
+	var parts []string
+	var builder strings.Builder
+	tagStack := make([]telegramOpenTag, 0, 8)
+	visible := 0
+
+	flush := func() {
+		if builder.Len() == 0 {
+			return
+		}
+		for i := len(tagStack) - 1; i >= 0; i-- {
+			builder.WriteString("</")
+			builder.WriteString(tagStack[i].name)
+			builder.WriteByte('>')
+		}
+		part := strings.TrimSpace(builder.String())
+		if part != "" {
+			parts = append(parts, part)
+		}
+		builder.Reset()
+		for _, tag := range tagStack {
+			builder.WriteString(tag.raw)
+		}
+		visible = 0
+	}
+
+	for index := 0; index < len(input); {
+		token, tokenVisible, nextIndex := nextTelegramHTMLToken(input, index)
+		if token == "" && nextIndex <= index {
+			break
+		}
+		if tokenVisible > 0 && visible > 0 && visible+tokenVisible > limit {
+			flush()
+		}
+
+		builder.WriteString(token)
+		updateTelegramOpenTagStack(&tagStack, token)
+		visible += tokenVisible
+		index = nextIndex
+
+		if visible >= limit && index < len(input) {
+			flush()
+		}
+	}
+
+	if strings.TrimSpace(builder.String()) != "" {
+		flush()
+	}
+	if len(parts) == 0 {
+		return []string{input}
+	}
+	return parts
+}
+
+func nextTelegramHTMLToken(input string, index int) (token string, visible int, nextIndex int) {
+	if index >= len(input) {
+		return "", 0, index
+	}
+
+	switch input[index] {
+	case '<':
+		end := strings.IndexByte(input[index:], '>')
+		if end < 0 {
+			return "", 0, len(input)
+		}
+		end += index
+		return input[index : end+1], 0, end + 1
+	case '&':
+		end := strings.IndexByte(input[index:], ';')
+		if end < 0 {
+			r, size := utf8.DecodeRuneInString(input[index:])
+			if r == utf8.RuneError && size == 0 {
+				return "", 0, len(input)
+			}
+			return string(r), 1, index + size
+		}
+		end += index
+		entity := input[index : end+1]
+		return entity, utf8.RuneCountInString(html.UnescapeString(entity)), end + 1
+	default:
+		r, size := utf8.DecodeRuneInString(input[index:])
+		if r == utf8.RuneError && size == 0 {
+			return "", 0, len(input)
+		}
+		return string(r), 1, index + size
+	}
+}
+
+func updateTelegramOpenTagStack(stack *[]telegramOpenTag, token string) {
+	if !strings.HasPrefix(token, "<") {
+		return
+	}
+	name, closing, ok := parseTelegramTag(token)
+	if !ok {
+		return
+	}
+	if closing {
+		for index := len(*stack) - 1; index >= 0; index-- {
+			if (*stack)[index].name != name {
+				continue
+			}
+			*stack = (*stack)[:index]
+			return
+		}
+		return
+	}
+	*stack = append(*stack, telegramOpenTag{name: name, raw: token})
 }
 
 func truncateTelegramHTMLVisible(input string, limit int) string {

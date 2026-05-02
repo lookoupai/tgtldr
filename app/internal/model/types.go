@@ -3,10 +3,13 @@ package model
 import "time"
 
 type DeliveryMode string
+type SummaryMode string
 
 const (
 	DeliveryModeDashboard DeliveryMode = "dashboard"
 	DeliveryModeBot       DeliveryMode = "bot"
+	SummaryModeChannel    SummaryMode  = "channel"
+	SummaryModeChatTopic  SummaryMode  = "chat_topic"
 )
 
 type SummaryStatus string
@@ -34,6 +37,13 @@ func NormalizeLanguage(language Language) Language {
 		return LanguageEN
 	}
 	return LanguageZhCN
+}
+
+func NormalizeSummaryMode(mode SummaryMode) SummaryMode {
+	if mode == SummaryModeChatTopic {
+		return SummaryModeChatTopic
+	}
+	return SummaryModeChannel
 }
 
 type AppSettings struct {
@@ -105,6 +115,8 @@ type Chat struct {
 	SummaryEnabled   bool         `json:"summaryEnabled"`
 	SummaryContext   string       `json:"summaryContext"`
 	SummaryPrompt    string       `json:"summaryPrompt"`
+	SummaryMode      SummaryMode  `json:"summaryMode"`
+	TopicGroups      []TopicGroup `json:"topicGroups"`
 	SummaryTimeLocal string       `json:"summaryTimeLocal"`
 	SummaryTimezone  string       `json:"summaryTimezone"`
 	DeliveryMode     DeliveryMode `json:"deliveryMode"`
@@ -114,6 +126,11 @@ type Chat struct {
 	FilteredKeywords []string     `json:"filteredKeywords"`
 	CreatedAt        time.Time    `json:"createdAt"`
 	UpdatedAt        time.Time    `json:"updatedAt"`
+}
+
+type TopicGroup struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type Message struct {

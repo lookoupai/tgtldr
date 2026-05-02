@@ -53,8 +53,8 @@ func (s *Service) BuildContextPreview(ctx context.Context, summary model.Summary
 	if err != nil {
 		return model.SummaryContextPreview{}, err
 	}
-	stagePrompt := buildStagePrompt(settings.Language, chat.SummaryContext, chat.SummaryPrompt)
-	finalPrompt := buildFinalPrompt(settings.Language, chat.SummaryContext, chat.SummaryPrompt)
+	stagePrompt := buildStagePromptForChat(settings.Language, chat)
+	finalPrompt := buildFinalPromptForChat(settings.Language, chat)
 	budget := resolveSummaryBudget(settings, resolveSummaryModel(chat, settings), stagePrompt)
 	chunks := SplitMessages(filteredMessages, budget.ChunkTokenBudget)
 	preview := model.SummaryContextPreview{
@@ -129,8 +129,8 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		Timeout: s.openAITimeout,
 	})
 
-	stagePrompt := buildStagePrompt(settings.Language, chat.SummaryContext, chat.SummaryPrompt)
-	finalPrompt := buildFinalPrompt(settings.Language, chat.SummaryContext, chat.SummaryPrompt)
+	stagePrompt := buildStagePromptForChat(settings.Language, chat)
+	finalPrompt := buildFinalPromptForChat(settings.Language, chat)
 	budget := resolveSummaryBudget(settings, resolveSummaryModel(chat, settings), stagePrompt)
 	chunks := SplitMessages(filteredMessages, budget.ChunkTokenBudget)
 	summary.ChunkCount = len(chunks)

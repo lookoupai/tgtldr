@@ -30,10 +30,19 @@ func (s *Service) SendMessageWithLanguage(ctx context.Context, token, chatID, te
 		return fmt.Errorf("missing bot token or chat id")
 	}
 
-	formatted := formatTelegramMessage(text, language)
+	parts := formatTelegramMessages(text, language)
+	for index, part := range parts {
+		if err := s.sendHTMLMessage(ctx, token, chatID, part); err != nil {
+			return fmt.Errorf("send bot message part %d/%d: %w", index+1, len(parts), err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) sendHTMLMessage(ctx context.Context, token, chatID, text string) error {
 	payload, err := json.Marshal(map[string]any{
 		"chat_id":                  chatID,
-		"text":                     formatted,
+		"text":                     text,
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": false,
 	})

@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"html"
 	"testing"
 
 	"github.com/frederic/tgtldr/app/internal/model"
@@ -38,7 +37,7 @@ func TestFormatTelegramHTML(t *testing.T) {
 		So(output, ShouldEqual, "<b>分话题总结</b>")
 	})
 
-	Convey("超长消息会自动截断并追加提示", t, func() {
+	Convey("超长消息会自动拆成多段", t, func() {
 		body := stringsJoin(
 			"## 今日主要结论",
 			"",
@@ -49,28 +48,34 @@ func TestFormatTelegramHTML(t *testing.T) {
 			"- "+repeatText("第二段内容。", 500),
 		)
 
-		output := formatTelegramMessage(body, model.LanguageZhCN)
+		parts := formatTelegramMessages(body, model.LanguageZhCN)
 
-		So(telegramVisibleLength(output) <= telegramMessageVisibleLimit, ShouldBeTrue)
-		So(output, ShouldContainSubstring, htmlEscape(telegramTruncationNotice(model.LanguageZhCN)))
-		So(output, ShouldContainSubstring, "<b>【今日主要结论】</b>")
-		So(output, ShouldContainSubstring, "</b>")
+		So(len(parts), ShouldBeGreaterThan, 1)
+		for _, part := range parts {
+			So(telegramVisibleLength(part) <= telegramMessageVisibleLimit, ShouldBeTrue)
+			So(part, ShouldNotContainSubstring, telegramTruncationNotice(model.LanguageZhCN))
+		}
+		So(parts[0], ShouldContainSubstring, "<b>【今日主要结论】</b>")
+		So(parts[len(parts)-1], ShouldContainSubstring, "第二段内容。")
 	})
 
-	Convey("短消息不会追加截断提示", t, func() {
-		output := formatTelegramMessage("## 今日主要结论\n\n- 一切正常", model.LanguageZhCN)
+	Convey("短消息保持单段", t, func() {
+		parts := formatTelegramMessages("## 今日主要结论\n\n- 一切正常", model.LanguageZhCN)
 
-		So(output, ShouldNotContainSubstring, htmlEscape(telegramTruncationNotice(model.LanguageZhCN)))
-		So(output, ShouldContainSubstring, "<b>【今日主要结论】</b>")
+		So(parts, ShouldHaveLength, 1)
+		So(parts[0], ShouldContainSubstring, "<b>【今日主要结论】</b>")
 	})
 
-	Convey("英文语言下截断提示使用英文", t, func() {
-		body := "## Key Takeaways\n\n- " + repeatText("Long summary content. ", 500)
+	Convey("拆分时会闭合并重开跨段标签", t, func() {
+		formatted := formatTelegramHTML("**" + repeatText("粗体内容", 80) + "**")
+		parts := splitTelegramHTML(formatted, 30)
 
-		output := formatTelegramMessage(body, model.LanguageEN)
-
-		So(output, ShouldContainSubstring, htmlEscape(telegramTruncationNotice(model.LanguageEN)))
-		So(output, ShouldNotContainSubstring, htmlEscape(telegramTruncationNotice(model.LanguageZhCN)))
+		So(len(parts), ShouldBeGreaterThan, 1)
+		for _, part := range parts {
+			So(telegramVisibleLength(part) <= 30, ShouldBeTrue)
+			So(part, ShouldStartWith, "<b>")
+			So(part, ShouldEndWith, "</b>")
+		}
 	})
 }
 
@@ -91,8 +96,4 @@ func repeatText(text string, count int) string {
 		result += text
 	}
 	return result
-}
-
-func htmlEscape(input string) string {
-	return html.EscapeString(input)
 }

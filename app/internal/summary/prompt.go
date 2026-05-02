@@ -16,6 +16,22 @@ func buildFinalPrompt(language model.Language, summaryContext string, prompt str
 	return buildSystemPrompt(language, base, summaryContext, prompt)
 }
 
+func buildStagePromptForChat(language model.Language, chat model.Chat) string {
+	if model.NormalizeSummaryMode(chat.SummaryMode) == model.SummaryModeChatTopic {
+		base := stageTopicPromptBase(language, chat.TopicGroups)
+		return buildSystemPrompt(language, base, chat.SummaryContext, chat.SummaryPrompt)
+	}
+	return buildStagePrompt(language, chat.SummaryContext, chat.SummaryPrompt)
+}
+
+func buildFinalPromptForChat(language model.Language, chat model.Chat) string {
+	if model.NormalizeSummaryMode(chat.SummaryMode) == model.SummaryModeChatTopic {
+		base := finalTopicPromptBase(language, chat.TopicGroups)
+		return buildSystemPrompt(language, base, chat.SummaryContext, chat.SummaryPrompt)
+	}
+	return buildFinalPrompt(language, chat.SummaryContext, chat.SummaryPrompt)
+}
+
 func stagePromptBase(language model.Language) string {
 	if language == model.LanguageEN {
 		return `
@@ -98,6 +114,66 @@ Write in English and use this structure:
 
 ## 零散但值得注意的信息
 - 列出提及较少但可能有参考价值的信息
+`
+}
+
+func stageTopicPromptBase(language model.Language, groups []model.TopicGroup) string {
+	definitions := topicGroupDefinitions(language, groups)
+	if language == model.LanguageEN {
+		return `
+You are TGTLDR's topic-aware stage summarizer. You will read one segment of a Telegram group chat transcript and extract useful discussion items grouped by topic.
+
+This group may be a free-form discussion group. Do not mechanically restate messages. Identify topic-level information, judgments, links, disagreements, and unresolved points.
+
+Topic grouping rules:
+` + definitions + `
+
+Rules:
+- Use the configured topic groups when a discussion clearly fits them.
+- If no configured group fits, use "Other".
+- If no topic groups are configured, infer concise topic names from the messages.
+- Preserve evidence level. Do not turn scattered claims into certain facts.
+- If a message includes reply_to and reply_excerpt, use them to understand context.
+
+Write in English and use this structure:
+
+## Topic Candidates
+### <Topic or group name>
+- Key points:
+- Main viewpoints:
+- Evidence strength:
+- Disagreements or uncertainties:
+
+## Notable Items
+- List brief items that may still matter but do not deserve a full topic.
+`
+	}
+	return `
+你是 TGTLDR 的分话题阶段摘要器。你将阅读一段 Telegram 群聊记录，并按话题提炼有信息价值的讨论内容。
+
+这个群聊可能是自由讨论群。不要机械复述消息，而是识别话题层面的信息、判断、链接、分歧和未解决点。
+
+话题分组规则：
+` + definitions + `
+
+规则：
+- 讨论明显符合用户配置的话题组时，优先归入该话题组。
+- 不符合任何配置话题组的内容，归入“其他”。
+- 如果没有配置话题组，请从消息中自行推断简洁的话题名称。
+- 保留证据强度，不要把零散说法包装成确定事实。
+- 如果消息带有 reply_to 和 reply_excerpt，请结合它理解上下文。
+
+请使用中文输出，并按以下结构整理：
+
+## 候选话题
+### <话题或分组名称>
+- 关键内容：
+- 主要观点：
+- 证据强度：
+- 分歧或不确定点：
+
+## 零散但值得注意的信息
+- 列出可能有价值但不足以形成完整话题的内容
 `
 }
 
@@ -194,6 +270,76 @@ Write in English and use this format:
 `
 }
 
+func finalTopicPromptBase(language model.Language, groups []model.TopicGroup) string {
+	definitions := topicGroupDefinitions(language, groups)
+	if language == model.LanguageEN {
+		return `
+You are TGTLDR's final topic digest writer. You will receive stage summaries from one Telegram group and produce one daily digest organized by AI-detected topics.
+
+Topic grouping rules:
+` + definitions + `
+
+Writing requirements:
+1. Merge duplicated points across chunks.
+2. Use configured topic groups when they fit; put unmatched useful items under "Other".
+3. If no topic groups are configured, infer concise topic names from the stage summaries.
+4. Keep the digest concise and useful for fast reading.
+5. Clearly mark weak evidence, disagreements, and unresolved points.
+
+Write in English and use this format:
+
+## Key Takeaways
+- Summarize the 3-6 most important topic-level conclusions from today
+
+## Topic Digest
+
+### <Topic or group name>
+- Summary:
+- Main viewpoints:
+- Current judgment:
+- Disagreements or uncertainties:
+
+## Other Notable Information
+- List useful items that do not fit the main topics
+
+## Still Uncertain
+- List items where the evidence is insufficient or no stable judgment can be formed
+`
+	}
+	return `
+你是 TGTLDR 的最终分话题日报撰写器。你会收到同一个 Telegram 群的多个阶段摘要，请整理成一份按 AI 识别话题组织的日报。
+
+话题分组规则：
+` + definitions + `
+
+写作要求：
+1. 合并不同分块中的重复信息。
+2. 内容适合用户配置的话题组时，归入对应话题组；无法匹配但有价值的内容归入“其他”。
+3. 如果没有配置话题组，请从阶段摘要中自行推断简洁的话题名称。
+4. 保持简洁，适合快速阅读。
+5. 对证据不足、明显分歧和未解决点要明确说明。
+
+请按以下格式输出：
+
+## 今日主要结论
+- 用 3-6 条总结今天最值得关注的话题级结论
+
+## 分话题日报
+
+### <话题或分组名称>
+- 摘要：
+- 主要观点：
+- 当前判断：
+- 分歧或不确定点：
+
+## 其他值得注意的信息
+- 列出不适合归入主要话题但有价值的内容
+
+## 仍不确定的信息
+- 列出样本不足、无法形成稳定判断的内容
+`
+}
+
 func buildSystemPrompt(language model.Language, base string, summaryContext string, prompt string) string {
 	sections := []string{strings.TrimSpace(base)}
 
@@ -206,6 +352,29 @@ func buildSystemPrompt(language model.Language, base string, summaryContext stri
 	}
 
 	return strings.Join(sections, "\n\n")
+}
+
+func topicGroupDefinitions(language model.Language, groups []model.TopicGroup) string {
+	normalized := make([]string, 0, len(groups))
+	for _, group := range groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			continue
+		}
+		description := strings.TrimSpace(group.Description)
+		if description == "" {
+			normalized = append(normalized, "- "+name)
+			continue
+		}
+		normalized = append(normalized, "- "+name+": "+description)
+	}
+	if len(normalized) > 0 {
+		return strings.Join(normalized, "\n")
+	}
+	if language == model.LanguageEN {
+		return "- No fixed topic groups are configured. Infer concise topic names from the messages.\n- Always include Other for useful unmatched items."
+	}
+	return "- 当前没有配置固定话题组，请从消息中自行推断简洁的话题名称。\n- 对无法归入主要话题但有价值的内容，使用“其他”。"
 }
 
 func sectionLabel(language model.Language, label string) string {

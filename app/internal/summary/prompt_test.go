@@ -19,6 +19,21 @@ func TestBuildStagePrompt(t *testing.T) {
 		So(prompt, ShouldContainSubstring, "额外要求：\n重点关注体验反馈。")
 		So(strings.Contains(prompt, "待办事项"), ShouldBeFalse)
 	})
+
+	Convey("分话题阶段提示词包含用户配置的话题组", t, func() {
+		prompt := buildStagePromptForChat(model.LanguageZhCN, model.Chat{
+			SummaryMode: model.SummaryModeChatTopic,
+			TopicGroups: []model.TopicGroup{
+				{Name: "新闻", Description: "政策、市场、突发事件"},
+				{Name: "活动", Description: "会议、线下活动、报名信息"},
+			},
+		})
+
+		So(prompt, ShouldContainSubstring, "分话题阶段摘要器")
+		So(prompt, ShouldContainSubstring, "- 新闻: 政策、市场、突发事件")
+		So(prompt, ShouldContainSubstring, "- 活动: 会议、线下活动、报名信息")
+		So(prompt, ShouldContainSubstring, "归入“其他”")
+	})
 }
 
 func TestBuildFinalPrompt(t *testing.T) {
@@ -40,5 +55,18 @@ func TestBuildFinalPrompt(t *testing.T) {
 		So(prompt, ShouldContainSubstring, "Group context:\nATL means All Time Low.")
 		So(prompt, ShouldContainSubstring, "Additional requirements:\nKeep important links.")
 		So(strings.Contains(prompt, "## 今日主要结论"), ShouldBeFalse)
+	})
+
+	Convey("分话题最终提示词要求按话题日报输出", t, func() {
+		prompt := buildFinalPromptForChat(model.LanguageZhCN, model.Chat{
+			SummaryMode: model.SummaryModeChatTopic,
+			TopicGroups: []model.TopicGroup{
+				{Name: "体育", Description: "比赛、转会、赛事讨论"},
+			},
+		})
+
+		So(prompt, ShouldContainSubstring, "最终分话题日报")
+		So(prompt, ShouldContainSubstring, "- 体育: 比赛、转会、赛事讨论")
+		So(prompt, ShouldContainSubstring, "## 分话题日报")
 	})
 }

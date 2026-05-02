@@ -64,6 +64,12 @@ export type BotTargetChatResolveResult = {
 };
 
 export type DeliveryMode = "dashboard" | "bot";
+export type SummaryMode = "channel" | "chat_topic";
+
+export type TopicGroup = {
+  name: string;
+  description: string;
+};
 
 export type Chat = {
   id: number;
@@ -75,6 +81,8 @@ export type Chat = {
   summaryEnabled: boolean;
   summaryContext: string;
   summaryPrompt: string;
+  summaryMode: SummaryMode;
+  topicGroups: TopicGroup[];
   summaryTimeLocal: string;
   deliveryMode: DeliveryMode;
   modelOverride: string;

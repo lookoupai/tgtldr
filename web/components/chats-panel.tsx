@@ -229,7 +229,9 @@ function asMessage(err: unknown) {
 function normalizeChat(chat: Chat): Chat {
   return {
     ...chat,
+    summaryMode: chat.summaryMode === "chat_topic" ? "chat_topic" : "channel",
     summaryContext: chat.summaryContext ?? "",
+    topicGroups: Array.isArray(chat.topicGroups) ? chat.topicGroups : [],
     filteredKeywords: Array.isArray(chat.filteredKeywords) ? chat.filteredKeywords : [],
     filteredSenders: Array.isArray(chat.filteredSenders) ? chat.filteredSenders : [],
     keepBotMessages: chat.keepBotMessages ?? true
@@ -245,6 +247,32 @@ function splitLines(value: string) {
     .split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatTopicGroups(groups: Chat["topicGroups"]) {
+  return groups
+    .map((group) =>
+      group.description?.trim()
+        ? `${group.name.trim()} | ${group.description.trim()}`
+        : group.name.trim()
+    )
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseTopicGroups(value: string): Chat["topicGroups"] {
+  return value
+    .split("\n")
+    .map((item) => item.trim().replace("｜", "|"))
+    .filter(Boolean)
+    .map((item) => {
+      const [name, ...descriptionParts] = item.split("|");
+      return {
+        name: name.trim(),
+        description: descriptionParts.join("|").trim()
+      };
+    })
+    .filter((item) => item.name);
 }
 
 function ChatTableRow({
@@ -365,6 +393,21 @@ function ChatTableRow({
                           />
                         </Field>
 
+                        <Field label="摘要模式">
+                          <AppSelect
+                            onChange={(value) =>
+                              onPatch({
+                                summaryMode: value as Chat["summaryMode"]
+                              })
+                            }
+                            options={[
+                              { value: "channel", label: "按群组摘要" },
+                              { value: "chat_topic", label: "按 AI 话题分组" }
+                            ]}
+                            value={chat.summaryMode}
+                          />
+                        </Field>
+
                         <Field label="摘要时间">
                           <Input
                             value={chat.summaryTimeLocal}
@@ -400,6 +443,22 @@ function ChatTableRow({
                       <p className="table-editor-note">
                         模型 override 留空时会跟随系统默认模型。
                       </p>
+
+                      {chat.summaryMode === "chat_topic" ? (
+                        <Field
+                          label="话题分组"
+                          hint="每行一个，格式为「名称 | 描述」。未命中的内容会归入“其他”。"
+                        >
+                          <Textarea
+                            rows={5}
+                            placeholder={"新闻 | 政策、市场、突发事件\n活动 | 会议、线下活动、报名信息\n体育 | 比赛、转会、赛事讨论"}
+                            value={formatTopicGroups(chat.topicGroups)}
+                            onChange={(event) =>
+                              onPatch({ topicGroups: parseTopicGroups(event.target.value) })
+                            }
+                          />
+                        </Field>
+                      ) : null}
 
                       <div className="form-grid">
                         <Field

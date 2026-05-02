@@ -164,6 +164,8 @@ export const api = {
         summaryEnabled: chat.summaryEnabled,
         summaryContext: chat.summaryContext,
         summaryPrompt: chat.summaryPrompt,
+        summaryMode: chat.summaryMode,
+        topicGroups: chat.topicGroups,
         summaryTimeLocal: chat.summaryTimeLocal,
         deliveryMode: chat.deliveryMode,
         modelOverride: chat.modelOverride,

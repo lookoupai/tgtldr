@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/frederic/tgtldr/app/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -17,7 +19,8 @@ type ChatRepository struct {
 func (r *ChatRepository) List(ctx context.Context) ([]model.Chat, error) {
 	rows, err := r.pool.Query(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_time_local, summary_timezone,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
 		from chats
@@ -30,28 +33,7 @@ func (r *ChatRepository) List(ctx context.Context) ([]model.Chat, error) {
 
 	chats := make([]model.Chat, 0)
 	for rows.Next() {
-		var chat model.Chat
-		err := rows.Scan(
-			&chat.ID,
-			&chat.TelegramChatID,
-			&chat.TelegramAccess,
-			&chat.Title,
-			&chat.Username,
-			&chat.ChatType,
-			&chat.Enabled,
-			&chat.SummaryEnabled,
-			&chat.SummaryContext,
-			&chat.SummaryPrompt,
-			&chat.SummaryTimeLocal,
-			&chat.SummaryTimezone,
-			&chat.DeliveryMode,
-			&chat.ModelOverride,
-			&chat.KeepBotMessages,
-			&chat.FilteredSenders,
-			&chat.FilteredKeywords,
-			&chat.CreatedAt,
-			&chat.UpdatedAt,
-		)
+		chat, err := scanChat(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan chat: %w", err)
 		}
@@ -80,9 +62,10 @@ func (r *ChatRepository) UpsertMany(ctx context.Context, chats []model.Chat) err
 		_, err := tx.Exec(ctx, `
 			insert into chats (
 				telegram_chat_id, telegram_access_hash, title, username, chat_type,
-				enabled, summary_enabled, summary_context, summary_prompt, summary_time_local, summary_timezone, delivery_mode, model_override,
+				enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups,
+				summary_time_local, summary_timezone, delivery_mode, model_override,
 				keep_bot_messages, filtered_senders, filtered_keywords
-			) values ($1, $2, $3, $4, $5, false, false, '', '', '09:00', 'Asia/Shanghai', 'dashboard', '', true, '{}', '{}')
+			) values ($1, $2, $3, $4, $5, false, false, '', '', 'channel', '[]'::jsonb, '09:00', 'Asia/Shanghai', 'dashboard', '', true, '{}', '{}')
 			on conflict (telegram_chat_id) do update
 			set telegram_access_hash = excluded.telegram_access_hash,
 			    title = excluded.title,
@@ -108,23 +91,29 @@ func (r *ChatRepository) UpsertMany(ctx context.Context, chats []model.Chat) err
 }
 
 func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat, error) {
-	var saved model.Chat
-	err := r.pool.QueryRow(ctx, `
+	topicGroups, err := marshalTopicGroups(chat.TopicGroups)
+	if err != nil {
+		return model.Chat{}, err
+	}
+	saved, err := scanChat(rowScanner{row: r.pool.QueryRow(ctx, `
 		update chats
 		set enabled = $1,
 		    summary_enabled = $2,
 		    summary_context = $3,
 		    summary_prompt = $4,
-		    summary_time_local = $5,
-		    delivery_mode = $6,
-		    model_override = $7,
-		    keep_bot_messages = $8,
-		    filtered_senders = $9,
-		    filtered_keywords = $10,
+		    summary_mode = $5,
+		    topic_groups = $6::jsonb,
+		    summary_time_local = $7,
+		    delivery_mode = $8,
+		    model_override = $9,
+		    keep_bot_messages = $10,
+		    filtered_senders = $11,
+		    filtered_keywords = $12,
 		    updated_at = now()
-		where id = $11
+		where id = $13
 		returning id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		          enabled, summary_enabled, summary_context, summary_prompt, summary_time_local, summary_timezone,
+		          enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		          summary_time_local, summary_timezone,
 		          delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		          created_at, updated_at
 	`,
@@ -132,6 +121,8 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		chat.SummaryEnabled,
 		chat.SummaryContext,
 		chat.SummaryPrompt,
+		model.NormalizeSummaryMode(chat.SummaryMode),
+		topicGroups,
 		chat.SummaryTimeLocal,
 		chat.DeliveryMode,
 		chat.ModelOverride,
@@ -139,27 +130,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		chat.FilteredSenders,
 		chat.FilteredKeywords,
 		chat.ID,
-	).Scan(
-		&saved.ID,
-		&saved.TelegramChatID,
-		&saved.TelegramAccess,
-		&saved.Title,
-		&saved.Username,
-		&saved.ChatType,
-		&saved.Enabled,
-		&saved.SummaryEnabled,
-		&saved.SummaryContext,
-		&saved.SummaryPrompt,
-		&saved.SummaryTimeLocal,
-		&saved.SummaryTimezone,
-		&saved.DeliveryMode,
-		&saved.ModelOverride,
-		&saved.KeepBotMessages,
-		&saved.FilteredSenders,
-		&saved.FilteredKeywords,
-		&saved.CreatedAt,
-		&saved.UpdatedAt,
-	)
+	)})
 	if err != nil {
 		return model.Chat{}, fmt.Errorf("save chat %d: %w", chat.ID, err)
 	}
@@ -167,35 +138,15 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 }
 
 func (r *ChatRepository) GetByID(ctx context.Context, id int64) (model.Chat, error) {
-	var chat model.Chat
-	err := r.pool.QueryRow(ctx, `
+	chat, err := scanChat(rowScanner{row: r.pool.QueryRow(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_time_local, summary_timezone,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
 		from chats
 		where id = $1
-	`, id).Scan(
-		&chat.ID,
-		&chat.TelegramChatID,
-		&chat.TelegramAccess,
-		&chat.Title,
-		&chat.Username,
-		&chat.ChatType,
-		&chat.Enabled,
-		&chat.SummaryEnabled,
-		&chat.SummaryContext,
-		&chat.SummaryPrompt,
-		&chat.SummaryTimeLocal,
-		&chat.SummaryTimezone,
-		&chat.DeliveryMode,
-		&chat.ModelOverride,
-		&chat.KeepBotMessages,
-		&chat.FilteredSenders,
-		&chat.FilteredKeywords,
-		&chat.CreatedAt,
-		&chat.UpdatedAt,
-	)
+	`, id)})
 	if err != nil {
 		return model.Chat{}, fmt.Errorf("get chat %d: %w", id, err)
 	}
@@ -205,7 +156,8 @@ func (r *ChatRepository) GetByID(ctx context.Context, id int64) (model.Chat, err
 func (r *ChatRepository) ListSummaryEnabled(ctx context.Context) ([]model.Chat, error) {
 	rows, err := r.pool.Query(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_time_local, summary_timezone,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
 		from chats
@@ -219,28 +171,7 @@ func (r *ChatRepository) ListSummaryEnabled(ctx context.Context) ([]model.Chat, 
 
 	out := make([]model.Chat, 0)
 	for rows.Next() {
-		var chat model.Chat
-		err := rows.Scan(
-			&chat.ID,
-			&chat.TelegramChatID,
-			&chat.TelegramAccess,
-			&chat.Title,
-			&chat.Username,
-			&chat.ChatType,
-			&chat.Enabled,
-			&chat.SummaryEnabled,
-			&chat.SummaryContext,
-			&chat.SummaryPrompt,
-			&chat.SummaryTimeLocal,
-			&chat.SummaryTimezone,
-			&chat.DeliveryMode,
-			&chat.ModelOverride,
-			&chat.KeepBotMessages,
-			&chat.FilteredSenders,
-			&chat.FilteredKeywords,
-			&chat.CreatedAt,
-			&chat.UpdatedAt,
-		)
+		chat, err := scanChat(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan summary enabled chat: %w", err)
 		}
@@ -250,35 +181,15 @@ func (r *ChatRepository) ListSummaryEnabled(ctx context.Context) ([]model.Chat, 
 }
 
 func (r *ChatRepository) GetByTelegramID(ctx context.Context, telegramID int64) (model.Chat, error) {
-	var chat model.Chat
-	err := r.pool.QueryRow(ctx, `
+	chat, err := scanChat(rowScanner{row: r.pool.QueryRow(ctx, `
 		select id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
-		       enabled, summary_enabled, summary_context, summary_prompt, summary_time_local, summary_timezone,
+		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, topic_groups::text,
+		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       created_at, updated_at
 		from chats
 		where telegram_chat_id = $1
-	`, telegramID).Scan(
-		&chat.ID,
-		&chat.TelegramChatID,
-		&chat.TelegramAccess,
-		&chat.Title,
-		&chat.Username,
-		&chat.ChatType,
-		&chat.Enabled,
-		&chat.SummaryEnabled,
-		&chat.SummaryContext,
-		&chat.SummaryPrompt,
-		&chat.SummaryTimeLocal,
-		&chat.SummaryTimezone,
-		&chat.DeliveryMode,
-		&chat.ModelOverride,
-		&chat.KeepBotMessages,
-		&chat.FilteredSenders,
-		&chat.FilteredKeywords,
-		&chat.CreatedAt,
-		&chat.UpdatedAt,
-	)
+	`, telegramID)})
 	if err != nil {
 		return model.Chat{}, fmt.Errorf("get chat by telegram id %d: %w", telegramID, err)
 	}
@@ -294,4 +205,88 @@ func (r *ChatRepository) EnsureExists(ctx context.Context, chat model.Chat) (mod
 
 func IsNotFound(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
+}
+
+type chatScanner interface {
+	Scan(dest ...any) error
+}
+
+type rowScanner struct {
+	row pgx.Row
+}
+
+func (s rowScanner) Scan(dest ...any) error {
+	return s.row.Scan(dest...)
+}
+
+func scanChat(scanner chatScanner) (model.Chat, error) {
+	var chat model.Chat
+	var topicGroupsJSON string
+	err := scanner.Scan(
+		&chat.ID,
+		&chat.TelegramChatID,
+		&chat.TelegramAccess,
+		&chat.Title,
+		&chat.Username,
+		&chat.ChatType,
+		&chat.Enabled,
+		&chat.SummaryEnabled,
+		&chat.SummaryContext,
+		&chat.SummaryPrompt,
+		&chat.SummaryMode,
+		&topicGroupsJSON,
+		&chat.SummaryTimeLocal,
+		&chat.SummaryTimezone,
+		&chat.DeliveryMode,
+		&chat.ModelOverride,
+		&chat.KeepBotMessages,
+		&chat.FilteredSenders,
+		&chat.FilteredKeywords,
+		&chat.CreatedAt,
+		&chat.UpdatedAt,
+	)
+	if err != nil {
+		return model.Chat{}, err
+	}
+	chat.SummaryMode = model.NormalizeSummaryMode(chat.SummaryMode)
+	chat.TopicGroups = unmarshalTopicGroups(topicGroupsJSON)
+	return chat, nil
+}
+
+func marshalTopicGroups(groups []model.TopicGroup) (string, error) {
+	normalized := make([]model.TopicGroup, 0, len(groups))
+	for _, group := range groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			continue
+		}
+		normalized = append(normalized, model.TopicGroup{
+			Name:        name,
+			Description: strings.TrimSpace(group.Description),
+		})
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return "", fmt.Errorf("marshal topic groups: %w", err)
+	}
+	return string(data), nil
+}
+
+func unmarshalTopicGroups(raw string) []model.TopicGroup {
+	var groups []model.TopicGroup
+	if err := json.Unmarshal([]byte(raw), &groups); err != nil {
+		return nil
+	}
+	normalized := make([]model.TopicGroup, 0, len(groups))
+	for _, group := range groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			continue
+		}
+		normalized = append(normalized, model.TopicGroup{
+			Name:        name,
+			Description: strings.TrimSpace(group.Description),
+		})
+	}
+	return normalized
 }

@@ -506,6 +506,8 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 		SummaryEnabled   bool               `json:"summaryEnabled"`
 		SummaryContext   string             `json:"summaryContext"`
 		SummaryPrompt    string             `json:"summaryPrompt"`
+		SummaryMode      model.SummaryMode  `json:"summaryMode"`
+		TopicGroups      []model.TopicGroup `json:"topicGroups"`
 		SummaryTimeLocal string             `json:"summaryTimeLocal"`
 		DeliveryMode     model.DeliveryMode `json:"deliveryMode"`
 		ModelOverride    string             `json:"modelOverride"`
@@ -522,6 +524,8 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 	current.SummaryEnabled = payload.SummaryEnabled
 	current.SummaryContext = payload.SummaryContext
 	current.SummaryPrompt = payload.SummaryPrompt
+	current.SummaryMode = model.NormalizeSummaryMode(payload.SummaryMode)
+	current.TopicGroups = compactTopicGroups(payload.TopicGroups)
 	current.SummaryTimeLocal = payload.SummaryTimeLocal
 	current.DeliveryMode = payload.DeliveryMode
 	current.ModelOverride = payload.ModelOverride
@@ -545,6 +549,21 @@ func compactStrings(values []string) []string {
 			continue
 		}
 		out = append(out, trimmed)
+	}
+	return out
+}
+
+func compactTopicGroups(values []model.TopicGroup) []model.TopicGroup {
+	out := make([]model.TopicGroup, 0, len(values))
+	for _, value := range values {
+		name := strings.TrimSpace(value.Name)
+		if name == "" {
+			continue
+		}
+		out = append(out, model.TopicGroup{
+			Name:        name,
+			Description: strings.TrimSpace(value.Description),
+		})
 	}
 	return out
 }
