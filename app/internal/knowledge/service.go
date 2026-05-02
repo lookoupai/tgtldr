@@ -122,6 +122,27 @@ func (s *Service) RunDailyExtraction(ctx context.Context, req RunRequest) (model
 	return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusSucceeded, len(filtered), len(facts), "")
 }
 
+func (s *Service) RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error) {
+	spaces, err := s.store.KnowledgeSpaces.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	runs := make([]model.KnowledgeRun, 0)
+	for _, space := range summaryExtractionSpaces(spaces, chat.ID) {
+		run, err := s.RunDailyExtraction(ctx, RunRequest{
+			SpaceID: space.ID,
+			ChatID:  chat.ID,
+			Date:    date,
+		})
+		if err != nil {
+			return runs, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, nil
+}
+
 func (s *Service) finishRun(ctx context.Context, runID int64, status model.KnowledgeRunStatus, inputCount int, extractedCount int, errorMessage string) (model.KnowledgeRun, error) {
 	return s.store.KnowledgeRuns.Finish(ctx, runID, status, inputCount, extractedCount, errorMessage, s.clock.Now())
 }
@@ -262,13 +283,27 @@ func parseExtractionFacts(raw string, space model.KnowledgeSpace, chat model.Cha
 func filterMessages(messages []model.Message, chat model.Chat) []model.Message {
 	out := make([]model.Message, 0, len(messages))
 	for _, message := range messages {
-		if !chat.KeepBotMessages && message.SenderIsBot {
+		if shouldSkipMessage(message, chat) {
 			continue
 		}
 		if strings.TrimSpace(message.SummaryText()) == "" {
 			continue
 		}
 		out = append(out, message)
+	}
+	return out
+}
+
+func summaryExtractionSpaces(spaces []model.KnowledgeSpace, chatID int64) []model.KnowledgeSpace {
+	out := make([]model.KnowledgeSpace, 0, len(spaces))
+	for _, space := range spaces {
+		if !space.Enabled || !space.IncludeInSummary {
+			continue
+		}
+		if !spaceAppliesToChat(space, chatID) {
+			continue
+		}
+		out = append(out, space)
 	}
 	return out
 }
@@ -283,6 +318,63 @@ func spaceAppliesToChat(space model.KnowledgeSpace, chatID int64) bool {
 		}
 	}
 	return false
+}
+
+func shouldSkipMessage(message model.Message, chat model.Chat) bool {
+	if !chat.KeepBotMessages && message.SenderIsBot {
+		return true
+	}
+	if matchesFilteredSender(message, chat.FilteredSenders) {
+		return true
+	}
+	return matchesFilteredKeyword(message, chat.FilteredKeywords)
+}
+
+func matchesFilteredSender(message model.Message, filters []string) bool {
+	if len(filters) == 0 {
+		return false
+	}
+
+	name := normalizeFilterToken(message.SenderName)
+	username := normalizeFilterToken(message.SenderUsername)
+	for _, filter := range filters {
+		target := normalizeFilterToken(filter)
+		if target == "" {
+			continue
+		}
+		if target == name || target == username {
+			return true
+		}
+		if strings.HasPrefix(target, "@") && strings.TrimPrefix(target, "@") == username {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesFilteredKeyword(message model.Message, filters []string) bool {
+	if len(filters) == 0 {
+		return false
+	}
+
+	text := normalizeFilterToken(message.SummaryText())
+	if text == "" {
+		return false
+	}
+	for _, filter := range filters {
+		target := normalizeFilterToken(filter)
+		if target == "" {
+			continue
+		}
+		if strings.Contains(text, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeFilterToken(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func resolveModel(chat model.Chat, settings model.AppSettings) string {

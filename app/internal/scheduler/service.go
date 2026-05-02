@@ -17,13 +17,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type knowledgeExtractor interface {
+	RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error)
+}
+
 type Service struct {
-	store      *store.Store
-	clock      clock.Clock
-	summaries  *summary.Service
-	botService *bot.Service
-	mu         sync.Mutex
-	inflight   map[string]struct{}
+	store              *store.Store
+	clock              clock.Clock
+	summaries          *summary.Service
+	botService         *bot.Service
+	knowledgeExtractor knowledgeExtractor
+	mu                 sync.Mutex
+	inflight           map[string]struct{}
 }
 
 type scheduledAction int
@@ -34,13 +39,14 @@ const (
 	scheduledActionDeliver
 )
 
-func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botService *bot.Service) *Service {
+func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botService *bot.Service, extractor knowledgeExtractor) *Service {
 	return &Service{
-		store:      st,
-		clock:      c,
-		summaries:  summaries,
-		botService: botService,
-		inflight:   make(map[string]struct{}),
+		store:              st,
+		clock:              c,
+		summaries:          summaries,
+		botService:         botService,
+		knowledgeExtractor: extractor,
+		inflight:           make(map[string]struct{}),
 	}
 }
 
@@ -177,6 +183,7 @@ func (s *Service) runNow(ctx context.Context, chat model.Chat, date string) erro
 }
 
 func (s *Service) executeSummary(ctx context.Context, chat model.Chat, date string) error {
+	s.extractKnowledgeForSummary(ctx, chat, date)
 	result, err := s.summaries.RunDailySummary(ctx, chat, date)
 	if err != nil {
 		return err
@@ -189,6 +196,13 @@ func (s *Service) executeSummary(ctx context.Context, chat model.Chat, date stri
 	}
 	s.tryDeliverSummary(ctx, chat, result)
 	return nil
+}
+
+func (s *Service) extractKnowledgeForSummary(ctx context.Context, chat model.Chat, date string) {
+	if s.knowledgeExtractor == nil {
+		return
+	}
+	_, _ = s.knowledgeExtractor.RunDailyExtractionsForSummary(ctx, chat, date)
 }
 
 func (s *Service) runOnce(ctx context.Context) error {
