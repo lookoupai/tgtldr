@@ -1,6 +1,6 @@
 # TGTLDR v1 产品流程与实施计划
 
-本文档补充 [ARCHITECTURE.md](/Users/frederic/Documents/Projects/tgtldr/docs/ARCHITECTURE.md)，用于定义 v1 的向导流程、后台页面和实施顺序。
+本文档补充 [ARCHITECTURE.md](ARCHITECTURE.md)，用于定义 v1 的向导流程、后台页面和实施顺序。
 
 ## 1. 首次启动向导
 
