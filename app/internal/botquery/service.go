@@ -208,6 +208,8 @@ func commandHelpText(language model.Language) string {
 ## Knowledge Bot Commands
 - /knowledge <keyword>: search active facts
 - /type <fact_type> <keyword>: search a custom fact type
+- /fact <fact_type> <keyword>: alias of /type
+- /facts <fact_type> <keyword>: alias of /type
 - /demand <keyword>: search demand facts
 - /supply <keyword>: search supply facts
 - /who <keyword>: search people and their facts
@@ -217,6 +219,8 @@ func commandHelpText(language model.Language) string {
 ## 知识 Bot 命令
 - /knowledge <关键词>：查询有效事实
 - /type <事实类型> <关键词>：查询自定义事实类型
+- /fact <事实类型> <关键词>：/type 的别名
+- /facts <事实类型> <关键词>：/type 的别名
 - /demand <关键词>：查询需求事实
 - /supply <关键词>：查询供应事实
 - /who <关键词>：查询用户及相关事实

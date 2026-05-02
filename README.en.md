@@ -84,12 +84,14 @@ If Bot delivery is enabled and a target chat is configured, you can query the kn
 ```text
 /knowledge <keyword>
 /type <fact_type> <keyword>
+/fact <fact_type> <keyword>
+/facts <fact_type> <keyword>
 /demand <keyword>
 /supply <keyword>
 /who <keyword>
 ```
 
-Use `/type` for custom schema types, such as `/type hiring remote` or `/type skill rust`.
+Use `/type` for custom schema types, such as `/type hiring remote` or `/type skill rust`. `/fact` and `/facts` are aliases for the same query form.
 
 The Bot only responds in the configured target chat, so local knowledge is not sent to unauthorized conversations.
 
