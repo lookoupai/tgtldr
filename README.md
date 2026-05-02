@@ -69,6 +69,37 @@ docker compose up -d
 
 首次访问前端后，按照页面向导完成访问密码、Telegram、OpenAI 和群组摘要配置即可。
 
+## 运行维护
+
+查看容器状态：
+
+```bash
+docker compose ps
+```
+
+查看日志：
+
+```bash
+docker compose logs -f app
+docker compose logs -f web
+docker compose logs -f postgres
+```
+
+检查后端健康状态：
+
+```bash
+curl http://127.0.0.1:3000/api/health
+```
+
+升级到最新预构建镜像：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+如果升级后页面行为异常，优先查看 `app` 日志确认数据库迁移和后端启动是否成功。
+
 ## 摘要与知识空间
 
 每个群组都可以单独配置摘要行为：

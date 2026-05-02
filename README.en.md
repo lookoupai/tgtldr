@@ -69,6 +69,37 @@ After startup, open:
 
 On first visit, follow the setup wizard to configure the access password, Telegram, OpenAI, and group summary settings.
 
+## Operations
+
+Check container status:
+
+```bash
+docker compose ps
+```
+
+View logs:
+
+```bash
+docker compose logs -f app
+docker compose logs -f web
+docker compose logs -f postgres
+```
+
+Check backend health:
+
+```bash
+curl http://127.0.0.1:3000/api/health
+```
+
+Upgrade to the latest prebuilt images:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+If the web app behaves unexpectedly after an upgrade, check the `app` logs first to confirm database migrations and backend startup completed successfully.
+
 ## Summaries and Knowledge Spaces
 
 Each group can configure its own summary behavior:
