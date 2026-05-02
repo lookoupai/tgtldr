@@ -119,6 +119,9 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 	}
 	if len(filteredMessages) == 0 {
 		summary.Content = emptySummaryContent(settings.Language)
+		if err := s.appendKnowledgeFacts(ctx, &summary, start, end, settings.Language); err != nil {
+			return model.Summary{}, err
+		}
 		return summary, nil
 	}
 
@@ -178,7 +181,22 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 
 	summary.Content = strings.TrimSpace(finalResp.Content)
 	summary.Model = finalResp.Model
+	if err := s.appendKnowledgeFacts(ctx, &summary, start, end, settings.Language); err != nil {
+		return model.Summary{}, err
+	}
 	return summary, nil
+}
+
+func (s *Service) appendKnowledgeFacts(ctx context.Context, summary *model.Summary, start, end time.Time, language model.Language) error {
+	if s.store == nil || s.store.KnowledgeFacts == nil || summary == nil || summary.Status != model.SummaryStatusSucceeded {
+		return nil
+	}
+	facts, err := s.store.KnowledgeFacts.ListForSummary(ctx, summary.ChatID, start, end)
+	if err != nil {
+		return err
+	}
+	summary.Content = appendKnowledgeFacts(summary.Content, facts, language)
+	return nil
 }
 
 func resolveSummaryModel(chat model.Chat, settings model.AppSettings) string {

@@ -160,6 +160,7 @@ const (
 type KnowledgeFact struct {
 	ID                int64               `json:"id"`
 	SpaceID           int64               `json:"spaceId"`
+	SpaceName         string              `json:"spaceName,omitempty"`
 	ChatID            int64               `json:"chatId"`
 	ChatTitle         string              `json:"chatTitle,omitempty"`
 	FactType          string              `json:"factType"`

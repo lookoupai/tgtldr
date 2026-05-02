@@ -206,6 +206,53 @@ func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFact
 	return items, rows.Err()
 }
 
+func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int64, start, end time.Time) ([]model.KnowledgeFact, error) {
+	rows, err := r.pool.Query(ctx, `
+		select f.id, f.space_id, s.name, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
+		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
+		       f.subject_username, f.confidence, f.status, f.source_message_ids,
+		       f.first_seen_at, f.last_seen_at, f.expires_at, f.created_at, f.updated_at
+		from knowledge_facts f
+		join knowledge_spaces s on s.id = f.space_id
+		left join chats c on c.id = f.chat_id
+		where f.chat_id = $1
+		  and f.status = $2
+		  and s.enabled = true
+		  and s.include_in_summary = true
+		  and (cardinality(s.chat_ids) = 0 or $1 = any(s.chat_ids))
+		  and (
+		      exists (
+		          select 1
+		          from messages m
+		          where m.chat_id = f.chat_id
+		            and m.telegram_message_id = any(f.source_message_ids)
+		            and m.message_time >= $3
+		            and m.message_time < $4
+		      )
+		      or (
+		          cardinality(f.source_message_ids) = 0
+		          and f.first_seen_at >= $3
+		          and f.first_seen_at < $4
+		      )
+		  )
+		order by lower(s.name) asc, lower(f.fact_type) asc, f.confidence desc, f.last_seen_at desc, f.id desc
+	`, chatID, model.KnowledgeFactStatusActive, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("query summary knowledge facts: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.KnowledgeFact, 0)
+	for rows.Next() {
+		item, err := scanKnowledgeFactWithSpace(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan summary knowledge fact: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 type KnowledgeRunRepository struct {
 	pool *pgxpool.Pool
 }
@@ -366,6 +413,37 @@ func scanKnowledgeRun(scanner chatScanner) (model.KnowledgeRun, error) {
 		return model.KnowledgeRun{}, err
 	}
 	return run, nil
+}
+
+func scanKnowledgeFactWithSpace(scanner chatScanner) (model.KnowledgeFact, error) {
+	var item model.KnowledgeFact
+	var sourceMessageIDs []int32
+	err := scanner.Scan(
+		&item.ID,
+		&item.SpaceID,
+		&item.SpaceName,
+		&item.ChatID,
+		&item.ChatTitle,
+		&item.FactType,
+		&item.Title,
+		&item.DataJSON,
+		&item.SubjectSenderID,
+		&item.SubjectSenderName,
+		&item.SubjectUsername,
+		&item.Confidence,
+		&item.Status,
+		&sourceMessageIDs,
+		&item.FirstSeenAt,
+		&item.LastSeenAt,
+		&item.ExpiresAt,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return model.KnowledgeFact{}, err
+	}
+	item.SourceMessageIDs = int32sToInts(sourceMessageIDs)
+	return item, nil
 }
 
 func normalizeKnowledgeSpace(item model.KnowledgeSpace) (model.KnowledgeSpace, error) {
