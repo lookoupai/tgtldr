@@ -7,6 +7,7 @@ import {
   HistoryBackfillTask,
   KnowledgeFact,
   KnowledgeMaintenanceEvent,
+  KnowledgeMaintenanceResult,
   KnowledgeQueryResult,
   KnowledgeRun,
   KnowledgeSpace,
@@ -247,6 +248,21 @@ export const api = {
         limit: filters?.limit,
       })}`,
     ),
+  renderNaturalKnowledgeQuery: (payload: {
+    text: string;
+    spaceId?: number;
+    chatId?: number;
+    limit?: number;
+  }) =>
+    request<KnowledgeQueryResult>("/api/knowledge/query/natural", {
+      method: "POST",
+      body: JSON.stringify({
+        text: payload.text.trim(),
+        spaceId: payload.spaceId,
+        chatId: payload.chatId,
+        limit: payload.limit,
+      }),
+    }),
   sendKnowledgeQuery: (filters?: {
     q?: string;
     spaceId?: number;
@@ -263,6 +279,16 @@ export const api = {
         type: filters?.factType?.trim() || "",
         limit: filters?.limit,
       }),
+    }),
+  previewKnowledgeMaintenance: (text: string) =>
+    request<KnowledgeMaintenanceResult>("/api/knowledge/maintenance/preview", {
+      method: "POST",
+      body: JSON.stringify({ text: text.trim() }),
+    }),
+  applyKnowledgeMaintenance: (text: string) =>
+    request<KnowledgeMaintenanceResult>("/api/knowledge/maintenance/apply", {
+      method: "POST",
+      body: JSON.stringify({ text: text.trim() }),
     }),
   listKnowledgeRuns: async (filters?: {
     spaceId?: number;

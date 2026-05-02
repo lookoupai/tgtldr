@@ -34,18 +34,18 @@ type extractionResponse struct {
 }
 
 type MaintenanceResult struct {
-	Action       string
-	TargetType   string
-	TargetQuery  string
-	TargetUser   string
-	Reason       string
-	MatchedFacts []model.KnowledgeFact
-	UpdatedFacts []model.KnowledgeFact
+	Action       string                `json:"action"`
+	TargetType   string                `json:"targetType"`
+	TargetQuery  string                `json:"targetQuery"`
+	TargetUser   string                `json:"targetUser"`
+	Reason       string                `json:"reason"`
+	MatchedFacts []model.KnowledgeFact `json:"matchedFacts"`
+	UpdatedFacts []model.KnowledgeFact `json:"updatedFacts"`
 }
 
 type KnowledgeQueryInstruction struct {
-	Query    string
-	FactType string
+	Query    string `json:"query"`
+	FactType string `json:"factType"`
 }
 
 type maintenanceInstruction struct {
@@ -249,6 +249,10 @@ func (s *Service) UpdateFactStatus(ctx context.Context, factID int64, status mod
 }
 
 func (s *Service) ApplyMaintenanceText(ctx context.Context, text string) (MaintenanceResult, error) {
+	return s.ApplyMaintenanceTextWithSource(ctx, text, MaintenanceSourceBotUpdate)
+}
+
+func (s *Service) ApplyMaintenanceTextWithSource(ctx context.Context, text string, source string) (MaintenanceResult, error) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return MaintenanceResult{}, nil
@@ -257,7 +261,7 @@ func (s *Service) ApplyMaintenanceText(ctx context.Context, text string) (Mainte
 	if err != nil {
 		return MaintenanceResult{}, err
 	}
-	return s.applyMaintenanceInstruction(ctx, instruction, trimmed)
+	return s.applyMaintenanceInstruction(ctx, instruction, trimmed, source)
 }
 
 func (s *Service) PreviewMaintenanceText(ctx context.Context, text string) (MaintenanceResult, error) {
@@ -436,7 +440,7 @@ func normalizeMaintenanceAction(action string) string {
 	}
 }
 
-func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction maintenanceInstruction, operatorText string) (MaintenanceResult, error) {
+func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction maintenanceInstruction, operatorText string, source string) (MaintenanceResult, error) {
 	result, targetStatus, err := s.maintenanceCandidates(ctx, instruction)
 	if err != nil {
 		return result, err
@@ -451,7 +455,7 @@ func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction m
 			ctx,
 			candidate.ID,
 			targetStatus,
-			MaintenanceSourceBotUpdate,
+			source,
 			instruction.Reason,
 			operatorText,
 			instruction.TargetQuery,

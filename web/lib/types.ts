@@ -230,6 +230,16 @@ export type KnowledgeQueryResult = {
   message?: string;
 };
 
+export type KnowledgeMaintenanceResult = {
+  action: string;
+  targetType: string;
+  targetQuery: string;
+  targetUser: string;
+  reason: string;
+  matchedFacts: KnowledgeFact[];
+  updatedFacts: KnowledgeFact[];
+};
+
 export type KnowledgeRun = {
   id: number;
   spaceId: number;

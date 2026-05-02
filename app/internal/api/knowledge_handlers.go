@@ -272,6 +272,55 @@ func (r *Router) handleKnowledgeQuery(w http.ResponseWriter, req *http.Request) 
 	httpx.JSON(w, http.StatusOK, result)
 }
 
+func (r *Router) handleNaturalKnowledgeQuery(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if r.knowledge == nil {
+		httpx.Error(w, http.StatusInternalServerError, "knowledge service is not configured")
+		return
+	}
+
+	var payload struct {
+		Text    string `json:"text"`
+		SpaceID int64  `json:"spaceId"`
+		ChatID  int64  `json:"chatId"`
+		Limit   int    `json:"limit"`
+	}
+	if err := httpx.DecodeJSON(req, &payload); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(payload.Text) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请输入自然语言问题。", "Enter a natural-language question."))
+		return
+	}
+
+	instruction, err := r.knowledge.ParseQueryText(req.Context(), payload.Text)
+	if err != nil {
+		httpx.Error(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if strings.TrimSpace(instruction.Query) == "" && strings.TrimSpace(instruction.FactType) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "没有识别到可执行的知识查询。", "No actionable knowledge query was detected."))
+		return
+	}
+
+	result, err := r.buildKnowledgeQueryResult(req, knowledgeQueryRequest{
+		Query:    instruction.Query,
+		FactType: instruction.FactType,
+		SpaceID:  payload.SpaceID,
+		ChatID:   payload.ChatID,
+		Limit:    payload.Limit,
+	})
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, result)
+}
+
 func (r *Router) handleSendKnowledgeQuery(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -320,6 +369,64 @@ func (r *Router) handleSendKnowledgeQuery(w http.ResponseWriter, req *http.Reque
 		"subjects": result.Subjects,
 		"content":  result.Content,
 	})
+}
+
+func (r *Router) handlePreviewKnowledgeMaintenance(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if r.knowledge == nil {
+		httpx.Error(w, http.StatusInternalServerError, "knowledge service is not configured")
+		return
+	}
+
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := httpx.DecodeJSON(req, &payload); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(payload.Text) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请输入维护说明。", "Enter a maintenance note."))
+		return
+	}
+	result, err := r.knowledge.PreviewMaintenanceText(req.Context(), payload.Text)
+	if err != nil {
+		httpx.Error(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, result)
+}
+
+func (r *Router) handleApplyKnowledgeMaintenance(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if r.knowledge == nil {
+		httpx.Error(w, http.StatusInternalServerError, "knowledge service is not configured")
+		return
+	}
+
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := httpx.DecodeJSON(req, &payload); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(payload.Text) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请输入维护说明。", "Enter a maintenance note."))
+		return
+	}
+	result, err := r.knowledge.ApplyMaintenanceTextWithSource(req.Context(), payload.Text, knowledge.MaintenanceSourceWeb)
+	if err != nil {
+		httpx.Error(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, result)
 }
 
 type knowledgeQueryRequest struct {

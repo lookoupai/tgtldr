@@ -25,6 +25,7 @@ import {
   Chat,
   KnowledgeFact,
   KnowledgeMaintenanceEvent,
+  KnowledgeMaintenanceResult,
   KnowledgeQueryResult,
   KnowledgeRun,
   KnowledgeSpace,
@@ -334,13 +335,20 @@ export function KnowledgePanel() {
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
   const [knowledgeQueryPreview, setKnowledgeQueryPreview] =
     useState<KnowledgeQueryResult | null>(null);
+  const [maintenancePreview, setMaintenancePreview] =
+    useState<KnowledgeMaintenanceResult | null>(null);
   const [previewingKnowledgeQuery, setPreviewingKnowledgeQuery] = useState(false);
   const [sendingKnowledgeQuery, setSendingKnowledgeQuery] = useState(false);
+  const [runningNaturalQuery, setRunningNaturalQuery] = useState(false);
+  const [previewingMaintenance, setPreviewingMaintenance] = useState(false);
+  const [applyingMaintenance, setApplyingMaintenance] = useState(false);
   const [selectedSpaceId, setSelectedSpaceId] = useState<number | "all">("all");
   const [statusFilter, setStatusFilter] = useState<FactStatusFilter>("all");
   const [factChatId, setFactChatId] = useState<number | "all">("all");
   const [factTypeFilter, setFactTypeFilter] = useState("");
   const [factQuery, setFactQuery] = useState("");
+  const [naturalQuery, setNaturalQuery] = useState("");
+  const [maintenanceText, setMaintenanceText] = useState("");
   const [runChatId, setRunChatId] = useState<number | "">("");
   const [runDate, setRunDate] = useState(localDateInputValue());
   const deferredFactQuery = useDeferredValue(factQuery);
@@ -545,6 +553,66 @@ export function KnowledgePanel() {
       toast.showError(asMessage(err));
     } finally {
       setPreviewingKnowledgeQuery(false);
+    }
+  }
+
+  async function runNaturalKnowledgeQuery() {
+    if (!naturalQuery.trim()) {
+      toast.showError("请输入自然语言问题。");
+      return;
+    }
+    setRunningNaturalQuery(true);
+    try {
+      const result = await api.renderNaturalKnowledgeQuery({
+        text: naturalQuery,
+        spaceId: selectedSpaceId === "all" ? undefined : selectedSpaceId,
+        chatId: factChatId === "all" ? undefined : factChatId,
+        limit: 20,
+      });
+      setKnowledgeQueryPreview(result);
+      setFactQuery(result.query);
+      setFactTypeFilter(result.factType);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setRunningNaturalQuery(false);
+    }
+  }
+
+  async function previewMaintenance() {
+    if (!maintenanceText.trim()) {
+      toast.showError("请输入维护说明。");
+      return;
+    }
+    setPreviewingMaintenance(true);
+    try {
+      const result = await api.previewKnowledgeMaintenance(maintenanceText);
+      setMaintenancePreview(result);
+      if (!maintenanceResultHasMatches(result)) {
+        toast.showError("没有找到可安全维护的匹配事实。");
+      }
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setPreviewingMaintenance(false);
+    }
+  }
+
+  async function applyMaintenance() {
+    if (!maintenanceText.trim()) {
+      toast.showError("请输入维护说明。");
+      return;
+    }
+    setApplyingMaintenance(true);
+    try {
+      const result = await api.applyKnowledgeMaintenance(maintenanceText);
+      setMaintenancePreview(result);
+      toast.showSuccess(`已维护 ${result.updatedFacts.length} 条知识事实。`);
+      await Promise.all([loadFacts(), loadSubjects(), loadMaintenanceEvents()]);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setApplyingMaintenance(false);
     }
   }
 
@@ -940,6 +1008,112 @@ export function KnowledgePanel() {
             </table>
           </div>
         )}
+      </Surface>
+
+      <Surface
+        title="智能查询与维护"
+        description="在网页端验证自然语言查询和自然语言维护结果。"
+      >
+        <div className="form-stack">
+          <div className="knowledge-run-panel">
+            <div>
+              <strong>自然语言查询</strong>
+              <p className="muted">例如“谁了解炒币”，系统会解析成知识库过滤条件。</p>
+            </div>
+            <Field label="问题">
+              <Input
+                onChange={(event) => setNaturalQuery(event.target.value)}
+                placeholder="谁了解炒币"
+                value={naturalQuery}
+              />
+            </Field>
+            <Button
+              disabled={runningNaturalQuery || !naturalQuery.trim()}
+              onClick={() => startTransition(() => void runNaturalKnowledgeQuery())}
+              type="button"
+              variant="secondary"
+            >
+              {runningNaturalQuery ? "查询中..." : "解析并查询"}
+            </Button>
+          </div>
+
+          <div className="knowledge-run-panel">
+            <div>
+              <strong>自然语言维护</strong>
+              <p className="muted">先预览匹配事实，确认后再更新状态并写入维护记录。</p>
+            </div>
+            <Field label="维护说明">
+              <Textarea
+                onChange={(event) => {
+                  setMaintenanceText(event.target.value);
+                  setMaintenancePreview(null);
+                }}
+                placeholder="Alice 不再需要 Gmail 邮箱"
+                rows={3}
+                value={maintenanceText}
+              />
+            </Field>
+            <div className="table-row-actions">
+              <Button
+                disabled={previewingMaintenance || !maintenanceText.trim()}
+                onClick={() => startTransition(() => void previewMaintenance())}
+                type="button"
+                variant="ghost"
+              >
+                {previewingMaintenance ? "预览中..." : "预览维护"}
+              </Button>
+              <Button
+                disabled={
+                  applyingMaintenance ||
+                  !maintenanceText.trim() ||
+                  !maintenanceResultHasMatches(maintenancePreview)
+                }
+                onClick={() => startTransition(() => void applyMaintenance())}
+                type="button"
+                variant="secondary"
+              >
+                {applyingMaintenance ? "执行中..." : "确认执行"}
+              </Button>
+            </div>
+          </div>
+
+          {maintenancePreview ? (
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>动作</th>
+                    <th>目标</th>
+                    <th>用户</th>
+                    <th>匹配事实</th>
+                    <th>原因</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {maintenancePreviewFacts(maintenancePreview).map((fact) => (
+                    <tr className="data-row" key={fact.id}>
+                      <td>{formatMaintenanceAction(maintenancePreview.action)}</td>
+                      <td>{maintenancePreview.targetQuery || "未识别"}</td>
+                      <td>{maintenancePreview.targetUser || "未识别"}</td>
+                      <td>
+                        <div className="data-row-title">
+                          <strong>#{fact.id} {fact.title}</strong>
+                          <span>{fact.factType} / {fact.chatTitle || fact.chatId}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="muted">{maintenancePreview.reason || "无"}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!maintenanceResultHasMatches(maintenancePreview) ? (
+                <p className="muted">没有可安全维护的匹配事实。</p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </Surface>
 
       <Surface
@@ -1438,6 +1612,20 @@ function formatFactExpiry(fact: KnowledgeFact) {
 
 function formatKnowledgeQueryPreviewDescription(result: KnowledgeQueryResult) {
   return `匹配 ${result.facts.length} 条事实，关联 ${result.subjects.length} 个用户。`;
+}
+
+function maintenanceResultHasMatches(result: KnowledgeMaintenanceResult | null) {
+  if (!result || result.action === "" || result.action === "none") {
+    return false;
+  }
+  return result.matchedFacts.length > 0 || result.updatedFacts.length > 0;
+}
+
+function maintenancePreviewFacts(result: KnowledgeMaintenanceResult) {
+  if (result.updatedFacts.length > 0) {
+    return result.updatedFacts;
+  }
+  return result.matchedFacts;
 }
 
 function formatMaintenanceSource(source: KnowledgeMaintenanceEvent["source"]) {
