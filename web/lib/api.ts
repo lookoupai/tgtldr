@@ -8,6 +8,7 @@ import {
   KnowledgeFact,
   KnowledgeRun,
   KnowledgeSpace,
+  KnowledgeSubject,
   SummaryListResponse,
   SummarySearchFilters,
   Summary,
@@ -203,6 +204,22 @@ export const api = {
           spaceId: filters?.spaceId,
           chatId: filters?.chatId,
           status: filters?.status && filters.status !== "all" ? filters.status : undefined,
+          limit: filters?.limit,
+        })}`,
+      ),
+    ),
+  listKnowledgeSubjects: async (filters?: {
+    q?: string;
+    spaceId?: number;
+    chatId?: number;
+    limit?: number;
+  }) =>
+    normalizeList(
+      await request<KnowledgeSubject[] | null>(
+        `/api/knowledge/subjects${buildQuery({
+          q: filters?.q?.trim() || undefined,
+          spaceId: filters?.spaceId,
+          chatId: filters?.chatId,
           limit: filters?.limit,
         })}`,
       ),

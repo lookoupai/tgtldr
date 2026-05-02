@@ -205,6 +205,19 @@ export type KnowledgeFact = {
   updatedAt: string;
 };
 
+export type KnowledgeSubject = {
+  key: string;
+  displayName: string;
+  subjectSenderId: number;
+  subjectSenderName: string;
+  subjectUsername: string;
+  factCount: number;
+  factTypes: string[];
+  chatTitles: string[];
+  lastSeenAt: string;
+  facts: KnowledgeFact[];
+};
+
 export type KnowledgeRun = {
   id: number;
   spaceId: number;

@@ -179,6 +179,19 @@ type KnowledgeFact struct {
 	UpdatedAt         time.Time           `json:"updatedAt"`
 }
 
+type KnowledgeSubject struct {
+	Key               string          `json:"key"`
+	DisplayName       string          `json:"displayName"`
+	SubjectSenderID   int64           `json:"subjectSenderId"`
+	SubjectSenderName string          `json:"subjectSenderName"`
+	SubjectUsername   string          `json:"subjectUsername"`
+	FactCount         int             `json:"factCount"`
+	FactTypes         []string        `json:"factTypes"`
+	ChatTitles        []string        `json:"chatTitles"`
+	LastSeenAt        time.Time       `json:"lastSeenAt"`
+	Facts             []KnowledgeFact `json:"facts"`
+}
+
 type KnowledgeRunStatus string
 
 const (

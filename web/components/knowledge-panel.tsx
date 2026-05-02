@@ -12,7 +12,13 @@ import {
 } from "@/components/dashboard-page";
 import { useToast } from "@/components/toast";
 import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
-import { Chat, KnowledgeFact, KnowledgeRun, KnowledgeSpace } from "@/lib/types";
+import {
+  Chat,
+  KnowledgeFact,
+  KnowledgeRun,
+  KnowledgeSpace,
+  KnowledgeSubject,
+} from "@/lib/types";
 
 type FactStatusFilter = "all" | KnowledgeFact["status"];
 
@@ -43,6 +49,7 @@ const defaultSchema = `{
 export function KnowledgePanel() {
   const [spaces, setSpaces] = useState<KnowledgeSpace[]>([]);
   const [facts, setFacts] = useState<KnowledgeFact[]>([]);
+  const [subjects, setSubjects] = useState<KnowledgeSubject[]>([]);
   const [runs, setRuns] = useState<KnowledgeRun[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
@@ -64,6 +71,10 @@ export function KnowledgePanel() {
   }, [selectedSpaceId, statusFilter, factChatId, deferredFactQuery]);
 
   useEffect(() => {
+    void loadSubjects();
+  }, [selectedSpaceId, factChatId, deferredFactQuery]);
+
+  useEffect(() => {
     void loadRuns();
   }, [selectedSpaceId]);
 
@@ -76,7 +87,7 @@ export function KnowledgePanel() {
       setSpaces(spaceItems.map(normalizeSpace));
       setChats(chatItems);
       setEditing((current) => current ?? (spaceItems[0] ? normalizeSpace(spaceItems[0]) : null));
-      await Promise.all([loadFacts(), loadRuns()]);
+      await Promise.all([loadFacts(), loadSubjects(), loadRuns()]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -92,6 +103,20 @@ export function KnowledgePanel() {
         limit: 100,
       });
       setFacts(items);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    }
+  }
+
+  async function loadSubjects(spaceId: number | "all" = selectedSpaceId) {
+    try {
+      const items = await api.listKnowledgeSubjects({
+        q: deferredFactQuery,
+        spaceId: spaceId === "all" ? undefined : spaceId,
+        chatId: factChatId === "all" ? undefined : factChatId,
+        limit: 50,
+      });
+      setSubjects(items);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -145,7 +170,7 @@ export function KnowledgePanel() {
         toast.showSuccess(`知识抽取完成：读取 ${run.inputMessageCount} 条消息，写入 ${run.extractedCount} 条事实。`);
       }
       setSelectedSpaceId(editing.id);
-      await Promise.all([loadFacts(editing.id), loadRuns(editing.id)]);
+      await Promise.all([loadFacts(editing.id), loadSubjects(editing.id), loadRuns(editing.id)]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -155,7 +180,7 @@ export function KnowledgePanel() {
     try {
       await api.updateKnowledgeFactStatus(fact.id, status);
       toast.showSuccess(status === "active" ? "已恢复这条事实。" : "已忽略这条事实。");
-      await loadFacts();
+      await Promise.all([loadFacts(), loadSubjects()]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -207,6 +232,13 @@ export function KnowledgePanel() {
           badge={`${activeFacts} active`}
           tone={activeFacts > 0 ? "good" : "neutral"}
           detail="展示最近的结构化事实记录。"
+        />
+        <MetricCard
+          label="用户画像"
+          value={subjects.length}
+          badge="active"
+          tone={subjects.length > 0 ? "good" : "neutral"}
+          detail="按用户聚合仍有效的知识事实。"
         />
       </MetricRail>
 
@@ -489,6 +521,46 @@ export function KnowledgePanel() {
       </Surface>
 
       <Surface
+        title="用户画像"
+        description="按用户聚合 active 事实，后续查询机器人可复用同一类结果。"
+      >
+        {subjects.length === 0 ? (
+          <EmptyState title="暂无用户画像" description="有带用户信息的 active 事实后会在这里聚合展示。" />
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>用户</th>
+                  <th>事实数</th>
+                  <th>类型</th>
+                  <th>群组</th>
+                  <th>最近发现</th>
+                  <th>代表事实</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subjects.map((subject) => (
+                  <tr className="data-row" key={subject.key}>
+                    <td>{subject.displayName || "未记录"}</td>
+                    <td>{subject.factCount}</td>
+                    <td>{formatList(subject.factTypes)}</td>
+                    <td>{formatList(subject.chatTitles)}</td>
+                    <td>{formatDateTime(subject.lastSeenAt)}</td>
+                    <td>
+                      <div className="data-row-title">
+                        <span>{formatSubjectFactTitles(subject)}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Surface>
+
+      <Surface
         title="事实列表"
         description={
           selectedSpace
@@ -685,6 +757,22 @@ function formatSubject(fact: KnowledgeFact) {
 
 function formatRunRange(run: KnowledgeRun) {
   return `${formatDateTime(run.rangeStart)} - ${formatDateTime(run.rangeEnd)}`;
+}
+
+function formatList(values: string[]) {
+  if (values.length === 0) {
+    return "未记录";
+  }
+  return values.join("、");
+}
+
+function formatSubjectFactTitles(subject: KnowledgeSubject) {
+  const titles = subject.facts.slice(0, 3).map((fact) => fact.title).filter(Boolean);
+  if (titles.length === 0) {
+    return "未记录";
+  }
+  const suffix = subject.factCount > titles.length ? ` 等 ${subject.factCount} 条` : "";
+  return `${titles.join("；")}${suffix}`;
 }
 
 function formatDateTime(value?: string) {

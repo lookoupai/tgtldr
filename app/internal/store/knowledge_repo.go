@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -137,6 +138,13 @@ type KnowledgeFactFilter struct {
 	Limit   int
 }
 
+type KnowledgeSubjectFilter struct {
+	SpaceID int64
+	ChatID  int64
+	Query   string
+	Limit   int
+}
+
 func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFactFilter) ([]model.KnowledgeFact, error) {
 	limit := filter.Limit
 	if limit <= 0 || limit > 200 {
@@ -196,6 +204,90 @@ func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFact
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (r *KnowledgeFactRepository) ListSubjects(ctx context.Context, filter KnowledgeSubjectFilter) ([]model.KnowledgeSubject, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	facts, err := r.List(ctx, KnowledgeFactFilter{
+		SpaceID: filter.SpaceID,
+		ChatID:  filter.ChatID,
+		Status:  model.KnowledgeFactStatusActive,
+		Query:   filter.Query,
+		Limit:   200,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return groupKnowledgeSubjects(facts, limit), nil
+}
+
+func groupKnowledgeSubjects(facts []model.KnowledgeFact, limit int) []model.KnowledgeSubject {
+	type accumulator struct {
+		subject model.KnowledgeSubject
+		typeSet map[string]struct{}
+		chatSet map[string]struct{}
+	}
+
+	byKey := make(map[string]*accumulator)
+	for _, fact := range facts {
+		key := knowledgeSubjectKey(fact)
+		if key == "" {
+			continue
+		}
+		current, ok := byKey[key]
+		if !ok {
+			current = &accumulator{
+				subject: model.KnowledgeSubject{
+					Key:               key,
+					DisplayName:       knowledgeSubjectDisplayName(fact),
+					SubjectSenderID:   fact.SubjectSenderID,
+					SubjectSenderName: fact.SubjectSenderName,
+					SubjectUsername:   fact.SubjectUsername,
+					LastSeenAt:        fact.LastSeenAt,
+				},
+				typeSet: make(map[string]struct{}),
+				chatSet: make(map[string]struct{}),
+			}
+			byKey[key] = current
+		}
+
+		current.subject.FactCount++
+		current.subject.Facts = append(current.subject.Facts, fact)
+		if fact.LastSeenAt.After(current.subject.LastSeenAt) {
+			current.subject.LastSeenAt = fact.LastSeenAt
+		}
+		if fact.FactType != "" {
+			current.typeSet[fact.FactType] = struct{}{}
+		}
+		if fact.ChatTitle != "" {
+			current.chatSet[fact.ChatTitle] = struct{}{}
+		}
+	}
+
+	items := make([]model.KnowledgeSubject, 0, len(byKey))
+	for _, current := range byKey {
+		current.subject.FactTypes = sortedMapKeys(current.typeSet)
+		current.subject.ChatTitles = sortedMapKeys(current.chatSet)
+		items = append(items, current.subject)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].LastSeenAt.Equal(items[j].LastSeenAt) {
+			if items[i].FactCount == items[j].FactCount {
+				return strings.ToLower(items[i].DisplayName) < strings.ToLower(items[j].DisplayName)
+			}
+			return items[i].FactCount > items[j].FactCount
+		}
+		return items[i].LastSeenAt.After(items[j].LastSeenAt)
+	})
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return items
 }
 
 func (r *KnowledgeFactRepository) UpdateStatus(ctx context.Context, id int64, status model.KnowledgeFactStatus) (model.KnowledgeFact, error) {
@@ -579,6 +671,41 @@ func normalizeKnowledgeSpace(item model.KnowledgeSpace) (model.KnowledgeSpace, e
 	}
 	item.ChatIDs = compactInt64s(item.ChatIDs)
 	return item, nil
+}
+
+func knowledgeSubjectKey(fact model.KnowledgeFact) string {
+	if fact.SubjectSenderID > 0 {
+		return fmt.Sprintf("id:%d", fact.SubjectSenderID)
+	}
+	if username := strings.TrimSpace(fact.SubjectUsername); username != "" {
+		return "username:" + strings.ToLower(username)
+	}
+	if name := strings.TrimSpace(fact.SubjectSenderName); name != "" {
+		return "name:" + strings.ToLower(name)
+	}
+	return ""
+}
+
+func knowledgeSubjectDisplayName(fact model.KnowledgeFact) string {
+	if username := strings.TrimSpace(fact.SubjectUsername); username != "" {
+		return "@" + username
+	}
+	if name := strings.TrimSpace(fact.SubjectSenderName); name != "" {
+		return name
+	}
+	if fact.SubjectSenderID > 0 {
+		return fmt.Sprintf("%d", fact.SubjectSenderID)
+	}
+	return ""
+}
+
+func sortedMapKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func compactInt64s(values []int64) []int64 {
