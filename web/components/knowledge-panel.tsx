@@ -21,30 +21,195 @@ import {
 } from "@/lib/types";
 
 type FactStatusFilter = "all" | KnowledgeFact["status"];
+type KnowledgeTemplateKey = "marketplace" | "hiring" | "skills" | "events" | "blank";
 
-const defaultSchema = `{
-  "types": {
-    "demand": {
-      "label": "需求",
-      "fields": {
-        "item": "string",
-        "quantity": "string",
-        "budget": "string",
-        "location": "string",
-        "deadline": "string"
-      }
-    },
-    "supply": {
-      "label": "供应",
-      "fields": {
-        "item": "string",
-        "quantity": "string",
-        "price": "string",
-        "location": "string"
-      }
-    }
-  }
-}`;
+type KnowledgeSpaceTemplate = {
+  key: KnowledgeTemplateKey;
+  label: string;
+  name: string;
+  description: string;
+  schemaJson: string;
+  extractPrompt: string;
+  summaryPrompt: string;
+  confidenceThreshold: number;
+  retentionDays: number;
+};
+
+const defaultTemplateKey: KnowledgeTemplateKey = "marketplace";
+
+const knowledgeSpaceTemplates: KnowledgeSpaceTemplate[] = [
+  {
+    key: "marketplace",
+    label: "供需",
+    name: "供需频道",
+    description: "从群消息中识别需求、供应和可匹配线索。",
+    schemaJson: schemaString({
+      types: {
+        demand: {
+          label: "需求",
+          fields: {
+            item: "string",
+            quantity: "string",
+            budget: "string",
+            location: "string",
+            deadline: "string",
+          },
+        },
+        supply: {
+          label: "供应",
+          fields: {
+            item: "string",
+            quantity: "string",
+            price: "string",
+            location: "string",
+          },
+        },
+      },
+    }),
+    extractPrompt: "优先抽取明确表达买、卖、求购、出售、转让、拼单、采购的信息。",
+    summaryPrompt: "摘要附加时按需求和供应分组，并保留可联系用户。",
+    confidenceThreshold: 0.75,
+    retentionDays: 30,
+  },
+  {
+    key: "hiring",
+    label: "招聘",
+    name: "招聘线索",
+    description: "记录招聘、求职、内推和可联系候选人。",
+    schemaJson: schemaString({
+      types: {
+        hiring: {
+          label: "招聘",
+          fields: {
+            role: "string",
+            company: "string",
+            location: "string",
+            salary: "string",
+            requirements: "string",
+          },
+        },
+        candidate: {
+          label: "求职",
+          fields: {
+            role: "string",
+            skills: "string",
+            location: "string",
+            availability: "string",
+          },
+        },
+        referral: {
+          label: "内推",
+          fields: {
+            company: "string",
+            role: "string",
+            contact: "string",
+          },
+        },
+      },
+    }),
+    extractPrompt: "只抽取明确招聘、求职、内推、接项目的信息；闲聊和泛泛讨论不要记录。",
+    summaryPrompt: "摘要附加时突出岗位、候选人方向、地点和可联系用户。",
+    confidenceThreshold: 0.75,
+    retentionDays: 45,
+  },
+  {
+    key: "skills",
+    label: "技能画像",
+    name: "技能画像",
+    description: "记录用户擅长领域、可提供帮助和正在学习的方向。",
+    schemaJson: schemaString({
+      types: {
+        skill: {
+          label: "擅长",
+          fields: {
+            area: "string",
+            evidence: "string",
+            level: "string",
+          },
+        },
+        help_offer: {
+          label: "可帮助",
+          fields: {
+            topic: "string",
+            availability: "string",
+            condition: "string",
+          },
+        },
+        interest: {
+          label: "关注方向",
+          fields: {
+            topic: "string",
+            goal: "string",
+          },
+        },
+      },
+    }),
+    extractPrompt: "根据用户自己表达的经验、作品、回答质量或明确承诺记录，不要凭单句闲聊推断技能。",
+    summaryPrompt: "摘要附加时按用户列出擅长方向和可提供帮助的主题。",
+    confidenceThreshold: 0.8,
+    retentionDays: 90,
+  },
+  {
+    key: "events",
+    label: "活动",
+    name: "活动报名",
+    description: "记录活动、报名、参与意向和资源支持。",
+    schemaJson: schemaString({
+      types: {
+        event: {
+          label: "活动",
+          fields: {
+            name: "string",
+            time: "string",
+            location: "string",
+            topic: "string",
+          },
+        },
+        registration: {
+          label: "报名",
+          fields: {
+            event: "string",
+            role: "string",
+            note: "string",
+          },
+        },
+        resource: {
+          label: "资源",
+          fields: {
+            event: "string",
+            resource: "string",
+            condition: "string",
+          },
+        },
+      },
+    }),
+    extractPrompt: "只记录明确的活动安排、报名意向、资源支持或组织协作信息。",
+    summaryPrompt: "摘要附加时列出活动、已报名用户和可用资源。",
+    confidenceThreshold: 0.75,
+    retentionDays: 60,
+  },
+  {
+    key: "blank",
+    label: "空白",
+    name: "自定义知识空间",
+    description: "按你的群聊场景自定义事实类型和字段。",
+    schemaJson: schemaString({
+      types: {
+        custom_fact: {
+          label: "自定义事实",
+          fields: {
+            topic: "string",
+            detail: "string",
+          },
+        },
+      },
+    }),
+    extractPrompt: "",
+    summaryPrompt: "",
+    confidenceThreshold: 0.75,
+    retentionDays: 30,
+  },
+];
 
 export function KnowledgePanel() {
   const [spaces, setSpaces] = useState<KnowledgeSpace[]>([]);
@@ -273,6 +438,27 @@ export function KnowledgePanel() {
           {editing ? (
             <div className="form-stack">
               <div className="form-grid">
+                <Field
+                  label="模板"
+                  hint="套用后仍可继续编辑 schema 和提示词。"
+                >
+                  <AppSelect
+                    onChange={(value) => {
+                      if (!value) {
+                        return;
+                      }
+                      setEditing(applyKnowledgeTemplate(editing, value as KnowledgeTemplateKey));
+                    }}
+                    options={[
+                      { value: "", label: "选择模板" },
+                      ...knowledgeSpaceTemplates.map((template) => ({
+                        value: template.key,
+                        label: template.label,
+                      })),
+                    ]}
+                    value=""
+                  />
+                </Field>
                 <Field label="名称" required>
                   <Input
                     value={editing.name}
@@ -361,7 +547,7 @@ export function KnowledgePanel() {
 
               <Field
                 label="抽取 schema"
-                hint="必须是合法 JSON。P3 抽取引擎会按该 schema 要求 AI 输出结构化事实。"
+                hint="必须是合法 JSON。抽取时会按该 schema 输出结构化事实。"
               >
                 <Textarea
                   rows={14}
@@ -737,13 +923,13 @@ export function KnowledgePanel() {
 }
 
 function newKnowledgeSpace(): KnowledgeSpace {
-  return {
+  return applyKnowledgeTemplate({
     id: 0,
-    name: "供需频道",
-    description: "从群消息中识别需求、供应和可匹配线索。",
+    name: "",
+    description: "",
     enabled: true,
     chatIds: [],
-    schemaJson: defaultSchema,
+    schemaJson: "{}",
     extractPrompt: "",
     summaryPrompt: "",
     confidenceThreshold: 0.75,
@@ -751,7 +937,30 @@ function newKnowledgeSpace(): KnowledgeSpace {
     includeInSummary: true,
     createdAt: "",
     updatedAt: "",
+  }, defaultTemplateKey);
+}
+
+function applyKnowledgeTemplate(
+  space: KnowledgeSpace,
+  templateKey: KnowledgeTemplateKey,
+): KnowledgeSpace {
+  const template =
+    knowledgeSpaceTemplates.find((item) => item.key === templateKey) ??
+    knowledgeSpaceTemplates[0];
+  return {
+    ...space,
+    name: template.name,
+    description: template.description,
+    schemaJson: template.schemaJson,
+    extractPrompt: template.extractPrompt,
+    summaryPrompt: template.summaryPrompt,
+    confidenceThreshold: template.confidenceThreshold,
+    retentionDays: template.retentionDays,
   };
+}
+
+function schemaString(value: unknown) {
+  return JSON.stringify(value, null, 2);
 }
 
 function normalizeSpace(space: KnowledgeSpace): KnowledgeSpace {
