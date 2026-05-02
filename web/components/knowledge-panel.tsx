@@ -253,7 +253,7 @@ export function KnowledgePanel() {
                     }
                   />
                 </Field>
-                <Field label="默认保留天数">
+                <Field label="默认保留天数" hint="过期事实会保留记录，但不会附加到后续摘要。">
                   <Input
                     min={1}
                     type="number"
@@ -491,7 +491,9 @@ export function KnowledgePanel() {
       <Surface
         title="事实列表"
         description={
-          selectedSpace ? `当前过滤：${selectedSpace.name}` : "展示最近的结构化事实。"
+          selectedSpace
+            ? `当前过滤：${selectedSpace.name}，默认保留 ${selectedSpace.retentionDays} 天。`
+            : "展示最近的结构化事实。"
         }
       >
         <div className="toolbar-grid">
@@ -558,6 +560,8 @@ export function KnowledgePanel() {
                   <th>群组</th>
                   <th>用户</th>
                   <th>置信度</th>
+                  <th>最近发现</th>
+                  <th>过期时间</th>
                   <th>状态</th>
                   <th>操作</th>
                 </tr>
@@ -575,8 +579,10 @@ export function KnowledgePanel() {
                     <td>{fact.chatTitle || fact.chatId}</td>
                     <td>{formatSubject(fact)}</td>
                     <td>{Math.round(fact.confidence * 100)}%</td>
+                    <td>{formatDateTime(fact.lastSeenAt)}</td>
+                    <td>{formatFactExpiry(fact)}</td>
                     <td>
-                      <StatusPill tone={fact.status === "active" ? "good" : "neutral"}>
+                      <StatusPill tone={factStatusTone(fact.status)}>
                         {fact.status}
                       </StatusPill>
                     </td>
@@ -690,6 +696,24 @@ function formatDateTime(value?: string) {
     return value;
   }
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatFactExpiry(fact: KnowledgeFact) {
+  if (!fact.expiresAt) {
+    return "长期保留";
+  }
+  return formatDateTime(fact.expiresAt);
+}
+
+function factStatusTone(status: KnowledgeFact["status"]) {
+  switch (status) {
+    case "active":
+      return "good";
+    case "expired":
+      return "warn";
+    default:
+      return "neutral";
+  }
 }
 
 function runStatusTone(status: KnowledgeRun["status"]) {
