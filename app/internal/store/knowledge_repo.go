@@ -261,6 +261,53 @@ func (r *KnowledgeFactRepository) Create(ctx context.Context, fact model.Knowled
 	return saved, nil
 }
 
+func (r *KnowledgeFactRepository) Save(ctx context.Context, fact model.KnowledgeFact) (model.KnowledgeFact, error) {
+	normalized := normalizeKnowledgeFactForUpsert(fact)
+	if normalized.ID <= 0 {
+		return model.KnowledgeFact{}, fmt.Errorf("knowledge fact id is required")
+	}
+	if !json.Valid([]byte(normalized.DataJSON)) {
+		return model.KnowledgeFact{}, fmt.Errorf("knowledge fact data must be valid JSON")
+	}
+
+	saved, err := scanKnowledgeFact(rowScanner{row: r.pool.QueryRow(ctx, `
+		with updated as (
+			update knowledge_facts
+			set fact_type = $2,
+			    title = $3,
+			    data_json = $4::jsonb,
+			    subject_sender_name = $5,
+			    subject_username = $6,
+			    confidence = $7,
+			    source_message_ids = $8,
+			    expires_at = $9,
+			    updated_at = now()
+			where id = $1
+			returning *
+		)
+		select f.id, f.space_id, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
+		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
+		       f.subject_username, f.confidence, f.status, f.source_message_ids,
+		       f.first_seen_at, f.last_seen_at, f.expires_at, f.created_at, f.updated_at
+		from updated f
+		left join chats c on c.id = f.chat_id
+	`,
+		normalized.ID,
+		normalized.FactType,
+		normalized.Title,
+		normalized.DataJSON,
+		normalized.SubjectSenderName,
+		normalized.SubjectUsername,
+		normalized.Confidence,
+		normalized.SourceMessageIDs,
+		normalized.ExpiresAt,
+	)})
+	if err != nil {
+		return model.KnowledgeFact{}, fmt.Errorf("save knowledge fact %d: %w", fact.ID, err)
+	}
+	return saved, nil
+}
+
 func (r *KnowledgeFactRepository) ListSubjects(ctx context.Context, filter KnowledgeSubjectFilter) ([]model.KnowledgeSubject, error) {
 	limit := filter.Limit
 	if limit <= 0 || limit > 100 {
@@ -601,7 +648,7 @@ func normalizeKnowledgeFactForUpsert(fact model.KnowledgeFact) model.KnowledgeFa
 	fact.FactType = strings.TrimSpace(fact.FactType)
 	fact.Title = strings.TrimSpace(fact.Title)
 	fact.SubjectSenderName = strings.TrimSpace(fact.SubjectSenderName)
-	fact.SubjectUsername = strings.TrimSpace(fact.SubjectUsername)
+	fact.SubjectUsername = strings.TrimPrefix(strings.TrimSpace(fact.SubjectUsername), "@")
 	if fact.DataJSON = strings.TrimSpace(fact.DataJSON); fact.DataJSON == "" {
 		fact.DataJSON = "{}"
 	}

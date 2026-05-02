@@ -119,7 +119,7 @@ func TestNormalizeKnowledgeFactForUpsert(t *testing.T) {
 			FactType:          " demand ",
 			Title:             " 需要显卡 ",
 			SubjectSenderName: " Alice ",
-			SubjectUsername:   " alice ",
+			SubjectUsername:   " @alice ",
 			SourceMessageIDs:  []int{3, 0, 2, 3},
 			LastSeenAt:        seenAt,
 		})

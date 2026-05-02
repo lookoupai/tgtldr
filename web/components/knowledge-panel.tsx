@@ -340,6 +340,8 @@ export function KnowledgePanel() {
   const [knowledgeQueryPreview, setKnowledgeQueryPreview] =
     useState<KnowledgeQueryResult | null>(null);
   const [factSources, setFactSources] = useState<KnowledgeFactSources | null>(null);
+  const [editingFact, setEditingFact] = useState<KnowledgeFact | null>(null);
+  const [editingFactSourceIDs, setEditingFactSourceIDs] = useState("");
   const [maintenancePreview, setMaintenancePreview] =
     useState<KnowledgeMaintenanceResult | null>(null);
   const [previewingKnowledgeQuery, setPreviewingKnowledgeQuery] = useState(false);
@@ -356,6 +358,7 @@ export function KnowledgePanel() {
   const [maintenanceText, setMaintenanceText] = useState("");
   const [manualFact, setManualFact] = useState<KnowledgeFact>(() => newManualFact());
   const [creatingManualFact, setCreatingManualFact] = useState(false);
+  const [savingFactEdit, setSavingFactEdit] = useState(false);
   const [runChatId, setRunChatId] = useState<number | "">("");
   const [runDate, setRunDate] = useState(localDateInputValue());
   const deferredFactQuery = useDeferredValue(factQuery);
@@ -521,6 +524,52 @@ export function KnowledgePanel() {
       setFactSources(result);
     } catch (err) {
       toast.showError(asMessage(err));
+    }
+  }
+
+  function startEditingFact(fact: KnowledgeFact) {
+    setEditingFact({
+      ...fact,
+      dataJson: prettyJsonString(fact.dataJson),
+      sourceMessageIds: [...fact.sourceMessageIds],
+    });
+    setEditingFactSourceIDs(formatSourceMessageIDs(fact.sourceMessageIds));
+  }
+
+  async function saveEditingFact() {
+    if (!editingFact) {
+      return;
+    }
+    const error = validateManualFact(editingFact);
+    if (error) {
+      toast.showError(error);
+      return;
+    }
+    const parsedSourceIDs = parseSourceMessageIDs(editingFactSourceIDs);
+    if (parsedSourceIDs.error) {
+      toast.showError(parsedSourceIDs.error);
+      return;
+    }
+
+    setSavingFactEdit(true);
+    try {
+      const saved = await api.saveKnowledgeFact({
+        ...editingFact,
+        factType: editingFact.factType.trim(),
+        title: editingFact.title.trim(),
+        dataJson: editingFact.dataJson.trim() || "{}",
+        subjectSenderName: editingFact.subjectSenderName.trim(),
+        subjectUsername: editingFact.subjectUsername.trim().replace(/^@/, ""),
+        sourceMessageIds: parsedSourceIDs.ids,
+      });
+      toast.showSuccess(`已更新知识事实「${saved.title}」。`);
+      setEditingFact(null);
+      setEditingFactSourceIDs("");
+      await Promise.all([loadFacts(), loadSubjects()]);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setSavingFactEdit(false);
     }
   }
 
@@ -1526,6 +1575,13 @@ export function KnowledgePanel() {
                       <div className="table-row-actions">
                         <button
                           className="text-link-button"
+                          onClick={() => startEditingFact(fact)}
+                          type="button"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          className="text-link-button"
                           onClick={() =>
                             startTransition(() => void showFactSources(fact))
                           }
@@ -1593,6 +1649,149 @@ export function KnowledgePanel() {
       >
         {knowledgeQueryPreview ? (
           <SummaryMarkdown content={knowledgeQueryPreview.content} />
+        ) : null}
+      </Modal>
+
+      <Modal
+        actions={
+          <>
+            <Button
+              onClick={() => {
+                setEditingFact(null);
+                setEditingFactSourceIDs("");
+              }}
+              type="button"
+              variant="ghost"
+            >
+              取消
+            </Button>
+            <Button
+              disabled={savingFactEdit}
+              onClick={() => startTransition(() => void saveEditingFact())}
+              type="button"
+            >
+              {savingFactEdit ? "保存中..." : "保存事实"}
+            </Button>
+          </>
+        }
+        description={
+          editingFact
+            ? `#${editingFact.id} / ${editingFact.chatTitle || editingFact.chatId}`
+            : undefined
+        }
+        onClose={() => {
+          setEditingFact(null);
+          setEditingFactSourceIDs("");
+        }}
+        open={editingFact !== null}
+        title="编辑知识事实"
+      >
+        {editingFact ? (
+          <div className="form-stack">
+            <div className="form-grid">
+              <Field label="类型" required>
+                <Input
+                  onChange={(event) =>
+                    setEditingFact((current) =>
+                      current ? { ...current, factType: event.target.value } : current,
+                    )
+                  }
+                  value={editingFact.factType}
+                />
+              </Field>
+              <Field label="置信度">
+                <Input
+                  max={1}
+                  min={0.1}
+                  onChange={(event) =>
+                    setEditingFact((current) =>
+                      current ? { ...current, confidence: Number(event.target.value) } : current,
+                    )
+                  }
+                  step={0.05}
+                  type="number"
+                  value={editingFact.confidence}
+                />
+              </Field>
+            </div>
+
+            <Field label="标题" required>
+              <Input
+                onChange={(event) =>
+                  setEditingFact((current) =>
+                    current ? { ...current, title: event.target.value } : current,
+                  )
+                }
+                value={editingFact.title}
+              />
+            </Field>
+
+            <div className="form-grid">
+              <Field label="用户名">
+                <Input
+                  onChange={(event) =>
+                    setEditingFact((current) =>
+                      current
+                        ? { ...current, subjectUsername: event.target.value }
+                        : current,
+                    )
+                  }
+                  placeholder="@alice"
+                  value={editingFact.subjectUsername}
+                />
+              </Field>
+              <Field label="显示名">
+                <Input
+                  onChange={(event) =>
+                    setEditingFact((current) =>
+                      current
+                        ? { ...current, subjectSenderName: event.target.value }
+                        : current,
+                    )
+                  }
+                  value={editingFact.subjectSenderName}
+                />
+              </Field>
+            </div>
+
+            <Field label="数据 JSON">
+              <Textarea
+                onChange={(event) =>
+                  setEditingFact((current) =>
+                    current ? { ...current, dataJson: event.target.value } : current,
+                  )
+                }
+                rows={7}
+                value={editingFact.dataJson}
+              />
+            </Field>
+
+            <div className="form-grid">
+              <Field label="过期时间">
+                <Input
+                  onChange={(event) =>
+                    setEditingFact((current) =>
+                      current
+                        ? {
+                            ...current,
+                            expiresAt: dateTimeLocalToISO(event.target.value),
+                          }
+                        : current,
+                    )
+                  }
+                  type="datetime-local"
+                  value={isoToDateTimeLocal(editingFact.expiresAt)}
+                />
+              </Field>
+              <Field label="来源消息 ID" hint="多个 ID 用逗号或空格分隔。">
+                <Input
+                  onChange={(event) => setEditingFactSourceIDs(event.target.value)}
+                  placeholder="123, 456"
+                  value={editingFactSourceIDs}
+                />
+              </Field>
+            </div>
+          </div>
         ) : null}
       </Modal>
 
@@ -1696,6 +1895,14 @@ function applyKnowledgeTemplate(
 
 function schemaString(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function prettyJsonString(value: string) {
+  try {
+    return schemaString(JSON.parse(value || "{}"));
+  } catch {
+    return value;
+  }
 }
 
 function downloadKnowledgeSpaceConfig(space: KnowledgeSpace) {
@@ -1842,6 +2049,30 @@ function validateManualFact(fact: KnowledgeFact) {
   return "";
 }
 
+function formatSourceMessageIDs(ids: number[]) {
+  return ids.join(", ");
+}
+
+function parseSourceMessageIDs(value: string): { ids: number[]; error: string } {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ids: [], error: "" };
+  }
+  const ids: number[] = [];
+  for (const part of trimmed.split(/[,\s]+/)) {
+    const id = Number(part);
+    if (!/^\d+$/.test(part) || !Number.isSafeInteger(id) || id <= 0) {
+      return { ids: [], error: "来源消息 ID 必须是正整数。" };
+    }
+    ids.push(id);
+  }
+  return { ids: compactNumbers(ids), error: "" };
+}
+
+function compactNumbers(values: number[]) {
+  return Array.from(new Set(values)).sort((a, b) => a - b);
+}
+
 function formatSubject(fact: KnowledgeFact) {
   if (fact.subjectUsername) {
     return `@${fact.subjectUsername}`;
@@ -1884,6 +2115,29 @@ function formatDateTime(value?: string) {
     return value;
   }
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function isoToDateTimeLocal(value?: string) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const offset = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function dateTimeLocalToISO(value: string) {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toISOString();
 }
 
 function formatFactExpiry(fact: KnowledgeFact) {

@@ -585,6 +585,10 @@ func normalizeKnowledgeQueryLimit(limit int) int {
 func (r *Router) handleKnowledgeFactByID(w http.ResponseWriter, req *http.Request) {
 	path := strings.TrimPrefix(req.URL.Path, "/api/knowledge/facts/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && parts[0] != "" {
+		r.handleSaveKnowledgeFact(w, req, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "sources" {
 		r.handleKnowledgeFactSources(w, req, parts[0])
 		return
@@ -632,6 +636,66 @@ func (r *Router) handleKnowledgeFactByID(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	httpx.JSON(w, http.StatusOK, item)
+}
+
+func (r *Router) handleSaveKnowledgeFact(w http.ResponseWriter, req *http.Request, idValue string) {
+	if req.Method != http.MethodPut {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := strconv.ParseInt(idValue, 10, 64)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid knowledge fact id")
+		return
+	}
+
+	current, err := r.store.KnowledgeFacts.GetByID(req.Context(), id)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if store.IsNotFound(err) {
+			statusCode = http.StatusNotFound
+		}
+		httpx.Error(w, statusCode, err.Error())
+		return
+	}
+
+	var payload model.KnowledgeFact
+	if err := httpx.DecodeJSON(req, &payload); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(payload.FactType) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写事实类型。", "Enter fact type."))
+		return
+	}
+	if strings.TrimSpace(payload.Title) == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写事实标题。", "Enter fact title."))
+		return
+	}
+	if payload.Confidence <= 0 || payload.Confidence > 1 {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "置信度必须在 0 到 1 之间。", "Confidence must be between 0 and 1."))
+		return
+	}
+
+	payload.ID = current.ID
+	payload.SpaceID = current.SpaceID
+	payload.ChatID = current.ChatID
+	payload.SubjectSenderID = current.SubjectSenderID
+	payload.Status = current.Status
+	payload.FirstSeenAt = current.FirstSeenAt
+	payload.LastSeenAt = current.LastSeenAt
+	payload.CreatedAt = current.CreatedAt
+	payload.SubjectUsername = strings.TrimPrefix(strings.TrimSpace(payload.SubjectUsername), "@")
+	if strings.TrimSpace(payload.DataJSON) == "" {
+		payload.DataJSON = "{}"
+	}
+
+	saved, err := r.store.KnowledgeFacts.Save(req.Context(), payload)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, saved)
 }
 
 func (r *Router) handleKnowledgeFactSources(w http.ResponseWriter, req *http.Request, idValue string) {

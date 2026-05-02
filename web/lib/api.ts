@@ -220,6 +220,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  saveKnowledgeFact: (payload: KnowledgeFact) =>
+    request<KnowledgeFact>(`/api/knowledge/facts/${payload.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   listKnowledgeSubjects: async (filters?: {
     q?: string;
     spaceId?: number;
