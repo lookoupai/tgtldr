@@ -339,7 +339,10 @@ export function KnowledgePanel() {
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
   const [knowledgeQueryPreview, setKnowledgeQueryPreview] =
     useState<KnowledgeQueryResult | null>(null);
+  const [knowledgeSearchResult, setKnowledgeSearchResult] =
+    useState<KnowledgeQueryResult | null>(null);
   const [factSources, setFactSources] = useState<KnowledgeFactSources | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<KnowledgeSubject | null>(null);
   const [editingFact, setEditingFact] = useState<KnowledgeFact | null>(null);
   const [editingFactSourceIDs, setEditingFactSourceIDs] = useState("");
   const [maintenancePreview, setMaintenancePreview] =
@@ -665,7 +668,7 @@ export function KnowledgePanel() {
         chatId: factChatId === "all" ? undefined : factChatId,
         limit: 20,
       });
-      setKnowledgeQueryPreview(result);
+      setKnowledgeSearchResult(result);
       setFactQuery(result.query);
       setFactTypeFilter(result.factType);
     } catch (err) {
@@ -747,6 +750,67 @@ export function KnowledgePanel() {
     [spaces],
   );
 
+  function renderFactActions(fact: KnowledgeFact) {
+    return (
+      <div className="table-row-actions">
+        <button
+          className="text-link-button"
+          onClick={() => startEditingFact(fact)}
+          type="button"
+        >
+          编辑
+        </button>
+        <button
+          className="text-link-button"
+          onClick={() => startTransition(() => void showFactSources(fact))}
+          type="button"
+        >
+          来源
+        </button>
+        {fact.status === "active" ? (
+          <button
+            className="text-link-button"
+            onClick={() =>
+              startTransition(() => void updateFactStatus(fact, "dismissed"))
+            }
+            type="button"
+          >
+            忽略
+          </button>
+        ) : (
+          <button
+            className="text-link-button"
+            onClick={() => startTransition(() => void updateFactStatus(fact, "active"))}
+            type="button"
+          >
+            恢复
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  function renderFactCard(fact: KnowledgeFact) {
+    return (
+      <article className="knowledge-fact-card" key={fact.id}>
+        <div className="knowledge-card-head">
+          <div className="data-row-title">
+            <strong>{fact.title}</strong>
+            <span>{formatFactMeta(fact)}</span>
+          </div>
+          <StatusPill tone={factStatusTone(fact.status)}>{fact.status}</StatusPill>
+        </div>
+        <pre className="knowledge-fact-json">{prettyJsonString(fact.dataJson)}</pre>
+        <div className="knowledge-card-footer">
+          <span>{formatSubject(fact)}</span>
+          <span>{Math.round(fact.confidence * 100)}%</span>
+          <span>{formatDateTime(fact.lastSeenAt)}</span>
+        </div>
+        {renderFactActions(fact)}
+      </article>
+    );
+  }
+
   return (
     <DashboardPage
       title="知识空间"
@@ -786,6 +850,136 @@ export function KnowledgePanel() {
           detail="按用户聚合仍有效的知识事实。"
         />
       </MetricRail>
+
+      <Surface
+        title="知识搜索"
+        description="用自然语言从结构化事实里找人、主题、供需和来源。"
+      >
+        <div className="knowledge-search-shell">
+          <div className="knowledge-search-bar">
+            <Field label="问题">
+              <Input
+                onChange={(event) => {
+                  setNaturalQuery(event.target.value);
+                  setKnowledgeSearchResult(null);
+                }}
+                placeholder="谁了解炒币"
+                value={naturalQuery}
+              />
+            </Field>
+            <Field label="知识空间">
+              <AppSelect
+                onChange={(value) =>
+                  setSelectedSpaceId(value === "all" ? "all" : Number(value))
+                }
+                options={[
+                  { value: "all", label: "全部" },
+                  ...spaces.map((space) => ({
+                    value: String(space.id),
+                    label: space.name,
+                  })),
+                ]}
+                value={String(selectedSpaceId)}
+              />
+            </Field>
+            <Field label="群组">
+              <AppSelect
+                onChange={(value) =>
+                  setFactChatId(value === "all" ? "all" : Number(value))
+                }
+                options={[
+                  { value: "all", label: "全部群组" },
+                  ...chats.map((chat) => ({
+                    value: String(chat.id),
+                    label: chat.title,
+                  })),
+                ]}
+                value={String(factChatId)}
+              />
+            </Field>
+            <Button
+              className="knowledge-search-button"
+              disabled={runningNaturalQuery || !naturalQuery.trim()}
+              onClick={() => startTransition(() => void runNaturalKnowledgeQuery())}
+              type="button"
+              variant="secondary"
+            >
+              {runningNaturalQuery ? "搜索中..." : "搜索知识"}
+            </Button>
+          </div>
+
+          {knowledgeSearchResult ? (
+            <div className="knowledge-search-result">
+              <div className="knowledge-result-summary">
+                <StatusPill tone={knowledgeSearchResult.facts.length > 0 ? "good" : "neutral"}>
+                  {knowledgeSearchResult.facts.length} 条事实
+                </StatusPill>
+                <StatusPill tone={knowledgeSearchResult.subjects.length > 0 ? "good" : "neutral"}>
+                  {knowledgeSearchResult.subjects.length} 个用户
+                </StatusPill>
+                {knowledgeSearchResult.query ? (
+                  <span>关键词：{knowledgeSearchResult.query}</span>
+                ) : null}
+                {knowledgeSearchResult.factType ? (
+                  <span>类型：{knowledgeSearchResult.factType}</span>
+                ) : null}
+              </div>
+
+              {knowledgeSearchResult.facts.length === 0 &&
+              knowledgeSearchResult.subjects.length === 0 ? (
+                <EmptyState
+                  title="没有匹配知识"
+                  description="可以换一个关键词，或先运行知识抽取。"
+                />
+              ) : (
+                <div className="knowledge-result-grid">
+                  <section className="knowledge-result-column">
+                    <div className="knowledge-column-head">
+                      <h3>相关用户</h3>
+                      <span>{knowledgeSearchResult.subjects.length}</span>
+                    </div>
+                    {knowledgeSearchResult.subjects.length === 0 ? (
+                      <p className="muted">没有可聚合的用户画像。</p>
+                    ) : (
+                      <div className="knowledge-card-list">
+                        {knowledgeSearchResult.subjects.map((subject) => (
+                          <button
+                            className="knowledge-subject-card"
+                            key={subject.key}
+                            onClick={() => setSelectedSubject(subject)}
+                            type="button"
+                          >
+                            <span className="knowledge-subject-name">
+                              {formatSubjectName(subject)}
+                            </span>
+                            <span className="muted">{formatSubjectIdentity(subject)}</span>
+                            <span>{subject.factCount} 条事实</span>
+                            <span className="muted">{formatList(subject.factTypes)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="knowledge-result-column">
+                    <div className="knowledge-column-head">
+                      <h3>匹配事实</h3>
+                      <span>{knowledgeSearchResult.facts.length}</span>
+                    </div>
+                    {knowledgeSearchResult.facts.length === 0 ? (
+                      <p className="muted">没有直接匹配的事实。</p>
+                    ) : (
+                      <div className="knowledge-card-list">
+                        {knowledgeSearchResult.facts.map(renderFactCard)}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </Surface>
 
       <div className="settings-workspace">
         <Surface
@@ -1114,32 +1308,10 @@ export function KnowledgePanel() {
       </Surface>
 
       <Surface
-        title="智能查询与维护"
-        description="在网页端验证自然语言查询和自然语言维护结果。"
+        title="智能维护"
+        description="在网页端验证自然语言维护结果。"
       >
         <div className="form-stack">
-          <div className="knowledge-run-panel">
-            <div>
-              <strong>自然语言查询</strong>
-              <p className="muted">例如“谁了解炒币”，系统会解析成知识库过滤条件。</p>
-            </div>
-            <Field label="问题">
-              <Input
-                onChange={(event) => setNaturalQuery(event.target.value)}
-                placeholder="谁了解炒币"
-                value={naturalQuery}
-              />
-            </Field>
-            <Button
-              disabled={runningNaturalQuery || !naturalQuery.trim()}
-              onClick={() => startTransition(() => void runNaturalKnowledgeQuery())}
-              type="button"
-              variant="secondary"
-            >
-              {runningNaturalQuery ? "查询中..." : "解析并查询"}
-            </Button>
-          </div>
-
           <div className="knowledge-run-panel">
             <div>
               <strong>自然语言维护</strong>
@@ -1443,12 +1615,21 @@ export function KnowledgePanel() {
                   <th>群组</th>
                   <th>最近发现</th>
                   <th>代表事实</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {subjects.map((subject) => (
                   <tr className="data-row" key={subject.key}>
-                    <td>{subject.displayName || "未记录"}</td>
+                    <td>
+                      <button
+                        className="text-link-button"
+                        onClick={() => setSelectedSubject(subject)}
+                        type="button"
+                      >
+                        {formatSubjectName(subject)}
+                      </button>
+                    </td>
                     <td>{subject.factCount}</td>
                     <td>{formatList(subject.factTypes)}</td>
                     <td>{formatList(subject.chatTitles)}</td>
@@ -1457,6 +1638,15 @@ export function KnowledgePanel() {
                       <div className="data-row-title">
                         <span>{formatSubjectFactTitles(subject)}</span>
                       </div>
+                    </td>
+                    <td>
+                      <button
+                        className="text-link-button"
+                        onClick={() => setSelectedSubject(subject)}
+                        type="button"
+                      >
+                        详情
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1572,47 +1762,7 @@ export function KnowledgePanel() {
                       </StatusPill>
                     </td>
                     <td>
-                      <div className="table-row-actions">
-                        <button
-                          className="text-link-button"
-                          onClick={() => startEditingFact(fact)}
-                          type="button"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          className="text-link-button"
-                          onClick={() =>
-                            startTransition(() => void showFactSources(fact))
-                          }
-                          type="button"
-                        >
-                          来源
-                        </button>
-                        {fact.status === "active" ? (
-                          <button
-                            className="text-link-button"
-                            onClick={() =>
-                              startTransition(() =>
-                                void updateFactStatus(fact, "dismissed"),
-                              )
-                            }
-                            type="button"
-                          >
-                            忽略
-                          </button>
-                        ) : (
-                          <button
-                            className="text-link-button"
-                            onClick={() =>
-                              startTransition(() => void updateFactStatus(fact, "active"))
-                            }
-                            type="button"
-                          >
-                            恢复
-                          </button>
-                        )}
-                      </div>
+                      {renderFactActions(fact)}
                     </td>
                   </tr>
                 ))}
@@ -1621,6 +1771,45 @@ export function KnowledgePanel() {
           </div>
         )}
       </Surface>
+
+      <Modal
+        actions={<Button onClick={() => setSelectedSubject(null)} type="button">关闭</Button>}
+        description={
+          selectedSubject
+            ? `${selectedSubject.factCount} 条 active 事实 / 最近发现 ${formatDateTime(selectedSubject.lastSeenAt)}`
+            : undefined
+        }
+        onClose={() => setSelectedSubject(null)}
+        open={selectedSubject !== null}
+        title={selectedSubject ? `用户画像：${formatSubjectName(selectedSubject)}` : "用户画像"}
+      >
+        {selectedSubject ? (
+          <div className="knowledge-profile-detail">
+            <div className="knowledge-profile-summary">
+              <div>
+                <span>身份</span>
+                <strong>{formatSubjectIdentity(selectedSubject)}</strong>
+              </div>
+              <div>
+                <span>事实类型</span>
+                <strong>{formatList(selectedSubject.factTypes)}</strong>
+              </div>
+              <div>
+                <span>群组</span>
+                <strong>{formatList(selectedSubject.chatTitles)}</strong>
+              </div>
+            </div>
+
+            {selectedSubject.facts.length === 0 ? (
+              <EmptyState title="暂无事实" description="这个用户当前没有可展示的 active 事实。" />
+            ) : (
+              <div className="knowledge-card-list">
+                {selectedSubject.facts.map(renderFactCard)}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         actions={
@@ -2084,6 +2273,45 @@ function formatSubject(fact: KnowledgeFact) {
     return String(fact.subjectSenderId);
   }
   return "未记录";
+}
+
+function formatSubjectName(subject: KnowledgeSubject) {
+  if (subject.displayName) {
+    return subject.displayName;
+  }
+  if (subject.subjectUsername) {
+    return `@${subject.subjectUsername}`;
+  }
+  if (subject.subjectSenderName) {
+    return subject.subjectSenderName;
+  }
+  if (subject.subjectSenderId) {
+    return String(subject.subjectSenderId);
+  }
+  return "未记录";
+}
+
+function formatSubjectIdentity(subject: KnowledgeSubject) {
+  const parts: string[] = [];
+  if (subject.subjectUsername) {
+    parts.push(`@${subject.subjectUsername}`);
+  }
+  if (subject.subjectSenderName && subject.subjectSenderName !== subject.displayName) {
+    parts.push(subject.subjectSenderName);
+  }
+  if (subject.subjectSenderId) {
+    parts.push(String(subject.subjectSenderId));
+  }
+  return parts.join(" / ") || "未记录";
+}
+
+function formatFactMeta(fact: KnowledgeFact) {
+  const parts = [
+    fact.spaceName,
+    fact.factType,
+    fact.chatTitle || String(fact.chatId),
+  ].filter(Boolean);
+  return parts.join(" / ") || "未记录";
 }
 
 function formatRunRange(run: KnowledgeRun) {
