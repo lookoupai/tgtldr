@@ -1,0 +1,417 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/frederic/tgtldr/app/internal/model"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type KnowledgeSpaceRepository struct {
+	pool *pgxpool.Pool
+}
+
+func (r *KnowledgeSpaceRepository) List(ctx context.Context) ([]model.KnowledgeSpace, error) {
+	rows, err := r.pool.Query(ctx, `
+		select id, name, description, enabled, chat_ids, schema_json::text,
+		       extract_prompt, summary_prompt, confidence_threshold, retention_days,
+		       include_in_summary, created_at, updated_at
+		from knowledge_spaces
+		order by enabled desc, name asc
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query knowledge spaces: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.KnowledgeSpace, 0)
+	for rows.Next() {
+		item, err := scanKnowledgeSpace(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan knowledge space: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *KnowledgeSpaceRepository) GetByID(ctx context.Context, id int64) (model.KnowledgeSpace, error) {
+	item, err := scanKnowledgeSpace(rowScanner{row: r.pool.QueryRow(ctx, `
+		select id, name, description, enabled, chat_ids, schema_json::text,
+		       extract_prompt, summary_prompt, confidence_threshold, retention_days,
+		       include_in_summary, created_at, updated_at
+		from knowledge_spaces
+		where id = $1
+	`, id)})
+	if err != nil {
+		return model.KnowledgeSpace{}, fmt.Errorf("get knowledge space %d: %w", id, err)
+	}
+	return item, nil
+}
+
+func (r *KnowledgeSpaceRepository) Create(ctx context.Context, item model.KnowledgeSpace) (model.KnowledgeSpace, error) {
+	normalized, err := normalizeKnowledgeSpace(item)
+	if err != nil {
+		return model.KnowledgeSpace{}, err
+	}
+	saved, err := scanKnowledgeSpace(rowScanner{row: r.pool.QueryRow(ctx, `
+		insert into knowledge_spaces (
+			name, description, enabled, chat_ids, schema_json, extract_prompt,
+			summary_prompt, confidence_threshold, retention_days, include_in_summary
+		) values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
+		returning id, name, description, enabled, chat_ids, schema_json::text,
+		          extract_prompt, summary_prompt, confidence_threshold, retention_days,
+		          include_in_summary, created_at, updated_at
+	`,
+		normalized.Name,
+		normalized.Description,
+		normalized.Enabled,
+		normalized.ChatIDs,
+		normalized.SchemaJSON,
+		normalized.ExtractPrompt,
+		normalized.SummaryPrompt,
+		normalized.ConfidenceThreshold,
+		normalized.RetentionDays,
+		normalized.IncludeInSummary,
+	)})
+	if err != nil {
+		return model.KnowledgeSpace{}, fmt.Errorf("create knowledge space: %w", err)
+	}
+	return saved, nil
+}
+
+func (r *KnowledgeSpaceRepository) Save(ctx context.Context, item model.KnowledgeSpace) (model.KnowledgeSpace, error) {
+	normalized, err := normalizeKnowledgeSpace(item)
+	if err != nil {
+		return model.KnowledgeSpace{}, err
+	}
+	saved, err := scanKnowledgeSpace(rowScanner{row: r.pool.QueryRow(ctx, `
+		update knowledge_spaces
+		set name = $1,
+		    description = $2,
+		    enabled = $3,
+		    chat_ids = $4,
+		    schema_json = $5::jsonb,
+		    extract_prompt = $6,
+		    summary_prompt = $7,
+		    confidence_threshold = $8,
+		    retention_days = $9,
+		    include_in_summary = $10,
+		    updated_at = now()
+		where id = $11
+		returning id, name, description, enabled, chat_ids, schema_json::text,
+		          extract_prompt, summary_prompt, confidence_threshold, retention_days,
+		          include_in_summary, created_at, updated_at
+	`,
+		normalized.Name,
+		normalized.Description,
+		normalized.Enabled,
+		normalized.ChatIDs,
+		normalized.SchemaJSON,
+		normalized.ExtractPrompt,
+		normalized.SummaryPrompt,
+		normalized.ConfidenceThreshold,
+		normalized.RetentionDays,
+		normalized.IncludeInSummary,
+		normalized.ID,
+	)})
+	if err != nil {
+		return model.KnowledgeSpace{}, fmt.Errorf("save knowledge space %d: %w", item.ID, err)
+	}
+	return saved, nil
+}
+
+type KnowledgeFactRepository struct {
+	pool *pgxpool.Pool
+}
+
+type KnowledgeFactFilter struct {
+	SpaceID int64
+	ChatID  int64
+	Status  model.KnowledgeFactStatus
+	Limit   int
+}
+
+func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFactFilter) ([]model.KnowledgeFact, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+
+	query := `
+		select f.id, f.space_id, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
+		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
+		       f.subject_username, f.confidence, f.status, f.source_message_ids,
+		       f.first_seen_at, f.last_seen_at, f.expires_at, f.created_at, f.updated_at
+		from knowledge_facts f
+		left join chats c on c.id = f.chat_id
+		where 1 = 1
+	`
+	args := make([]any, 0, 4)
+	if filter.SpaceID > 0 {
+		args = append(args, filter.SpaceID)
+		query += fmt.Sprintf(" and f.space_id = $%d", len(args))
+	}
+	if filter.ChatID > 0 {
+		args = append(args, filter.ChatID)
+		query += fmt.Sprintf(" and f.chat_id = $%d", len(args))
+	}
+	if strings.TrimSpace(string(filter.Status)) != "" {
+		args = append(args, filter.Status)
+		query += fmt.Sprintf(" and f.status = $%d", len(args))
+	}
+	args = append(args, limit)
+	query += fmt.Sprintf(" order by f.updated_at desc limit $%d", len(args))
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query knowledge facts: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.KnowledgeFact, 0)
+	for rows.Next() {
+		var item model.KnowledgeFact
+		var sourceMessageIDs []int32
+		err := rows.Scan(
+			&item.ID,
+			&item.SpaceID,
+			&item.ChatID,
+			&item.ChatTitle,
+			&item.FactType,
+			&item.Title,
+			&item.DataJSON,
+			&item.SubjectSenderID,
+			&item.SubjectSenderName,
+			&item.SubjectUsername,
+			&item.Confidence,
+			&item.Status,
+			&sourceMessageIDs,
+			&item.FirstSeenAt,
+			&item.LastSeenAt,
+			&item.ExpiresAt,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan knowledge fact: %w", err)
+		}
+		item.SourceMessageIDs = int32sToInts(sourceMessageIDs)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+type KnowledgeRunRepository struct {
+	pool *pgxpool.Pool
+}
+
+func (r *KnowledgeFactRepository) UpsertMany(ctx context.Context, facts []model.KnowledgeFact) error {
+	if len(facts) == 0 {
+		return nil
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin knowledge facts tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	for _, fact := range facts {
+		dataJSON := strings.TrimSpace(fact.DataJSON)
+		if dataJSON == "" {
+			dataJSON = "{}"
+		}
+		if !json.Valid([]byte(dataJSON)) {
+			return fmt.Errorf("knowledge fact data must be valid JSON")
+		}
+		_, err := tx.Exec(ctx, `
+			insert into knowledge_facts (
+				space_id, chat_id, fact_type, title, data_json, subject_sender_id,
+				subject_sender_name, subject_username, confidence, status,
+				source_message_ids, first_seen_at, last_seen_at, expires_at
+			) values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			on conflict (space_id, chat_id, fact_type, title, subject_sender_id, source_message_ids)
+			do update set
+				data_json = excluded.data_json,
+				subject_sender_name = excluded.subject_sender_name,
+				subject_username = excluded.subject_username,
+				confidence = excluded.confidence,
+				status = excluded.status,
+				last_seen_at = excluded.last_seen_at,
+				expires_at = excluded.expires_at,
+				updated_at = now()
+		`,
+			fact.SpaceID,
+			fact.ChatID,
+			strings.TrimSpace(fact.FactType),
+			strings.TrimSpace(fact.Title),
+			dataJSON,
+			fact.SubjectSenderID,
+			strings.TrimSpace(fact.SubjectSenderName),
+			strings.TrimSpace(fact.SubjectUsername),
+			fact.Confidence,
+			fact.Status,
+			fact.SourceMessageIDs,
+			fact.FirstSeenAt,
+			fact.LastSeenAt,
+			fact.ExpiresAt,
+		)
+		if err != nil {
+			return fmt.Errorf("upsert knowledge fact: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit knowledge facts tx: %w", err)
+	}
+	return nil
+}
+
+func (r *KnowledgeRunRepository) Create(ctx context.Context, run model.KnowledgeRun) (model.KnowledgeRun, error) {
+	saved, err := scanKnowledgeRun(rowScanner{row: r.pool.QueryRow(ctx, `
+		insert into knowledge_runs (
+			space_id, chat_id, range_start, range_end, status, input_message_count,
+			extracted_count, error_message, started_at, finished_at
+		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		returning id, space_id, chat_id, range_start, range_end, status,
+		          input_message_count, extracted_count, error_message,
+		          started_at, finished_at, created_at, updated_at
+	`,
+		run.SpaceID,
+		run.ChatID,
+		run.RangeStart,
+		run.RangeEnd,
+		run.Status,
+		run.InputMessageCount,
+		run.ExtractedCount,
+		run.ErrorMessage,
+		run.StartedAt,
+		run.FinishedAt,
+	)})
+	if err != nil {
+		return model.KnowledgeRun{}, fmt.Errorf("create knowledge run: %w", err)
+	}
+	return saved, nil
+}
+
+func (r *KnowledgeRunRepository) Finish(ctx context.Context, id int64, status model.KnowledgeRunStatus, inputCount int, extractedCount int, errorMessage string, finishedAt time.Time) (model.KnowledgeRun, error) {
+	saved, err := scanKnowledgeRun(rowScanner{row: r.pool.QueryRow(ctx, `
+		update knowledge_runs
+		set status = $1,
+		    input_message_count = $2,
+		    extracted_count = $3,
+		    error_message = $4,
+		    finished_at = $5,
+		    updated_at = now()
+		where id = $6
+		returning id, space_id, chat_id, range_start, range_end, status,
+		          input_message_count, extracted_count, error_message,
+		          started_at, finished_at, created_at, updated_at
+	`, status, inputCount, extractedCount, strings.TrimSpace(errorMessage), finishedAt, id)})
+	if err != nil {
+		return model.KnowledgeRun{}, fmt.Errorf("finish knowledge run %d: %w", id, err)
+	}
+	return saved, nil
+}
+
+func scanKnowledgeSpace(scanner chatScanner) (model.KnowledgeSpace, error) {
+	var item model.KnowledgeSpace
+	err := scanner.Scan(
+		&item.ID,
+		&item.Name,
+		&item.Description,
+		&item.Enabled,
+		&item.ChatIDs,
+		&item.SchemaJSON,
+		&item.ExtractPrompt,
+		&item.SummaryPrompt,
+		&item.ConfidenceThreshold,
+		&item.RetentionDays,
+		&item.IncludeInSummary,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return model.KnowledgeSpace{}, err
+	}
+	item, err = normalizeKnowledgeSpace(item)
+	if err != nil {
+		return model.KnowledgeSpace{}, err
+	}
+	return item, nil
+}
+
+func scanKnowledgeRun(scanner chatScanner) (model.KnowledgeRun, error) {
+	var run model.KnowledgeRun
+	err := scanner.Scan(
+		&run.ID,
+		&run.SpaceID,
+		&run.ChatID,
+		&run.RangeStart,
+		&run.RangeEnd,
+		&run.Status,
+		&run.InputMessageCount,
+		&run.ExtractedCount,
+		&run.ErrorMessage,
+		&run.StartedAt,
+		&run.FinishedAt,
+		&run.CreatedAt,
+		&run.UpdatedAt,
+	)
+	if err != nil {
+		return model.KnowledgeRun{}, err
+	}
+	return run, nil
+}
+
+func normalizeKnowledgeSpace(item model.KnowledgeSpace) (model.KnowledgeSpace, error) {
+	item.Name = strings.TrimSpace(item.Name)
+	item.Description = strings.TrimSpace(item.Description)
+	item.ExtractPrompt = strings.TrimSpace(item.ExtractPrompt)
+	item.SummaryPrompt = strings.TrimSpace(item.SummaryPrompt)
+	if item.SchemaJSON = strings.TrimSpace(item.SchemaJSON); item.SchemaJSON == "" {
+		item.SchemaJSON = "{}"
+	}
+	if !json.Valid([]byte(item.SchemaJSON)) {
+		return model.KnowledgeSpace{}, fmt.Errorf("schema_json must be valid JSON")
+	}
+	if item.ConfidenceThreshold <= 0 {
+		item.ConfidenceThreshold = 0.75
+	}
+	if item.ConfidenceThreshold > 1 {
+		item.ConfidenceThreshold = 1
+	}
+	if item.RetentionDays <= 0 {
+		item.RetentionDays = 30
+	}
+	item.ChatIDs = compactInt64s(item.ChatIDs)
+	return item, nil
+}
+
+func compactInt64s(values []int64) []int64 {
+	seen := make(map[int64]struct{}, len(values))
+	out := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func int32sToInts(values []int32) []int {
+	out := make([]int, 0, len(values))
+	for _, value := range values {
+		out = append(out, int(value))
+	}
+	return out
+}

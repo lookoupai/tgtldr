@@ -13,6 +13,7 @@ import (
 	"github.com/frederic/tgtldr/app/internal/bot"
 	"github.com/frederic/tgtldr/app/internal/clock"
 	"github.com/frederic/tgtldr/app/internal/config"
+	"github.com/frederic/tgtldr/app/internal/knowledge"
 	"github.com/frederic/tgtldr/app/internal/model"
 	"github.com/frederic/tgtldr/app/internal/scheduler"
 	"github.com/frederic/tgtldr/app/internal/store"
@@ -49,6 +50,7 @@ func run() error {
 	sysClock := clock.System{}
 	botService := bot.New()
 	summaryService := summary.NewService(st, sysClock, cfg.OpenAITimeout)
+	knowledgeService := knowledge.NewService(st, sysClock, cfg.OpenAITimeout)
 	telegramService := telegramsvc.NewService(ctx, st, sysClock)
 	schedulerService := scheduler.NewService(st, sysClock, summaryService, botService)
 	telegramService.SetHistoryBackfillCompletionHook(func(chat model.Chat, fromDate, toDate string) {
@@ -59,6 +61,7 @@ func run() error {
 		telegramService,
 		schedulerService,
 		botService,
+		knowledgeService,
 		cfg.WebOrigin,
 		cfg.RequestTimout,
 	)

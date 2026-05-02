@@ -935,6 +935,60 @@ select {
   gap: 18px;
 }
 
+.knowledge-chat-list,
+.knowledge-space-list {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-chat-option,
+.knowledge-space-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.knowledge-chat-option {
+  justify-content: flex-start;
+}
+
+.knowledge-chat-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.knowledge-space-item {
+  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+.knowledge-space-item.active {
+  border-color: rgba(185, 137, 59, 0.42);
+  background: rgba(255, 249, 238, 0.94);
+}
+
+.knowledge-run-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.knowledge-run-panel p {
+  margin: 4px 0 0;
+}
+
 .summary-detail-stack {
   display: grid;
   gap: 18px;

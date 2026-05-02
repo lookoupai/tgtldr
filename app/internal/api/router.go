@@ -11,6 +11,7 @@ import (
 
 	"github.com/frederic/tgtldr/app/internal/bot"
 	"github.com/frederic/tgtldr/app/internal/httpx"
+	"github.com/frederic/tgtldr/app/internal/knowledge"
 	"github.com/frederic/tgtldr/app/internal/localauth"
 	"github.com/frederic/tgtldr/app/internal/model"
 	"github.com/frederic/tgtldr/app/internal/scheduler"
@@ -21,6 +22,7 @@ import (
 type Router struct {
 	store     *store.Store
 	bot       *bot.Service
+	knowledge *knowledge.Service
 	telegram  *telegramsvc.Service
 	scheduler *scheduler.Service
 	auth      *localauth.Service
@@ -33,12 +35,14 @@ func New(
 	telegram *telegramsvc.Service,
 	scheduler *scheduler.Service,
 	botService *bot.Service,
+	knowledgeService *knowledge.Service,
 	origin string,
 	timeout time.Duration,
 ) *Router {
 	return &Router{
 		store:     store,
 		bot:       botService,
+		knowledge: knowledgeService,
 		telegram:  telegram,
 		scheduler: scheduler,
 		auth:      localauth.NewService(store),
@@ -64,6 +68,9 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/telegram/chats/sync", r.handleSyncChats)
 	mux.HandleFunc("/api/chats", r.handleChats)
 	mux.HandleFunc("/api/chats/", r.handleChatByID)
+	mux.HandleFunc("/api/knowledge/spaces", r.handleKnowledgeSpaces)
+	mux.HandleFunc("/api/knowledge/spaces/", r.handleKnowledgeSpaceByID)
+	mux.HandleFunc("/api/knowledge/facts", r.handleKnowledgeFacts)
 	mux.HandleFunc("/api/history-backfills", r.handleStartHistoryBackfill)
 	mux.HandleFunc("/api/history-backfills/", r.handleHistoryBackfillByID)
 	mux.HandleFunc("/api/summaries", r.handleSummaries)

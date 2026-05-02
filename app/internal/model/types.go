@@ -133,6 +133,76 @@ type TopicGroup struct {
 	Description string `json:"description"`
 }
 
+type KnowledgeSpace struct {
+	ID                  int64     `json:"id"`
+	Name                string    `json:"name"`
+	Description         string    `json:"description"`
+	Enabled             bool      `json:"enabled"`
+	ChatIDs             []int64   `json:"chatIds"`
+	SchemaJSON          string    `json:"schemaJson"`
+	ExtractPrompt       string    `json:"extractPrompt"`
+	SummaryPrompt       string    `json:"summaryPrompt"`
+	ConfidenceThreshold float64   `json:"confidenceThreshold"`
+	RetentionDays       int       `json:"retentionDays"`
+	IncludeInSummary    bool      `json:"includeInSummary"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
+}
+
+type KnowledgeFactStatus string
+
+const (
+	KnowledgeFactStatusActive    KnowledgeFactStatus = "active"
+	KnowledgeFactStatusExpired   KnowledgeFactStatus = "expired"
+	KnowledgeFactStatusDismissed KnowledgeFactStatus = "dismissed"
+)
+
+type KnowledgeFact struct {
+	ID                int64               `json:"id"`
+	SpaceID           int64               `json:"spaceId"`
+	ChatID            int64               `json:"chatId"`
+	ChatTitle         string              `json:"chatTitle,omitempty"`
+	FactType          string              `json:"factType"`
+	Title             string              `json:"title"`
+	DataJSON          string              `json:"dataJson"`
+	SubjectSenderID   int64               `json:"subjectSenderId"`
+	SubjectSenderName string              `json:"subjectSenderName"`
+	SubjectUsername   string              `json:"subjectUsername"`
+	Confidence        float64             `json:"confidence"`
+	Status            KnowledgeFactStatus `json:"status"`
+	SourceMessageIDs  []int               `json:"sourceMessageIds"`
+	FirstSeenAt       time.Time           `json:"firstSeenAt"`
+	LastSeenAt        time.Time           `json:"lastSeenAt"`
+	ExpiresAt         *time.Time          `json:"expiresAt,omitempty"`
+	CreatedAt         time.Time           `json:"createdAt"`
+	UpdatedAt         time.Time           `json:"updatedAt"`
+}
+
+type KnowledgeRunStatus string
+
+const (
+	KnowledgeRunStatusPending   KnowledgeRunStatus = "pending"
+	KnowledgeRunStatusRunning   KnowledgeRunStatus = "running"
+	KnowledgeRunStatusSucceeded KnowledgeRunStatus = "succeeded"
+	KnowledgeRunStatusFailed    KnowledgeRunStatus = "failed"
+)
+
+type KnowledgeRun struct {
+	ID                int64              `json:"id"`
+	SpaceID           int64              `json:"spaceId"`
+	ChatID            int64              `json:"chatId"`
+	RangeStart        time.Time          `json:"rangeStart"`
+	RangeEnd          time.Time          `json:"rangeEnd"`
+	Status            KnowledgeRunStatus `json:"status"`
+	InputMessageCount int                `json:"inputMessageCount"`
+	ExtractedCount    int                `json:"extractedCount"`
+	ErrorMessage      string             `json:"errorMessage"`
+	StartedAt         time.Time          `json:"startedAt"`
+	FinishedAt        *time.Time         `json:"finishedAt,omitempty"`
+	CreatedAt         time.Time          `json:"createdAt"`
+	UpdatedAt         time.Time          `json:"updatedAt"`
+}
+
 type Message struct {
 	ID                int64     `json:"id"`
 	ChatID            int64     `json:"chatId"`

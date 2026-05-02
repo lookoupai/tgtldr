@@ -5,6 +5,9 @@ import {
   BotTargetChatResolveResult,
   Chat,
   HistoryBackfillTask,
+  KnowledgeFact,
+  KnowledgeRun,
+  KnowledgeSpace,
   SummaryListResponse,
   SummarySearchFilters,
   Summary,
@@ -173,6 +176,39 @@ export const api = {
         filteredSenders: chat.filteredSenders,
         filteredKeywords: chat.filteredKeywords,
       }),
+    }),
+  listKnowledgeSpaces: async () =>
+    normalizeList(await request<KnowledgeSpace[] | null>("/api/knowledge/spaces")),
+  createKnowledgeSpace: (payload: KnowledgeSpace) =>
+    request<KnowledgeSpace>("/api/knowledge/spaces", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  saveKnowledgeSpace: (payload: KnowledgeSpace) =>
+    request<KnowledgeSpace>(`/api/knowledge/spaces/${payload.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  listKnowledgeFacts: async (filters?: {
+    spaceId?: number;
+    chatId?: number;
+    status?: KnowledgeFact["status"] | "all";
+    limit?: number;
+  }) =>
+    normalizeList(
+      await request<KnowledgeFact[] | null>(
+        `/api/knowledge/facts${buildQuery({
+          spaceId: filters?.spaceId,
+          chatId: filters?.chatId,
+          status: filters?.status && filters.status !== "all" ? filters.status : undefined,
+          limit: filters?.limit,
+        })}`,
+      ),
+    ),
+  runKnowledgeExtraction: (spaceId: number, chatId: number, date: string) =>
+    request<KnowledgeRun>(`/api/knowledge/spaces/${spaceId}/run`, {
+      method: "POST",
+      body: JSON.stringify({ chatId, date }),
     }),
   startHistoryBackfill: (chatId: number, fromDate: string, toDate: string) =>
     request<HistoryBackfillTask>("/api/history-backfills", {

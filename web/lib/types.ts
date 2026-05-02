@@ -166,3 +166,56 @@ export type SummaryContextPreview = {
   finalInputNotice: string;
   previewNotice: string;
 };
+
+export type KnowledgeSpace = {
+  id: number;
+  name: string;
+  description: string;
+  enabled: boolean;
+  chatIds: number[];
+  schemaJson: string;
+  extractPrompt: string;
+  summaryPrompt: string;
+  confidenceThreshold: number;
+  retentionDays: number;
+  includeInSummary: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type KnowledgeFact = {
+  id: number;
+  spaceId: number;
+  chatId: number;
+  chatTitle?: string;
+  factType: string;
+  title: string;
+  dataJson: string;
+  subjectSenderId: number;
+  subjectSenderName: string;
+  subjectUsername: string;
+  confidence: number;
+  status: "active" | "expired" | "dismissed";
+  sourceMessageIds: number[];
+  firstSeenAt: string;
+  lastSeenAt: string;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type KnowledgeRun = {
+  id: number;
+  spaceId: number;
+  chatId: number;
+  rangeStart: string;
+  rangeEnd: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  inputMessageCount: number;
+  extractedCount: number;
+  errorMessage: string;
+  startedAt: string;
+  finishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
