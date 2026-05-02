@@ -1,0 +1,40 @@
+{
+  "kind": "tgtldr.knowledge-space",
+  "version": 1,
+  "space": {
+    "name": "技能画像",
+    "description": "记录用户擅长领域、可提供帮助和正在学习的方向。",
+    "schema": {
+      "types": {
+        "skill": {
+          "label": "擅长",
+          "fields": {
+            "area": "string",
+            "evidence": "string",
+            "level": "string"
+          }
+        },
+        "help_offer": {
+          "label": "可帮助",
+          "fields": {
+            "topic": "string",
+            "availability": "string",
+            "condition": "string"
+          }
+        },
+        "interest": {
+          "label": "关注方向",
+          "fields": {
+            "topic": "string",
+            "goal": "string"
+          }
+        }
+      }
+    },
+    "extractPrompt": "根据用户自己表达的经验、作品、回答质量或明确承诺记录，不要凭单句闲聊推断技能。",
+    "summaryPrompt": "摘要附加时按用户列出擅长方向和可提供帮助的主题。",
+    "confidenceThreshold": 0.8,
+    "retentionDays": 90,
+    "includeInSummary": true
+  }
+}

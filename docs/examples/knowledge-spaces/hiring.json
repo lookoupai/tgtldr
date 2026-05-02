@@ -1,0 +1,44 @@
+{
+  "kind": "tgtldr.knowledge-space",
+  "version": 1,
+  "space": {
+    "name": "招聘线索",
+    "description": "记录招聘、求职、内推和可联系候选人。",
+    "schema": {
+      "types": {
+        "hiring": {
+          "label": "招聘",
+          "fields": {
+            "role": "string",
+            "company": "string",
+            "location": "string",
+            "salary": "string",
+            "requirements": "string"
+          }
+        },
+        "candidate": {
+          "label": "求职",
+          "fields": {
+            "role": "string",
+            "skills": "string",
+            "location": "string",
+            "availability": "string"
+          }
+        },
+        "referral": {
+          "label": "内推",
+          "fields": {
+            "company": "string",
+            "role": "string",
+            "contact": "string"
+          }
+        }
+      }
+    },
+    "extractPrompt": "只抽取明确招聘、求职、内推、接项目的信息；闲聊和泛泛讨论不要记录。",
+    "summaryPrompt": "摘要附加时突出岗位、候选人方向、地点和可联系用户。",
+    "confidenceThreshold": 0.75,
+    "retentionDays": 45,
+    "includeInSummary": true
+  }
+}

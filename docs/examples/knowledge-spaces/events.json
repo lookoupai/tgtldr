@@ -1,0 +1,42 @@
+{
+  "kind": "tgtldr.knowledge-space",
+  "version": 1,
+  "space": {
+    "name": "活动报名",
+    "description": "记录活动、报名、参与意向和资源支持。",
+    "schema": {
+      "types": {
+        "event": {
+          "label": "活动",
+          "fields": {
+            "name": "string",
+            "time": "string",
+            "location": "string",
+            "topic": "string"
+          }
+        },
+        "registration": {
+          "label": "报名",
+          "fields": {
+            "event": "string",
+            "role": "string",
+            "note": "string"
+          }
+        },
+        "resource": {
+          "label": "资源",
+          "fields": {
+            "event": "string",
+            "resource": "string",
+            "condition": "string"
+          }
+        }
+      }
+    },
+    "extractPrompt": "只记录明确的活动安排、报名意向、资源支持或组织协作信息。",
+    "summaryPrompt": "摘要附加时列出活动、已报名用户和可用资源。",
+    "confidenceThreshold": 0.75,
+    "retentionDays": 60,
+    "includeInSummary": true
+  }
+}

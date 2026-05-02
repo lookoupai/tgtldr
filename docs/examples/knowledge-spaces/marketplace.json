@@ -1,0 +1,36 @@
+{
+  "kind": "tgtldr.knowledge-space",
+  "version": 1,
+  "space": {
+    "name": "供需频道",
+    "description": "从群消息中识别需求、供应和可匹配线索。",
+    "schema": {
+      "types": {
+        "demand": {
+          "label": "需求",
+          "fields": {
+            "item": "string",
+            "quantity": "string",
+            "budget": "string",
+            "location": "string",
+            "deadline": "string"
+          }
+        },
+        "supply": {
+          "label": "供应",
+          "fields": {
+            "item": "string",
+            "quantity": "string",
+            "price": "string",
+            "location": "string"
+          }
+        }
+      }
+    },
+    "extractPrompt": "优先抽取明确表达买、卖、求购、出售、转让、拼单、采购的信息。",
+    "summaryPrompt": "摘要附加时按需求和供应分组，并保留可联系用户。",
+    "confidenceThreshold": 0.75,
+    "retentionDays": 30,
+    "includeInSummary": true
+  }
+}
