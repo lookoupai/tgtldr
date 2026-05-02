@@ -1,6 +1,13 @@
 "use client";
 
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { api } from "@/lib/api";
 import { AppSelect } from "@/components/app-select";
 import {
@@ -36,6 +43,21 @@ type KnowledgeSpaceTemplate = {
   summaryPrompt: string;
   confidenceThreshold: number;
   retentionDays: number;
+};
+
+type KnowledgeSpaceExport = {
+  kind: "tgtldr.knowledge-space";
+  version: 1;
+  space: {
+    name: string;
+    description: string;
+    schema: unknown;
+    extractPrompt: string;
+    summaryPrompt: string;
+    confidenceThreshold: number;
+    retentionDays: number;
+    includeInSummary: boolean;
+  };
 };
 
 const defaultTemplateKey: KnowledgeTemplateKey = "marketplace";
@@ -234,6 +256,7 @@ export function KnowledgePanel() {
   const [runDate, setRunDate] = useState(localDateInputValue());
   const deferredFactQuery = useDeferredValue(factQuery);
   const deferredFactTypeFilter = useDeferredValue(factTypeFilter);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -362,6 +385,36 @@ export function KnowledgePanel() {
     }
   }
 
+  function exportCurrentSpace() {
+    if (!editing) {
+      return;
+    }
+    const validationError = validateSpace(editing);
+    if (validationError) {
+      toast.showError(validationError);
+      return;
+    }
+    downloadKnowledgeSpaceConfig(editing);
+    toast.showSuccess("知识空间配置已导出。");
+  }
+
+  async function importKnowledgeSpaceConfig(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+    try {
+      const imported = parseKnowledgeSpaceConfig(await file.text(), editing ?? newKnowledgeSpace());
+      setEditing(imported);
+      toast.showSuccess(`已导入知识空间配置「${imported.name}」。保存后生效。`);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      if (importInputRef.current) {
+        importInputRef.current.value = "";
+      }
+    }
+  }
+
   function currentKnowledgeQueryFilters() {
     return {
       q: deferredFactQuery,
@@ -456,6 +509,33 @@ export function KnowledgePanel() {
         <Surface
           title="空间配置"
           description="schema 使用 JSON 保存。供需、招聘、活动等场景都走同一套结构。"
+          actions={
+            editing ? (
+              <>
+                <input
+                  accept="application/json,.json"
+                  className="sr-only"
+                  onChange={(event) =>
+                    startTransition(() =>
+                      void importKnowledgeSpaceConfig(event.currentTarget.files?.[0]),
+                    )
+                  }
+                  ref={importInputRef}
+                  type="file"
+                />
+                <Button
+                  onClick={() => importInputRef.current?.click()}
+                  type="button"
+                  variant="ghost"
+                >
+                  导入配置
+                </Button>
+                <Button onClick={exportCurrentSpace} type="button" variant="secondary">
+                  导出配置
+                </Button>
+              </>
+            ) : null
+          }
         >
           {editing ? (
             <div className="form-stack">
@@ -1023,6 +1103,98 @@ function applyKnowledgeTemplate(
 
 function schemaString(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function downloadKnowledgeSpaceConfig(space: KnowledgeSpace) {
+  const payload: KnowledgeSpaceExport = {
+    kind: "tgtldr.knowledge-space",
+    version: 1,
+    space: {
+      name: space.name.trim(),
+      description: space.description,
+      schema: JSON.parse(space.schemaJson),
+      extractPrompt: space.extractPrompt,
+      summaryPrompt: space.summaryPrompt,
+      confidenceThreshold: space.confidenceThreshold,
+      retentionDays: space.retentionDays,
+      includeInSummary: space.includeInSummary,
+    },
+  };
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safeFileName(space.name || "knowledge-space")}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseKnowledgeSpaceConfig(content: string, base: KnowledgeSpace): KnowledgeSpace {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("导入文件必须是合法 JSON。");
+  }
+  if (!isRecord(parsed)) {
+    throw new Error("导入文件格式不正确。");
+  }
+
+  const source = isRecord(parsed.space) ? parsed.space : parsed;
+  const schema = readImportedSchema(source);
+  const imported: KnowledgeSpace = {
+    ...base,
+    name: readImportedString(source.name, "未命名知识空间"),
+    description: readImportedString(source.description, ""),
+    schemaJson: schemaString(schema),
+    extractPrompt: readImportedString(source.extractPrompt, ""),
+    summaryPrompt: readImportedString(source.summaryPrompt, ""),
+    confidenceThreshold: readImportedNumber(source.confidenceThreshold, 0.75),
+    retentionDays: readImportedNumber(source.retentionDays, 30),
+    includeInSummary: readImportedBoolean(source.includeInSummary, base.includeInSummary),
+  };
+  const validationError = validateSpace(imported);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+  return imported;
+}
+
+function readImportedSchema(source: Record<string, unknown>) {
+  if (source.schema !== undefined) {
+    return source.schema;
+  }
+  if (typeof source.schemaJson === "string") {
+    try {
+      return JSON.parse(source.schemaJson);
+    } catch {
+      throw new Error("导入文件中的 schemaJson 必须是合法 JSON。");
+    }
+  }
+  throw new Error("导入文件缺少 schema。");
+}
+
+function readImportedString(value: unknown, fallback: string) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function readImportedNumber(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function readImportedBoolean(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeFileName(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+  return normalized.replace(/^-+|-+$/g, "") || "knowledge-space";
 }
 
 function normalizeSpace(space: KnowledgeSpace): KnowledgeSpace {
