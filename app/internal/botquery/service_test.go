@@ -35,6 +35,30 @@ func TestParseCommand(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "custom type query",
+			text: "/type hiring remote engineer",
+			want: parsedCommand{query: "remote engineer", factType: "hiring"},
+			ok:   true,
+		},
+		{
+			name: "custom type query with bot username",
+			text: "/facts@BotName skill rust",
+			want: parsedCommand{query: "rust", factType: "skill"},
+			ok:   true,
+		},
+		{
+			name: "custom type without query",
+			text: "/fact event",
+			want: parsedCommand{factType: "event"},
+			ok:   true,
+		},
+		{
+			name: "type command without type shows help",
+			text: "/type",
+			want: parsedCommand{help: true},
+			ok:   true,
+		},
+		{
 			name: "plain text",
 			text: "knowledge 4090",
 			ok:   false,

@@ -83,10 +83,13 @@ docker compose up -d
 
 ```text
 /knowledge <关键词>
+/type <事实类型> <关键词>
 /demand <关键词>
 /supply <关键词>
 /who <关键词>
 ```
+
+其中 `/type` 可用于查询自定义 schema 类型，例如 `/type hiring remote` 或 `/type skill rust`。
 
 Bot 只会响应配置的目标会话，避免把本地知识库内容发送到未授权聊天。
 

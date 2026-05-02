@@ -162,6 +162,8 @@ func parseCommand(text string) (parsedCommand, bool) {
 	switch name {
 	case "start", "help":
 		return parsedCommand{help: true}, true
+	case "type", "fact", "facts":
+		return parseTypedCommand(query)
 	case "knowledge", "know", "query", "who":
 		return parsedCommand{query: query}, true
 	case "demand", "need":
@@ -171,6 +173,17 @@ func parseCommand(text string) (parsedCommand, bool) {
 	default:
 		return parsedCommand{}, false
 	}
+}
+
+func parseTypedCommand(input string) (parsedCommand, bool) {
+	fields := strings.Fields(strings.TrimSpace(input))
+	if len(fields) == 0 {
+		return parsedCommand{help: true}, true
+	}
+	return parsedCommand{
+		factType: fields[0],
+		query:    strings.Join(fields[1:], " "),
+	}, true
 }
 
 func nextOffset(updates []bot.CommandUpdate, current int64) int64 {
@@ -194,6 +207,7 @@ func commandHelpText(language model.Language) string {
 		return strings.TrimSpace(`
 ## Knowledge Bot Commands
 - /knowledge <keyword>: search active facts
+- /type <fact_type> <keyword>: search a custom fact type
 - /demand <keyword>: search demand facts
 - /supply <keyword>: search supply facts
 - /who <keyword>: search people and their facts
@@ -202,6 +216,7 @@ func commandHelpText(language model.Language) string {
 	return strings.TrimSpace(`
 ## 知识 Bot 命令
 - /knowledge <关键词>：查询有效事实
+- /type <事实类型> <关键词>：查询自定义事实类型
 - /demand <关键词>：查询需求事实
 - /supply <关键词>：查询供应事实
 - /who <关键词>：查询用户及相关事实
