@@ -124,15 +124,18 @@ docker compose up -d
 /demand <关键词>
 /supply <关键词>
 /who <关键词>
+/ask <自然语言问题>
 /expire <事实ID>
 /forget <事实ID>
 /restore <事实ID>
 /update <自然语言说明>
+/confirm <确认码>
+/cancel
 ```
 
 其中 `/type` 可用于查询自定义 schema 类型，例如 `/type hiring remote` 或 `/type skill rust`。`/fact` 和 `/facts` 是同等用途的别名。
 查询结果会显示事实 ID，可用 `/expire` 标记过期、`/forget` 忽略、`/restore` 恢复。
-也可以用 `/update A 不再需要 Gmail 邮箱` 这类自然语言维护命令，系统会先解析受影响用户和物品，再更新匹配事实。事实被网页、Bot 或自动状态变更维护时会留下审计记录，便于追踪旧状态、新状态和触发来源。
+`/ask 谁了解炒币` 会先把自然语言问题解析成关键词和事实类型，再复用知识库查询。也可以用 `/update A 不再需要 Gmail 邮箱` 这类自然语言维护命令，系统会先解析受影响用户和物品，预览匹配事实，并要求 `/confirm <确认码>` 后才更新。事实被网页、Bot 或自动状态变更维护时会留下审计记录，便于追踪旧状态、新状态和触发来源。
 
 Bot 只会响应配置的目标会话，避免把本地知识库内容发送到未授权聊天。
 

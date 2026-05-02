@@ -78,6 +78,24 @@ func TestParseCommand(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "natural language query command",
+			text: "/ask 谁了解炒币",
+			want: parsedCommand{naturalQueryText: "谁了解炒币"},
+			ok:   true,
+		},
+		{
+			name: "confirm maintenance",
+			text: "/confirm 000123",
+			want: parsedCommand{confirm: true, confirmToken: "000123"},
+			ok:   true,
+		},
+		{
+			name: "cancel maintenance",
+			text: "/cancel",
+			want: parsedCommand{cancel: true},
+			ok:   true,
+		},
+		{
 			name: "type command without type shows help",
 			text: "/type",
 			want: parsedCommand{help: true},
@@ -136,5 +154,19 @@ func TestNextOffsetKeepsCurrentWhenUpdatesAreOlder(t *testing.T) {
 
 	if got != 20 {
 		t.Fatalf("nextOffset() = %d, want 20", got)
+	}
+}
+
+func TestMaintenanceTargetStatus(t *testing.T) {
+	t.Parallel()
+
+	if got := maintenanceTargetStatus("expire"); got != model.KnowledgeFactStatusExpired {
+		t.Fatalf("expire status = %q", got)
+	}
+	if got := maintenanceTargetStatus("dismiss"); got != model.KnowledgeFactStatusDismissed {
+		t.Fatalf("dismiss status = %q", got)
+	}
+	if got := maintenanceTargetStatus("restore"); got != model.KnowledgeFactStatusActive {
+		t.Fatalf("restore status = %q", got)
 	}
 }

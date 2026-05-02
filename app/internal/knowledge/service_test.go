@@ -235,3 +235,21 @@ func TestMaintenanceInstruction(t *testing.T) {
 		}, model.KnowledgeFactStatusActive), ShouldBeFalse)
 	})
 }
+
+func TestKnowledgeQueryInstruction(t *testing.T) {
+	Convey("自然语言查询指令解析会规整关键词和事实类型", t, func() {
+		instruction, err := parseKnowledgeQueryInstruction("```json\n{\"query\":\" 炒币 \",\"factType\":\"skill\"}\n```")
+
+		So(err, ShouldBeNil)
+		So(instruction.Query, ShouldEqual, "炒币")
+		So(instruction.FactType, ShouldEqual, "skill")
+	})
+
+	Convey("自然语言查询类型会复用供需别名规整", t, func() {
+		instruction, err := parseKnowledgeQueryInstruction(`{"query":"Gmail","factType":"seller"}`)
+
+		So(err, ShouldBeNil)
+		So(instruction.Query, ShouldEqual, "Gmail")
+		So(instruction.FactType, ShouldEqual, "supply")
+	})
+}

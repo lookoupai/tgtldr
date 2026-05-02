@@ -124,15 +124,18 @@ If Bot delivery is enabled and a target chat is configured, you can query the kn
 /demand <keyword>
 /supply <keyword>
 /who <keyword>
+/ask <natural-language question>
 /expire <fact_id>
 /forget <fact_id>
 /restore <fact_id>
 /update <natural language>
+/confirm <code>
+/cancel
 ```
 
 Use `/type` for custom schema types, such as `/type hiring remote` or `/type skill rust`. `/fact` and `/facts` are aliases for the same query form.
 Query results include fact IDs. Use `/expire` to mark a fact expired, `/forget` to dismiss it, and `/restore` to reactivate it.
-You can also use natural-language maintenance commands such as `/update Alice no longer needs Gmail`; the system parses the affected user and item before updating matching facts. Web actions, Bot commands, natural-language updates, and automatic status updates are recorded as maintenance events so you can audit the previous status, next status, and source.
+`/ask who understands crypto trading` parses a natural-language question into query filters before searching. You can also use natural-language maintenance commands such as `/update Alice no longer needs Gmail`; the system previews matching facts and requires `/confirm <code>` before updating them. Web actions, Bot commands, natural-language updates, and automatic status updates are recorded as maintenance events so you can audit the previous status, next status, and source.
 
 The Bot only responds in the configured target chat, so local knowledge is not sent to unauthorized conversations.
 

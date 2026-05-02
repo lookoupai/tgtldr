@@ -18,26 +18,42 @@ const (
 	commandIdleDelay          = 15 * time.Second
 	commandErrorDelay         = 30 * time.Second
 	commandResultLimit        = 20
+	pendingMaintenanceTTL     = 10 * time.Minute
 )
 
 type Service struct {
-	store      *store.Store
-	bot        *bot.Service
-	maintainer knowledgeMaintainer
+	store              *store.Store
+	bot                *bot.Service
+	maintainer         knowledgeMaintainer
+	pendingMaintenance *pendingMaintenance
+	pendingSeq         int64
 }
 
 type parsedCommand struct {
-	query        string
-	factType     string
-	help         bool
-	factID       int64
-	statusUpdate model.KnowledgeFactStatus
-	updateText   string
+	query            string
+	factType         string
+	help             bool
+	factID           int64
+	statusUpdate     model.KnowledgeFactStatus
+	updateText       string
+	naturalQueryText string
+	confirm          bool
+	confirmToken     string
+	cancel           bool
 }
 
 type knowledgeMaintainer interface {
 	ApplyMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
+	PreviewMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
+	ParseQueryText(ctx context.Context, text string) (knowledge.KnowledgeQueryInstruction, error)
 	UpdateFactStatus(ctx context.Context, factID int64, status model.KnowledgeFactStatus, source string, reason string, operatorText string, matchedQuery string) (model.KnowledgeFact, error)
+}
+
+type pendingMaintenance struct {
+	token     string
+	text      string
+	result    knowledge.MaintenanceResult
+	expiresAt time.Time
 }
 
 type pollState struct {
@@ -120,6 +136,7 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 func (s *Service) responseForCommand(ctx context.Context, language model.Language, text string) (string, bool, error) {
+	s.expirePendingMaintenance(time.Now())
 	command, ok := parseCommand(text)
 	if !ok {
 		return "", false, nil
@@ -127,35 +144,48 @@ func (s *Service) responseForCommand(ctx context.Context, language model.Languag
 	if command.help {
 		return commandHelpText(language), true, nil
 	}
+	if command.cancel {
+		return s.cancelMaintenance(language), true, nil
+	}
+	if command.confirm {
+		return s.confirmMaintenance(ctx, language, command.confirmToken)
+	}
 	if command.statusUpdate != "" {
 		return s.updateFactStatus(ctx, language, command.factID, command.statusUpdate)
 	}
 	if command.updateText != "" {
 		return s.applyMaintenanceText(ctx, language, command.updateText)
 	}
+	if command.naturalQueryText != "" {
+		return s.respondToNaturalQuery(ctx, language, command.naturalQueryText)
+	}
 
+	return s.renderKnowledgeQuery(ctx, language, command.query, command.factType)
+}
+
+func (s *Service) renderKnowledgeQuery(ctx context.Context, language model.Language, query string, factType string) (string, bool, error) {
 	now := time.Now()
 	if err := s.store.KnowledgeFacts.ExpireDue(ctx, now); err != nil {
 		return "", true, err
 	}
 	facts, err := s.store.KnowledgeFacts.List(ctx, store.KnowledgeFactFilter{
 		Status:   model.KnowledgeFactStatusActive,
-		FactType: command.factType,
-		Query:    command.query,
+		FactType: factType,
+		Query:    query,
 		Limit:    commandResultLimit,
 	})
 	if err != nil {
 		return "", true, err
 	}
 	subjects, err := s.store.KnowledgeFacts.ListSubjects(ctx, store.KnowledgeSubjectFilter{
-		FactType: command.factType,
-		Query:    command.query,
+		FactType: factType,
+		Query:    query,
 		Limit:    commandResultLimit,
 	})
 	if err != nil {
 		return "", true, err
 	}
-	return knowledge.FormatQueryResult(language, command.query, command.factType, facts, subjects), true, nil
+	return knowledge.FormatQueryResult(language, query, factType, facts, subjects), true, nil
 }
 
 func (s *Service) updateFactStatus(ctx context.Context, language model.Language, factID int64, status model.KnowledgeFactStatus) (string, bool, error) {
@@ -179,11 +209,93 @@ func (s *Service) applyMaintenanceText(ctx context.Context, language model.Langu
 	if s.maintainer == nil {
 		return "", true, fmt.Errorf("knowledge maintainer is not configured")
 	}
-	result, err := s.maintainer.ApplyMaintenanceText(ctx, text)
+	result, err := s.maintainer.PreviewMaintenanceText(ctx, text)
 	if err != nil {
 		return "", true, err
 	}
+	if !maintenanceResultNeedsConfirmation(result) {
+		return commandMaintenanceResultText(language, result), true, nil
+	}
+	token := s.setPendingMaintenance(text, result)
+	return commandMaintenancePreviewText(language, result, token), true, nil
+}
+
+func (s *Service) respondToNaturalQuery(ctx context.Context, language model.Language, text string) (string, bool, error) {
+	if s.maintainer == nil {
+		return "", true, fmt.Errorf("knowledge maintainer is not configured")
+	}
+	query, err := s.maintainer.ParseQueryText(ctx, text)
+	if err != nil {
+		return "", true, err
+	}
+	if strings.TrimSpace(query.Query) == "" && strings.TrimSpace(query.FactType) == "" {
+		return commandNaturalQueryEmptyText(language), true, nil
+	}
+	return s.renderKnowledgeQuery(ctx, language, query.Query, query.FactType)
+}
+
+func (s *Service) confirmMaintenance(ctx context.Context, language model.Language, token string) (string, bool, error) {
+	if s.maintainer == nil {
+		return "", true, fmt.Errorf("knowledge maintainer is not configured")
+	}
+	pending := s.pendingMaintenance
+	if pending == nil {
+		return commandMaintenanceNoPendingText(language), true, nil
+	}
+	if strings.TrimSpace(token) != pending.token {
+		return commandMaintenanceTokenMismatchText(language), true, nil
+	}
+	targetStatus := maintenanceTargetStatus(pending.result.Action)
+	if targetStatus == "" {
+		s.pendingMaintenance = nil
+		return commandMaintenanceResultText(language, pending.result), true, nil
+	}
+
+	result := pending.result
+	result.UpdatedFacts = nil
+	for _, fact := range pending.result.MatchedFacts {
+		updated, err := s.maintainer.UpdateFactStatus(
+			ctx,
+			fact.ID,
+			targetStatus,
+			knowledge.MaintenanceSourceBotUpdate,
+			pending.result.Reason,
+			pending.text,
+			pending.result.TargetQuery,
+		)
+		if err != nil {
+			return "", true, err
+		}
+		result.UpdatedFacts = append(result.UpdatedFacts, updated)
+	}
+	s.pendingMaintenance = nil
 	return commandMaintenanceResultText(language, result), true, nil
+}
+
+func (s *Service) cancelMaintenance(language model.Language) string {
+	if s.pendingMaintenance == nil {
+		return commandMaintenanceNoPendingText(language)
+	}
+	s.pendingMaintenance = nil
+	return commandMaintenanceCancelledText(language)
+}
+
+func (s *Service) setPendingMaintenance(text string, result knowledge.MaintenanceResult) string {
+	s.pendingSeq++
+	token := fmt.Sprintf("%06d", s.pendingSeq%1000000)
+	s.pendingMaintenance = &pendingMaintenance{
+		token:     token,
+		text:      strings.TrimSpace(text),
+		result:    result,
+		expiresAt: time.Now().Add(pendingMaintenanceTTL),
+	}
+	return token
+}
+
+func (s *Service) expirePendingMaintenance(now time.Time) {
+	if s.pendingMaintenance != nil && now.After(s.pendingMaintenance.expiresAt) {
+		s.pendingMaintenance = nil
+	}
 }
 
 func parseCommand(text string) (parsedCommand, bool) {
@@ -206,6 +318,10 @@ func parseCommand(text string) (parsedCommand, bool) {
 	switch name {
 	case "start", "help":
 		return parsedCommand{help: true}, true
+	case "confirm":
+		return parsedCommand{confirm: true, confirmToken: strings.TrimSpace(query)}, true
+	case "cancel", "abort":
+		return parsedCommand{cancel: true}, true
 	case "expire", "resolve":
 		return parseStatusCommand(query, model.KnowledgeFactStatusExpired)
 	case "forget", "dismiss":
@@ -217,6 +333,11 @@ func parseCommand(text string) (parsedCommand, bool) {
 			return parsedCommand{help: true}, true
 		}
 		return parsedCommand{updateText: query}, true
+	case "ask", "question", "nlquery":
+		if query == "" {
+			return parsedCommand{help: true}, true
+		}
+		return parsedCommand{naturalQueryText: query}, true
 	case "type", "fact", "facts":
 		return parseTypedCommand(query)
 	case "knowledge", "know", "query", "who":
@@ -269,6 +390,23 @@ func botQueryReady(settings model.AppSettings) bool {
 		strings.TrimSpace(settings.BotTargetChatID) != ""
 }
 
+func maintenanceResultNeedsConfirmation(result knowledge.MaintenanceResult) bool {
+	return result.Action != "" && result.Action != "none" && len(result.MatchedFacts) > 0
+}
+
+func maintenanceTargetStatus(action string) model.KnowledgeFactStatus {
+	switch action {
+	case "expire":
+		return model.KnowledgeFactStatusExpired
+	case "dismiss":
+		return model.KnowledgeFactStatusDismissed
+	case "restore":
+		return model.KnowledgeFactStatusActive
+	default:
+		return ""
+	}
+}
+
 func commandHelpText(language model.Language) string {
 	if language == model.LanguageEN {
 		return strings.TrimSpace(`
@@ -280,10 +418,13 @@ func commandHelpText(language model.Language) string {
 - /demand <keyword>: search demand facts
 - /supply <keyword>: search supply facts
 - /who <keyword>: search people and their facts
+- /ask <question>: parse a natural-language knowledge question
 - /expire <fact_id>: mark a fact expired
 - /forget <fact_id>: dismiss a fact
 - /restore <fact_id>: restore an expired or dismissed fact
 - /update <natural language>: update facts from a maintenance note, such as "Alice no longer needs Gmail"
+- /confirm <code>: apply a pending natural-language update
+- /cancel: cancel a pending natural-language update
 `)
 	}
 	return strings.TrimSpace(`
@@ -295,10 +436,13 @@ func commandHelpText(language model.Language) string {
 - /demand <关键词>：查询需求事实
 - /supply <关键词>：查询供应事实
 - /who <关键词>：查询用户及相关事实
+- /ask <问题>：解析自然语言知识库问题
 - /expire <事实ID>：将事实标记为过期
 - /forget <事实ID>：忽略一条事实
 - /restore <事实ID>：恢复过期或忽略的事实
 - /update <自然语言说明>：根据说明维护事实，例如“A 不再需要 Gmail 邮箱”
+- /confirm <确认码>：执行待确认的自然语言维护
+- /cancel：取消待确认的自然语言维护
 `)
 }
 
@@ -342,6 +486,65 @@ func commandMaintenanceResultText(language model.Language, result knowledge.Main
 		lines = append(lines, fmt.Sprintf("- #%d %s（%s）", fact.ID, fact.Title, fact.Status))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func commandMaintenancePreviewText(language model.Language, result knowledge.MaintenanceResult, token string) string {
+	lines := make([]string, 0, len(result.MatchedFacts)+3)
+	if language == model.LanguageEN {
+		lines = append(lines, fmt.Sprintf("Pending update: %s %d knowledge facts.", result.Action, len(result.MatchedFacts)))
+		for _, fact := range result.MatchedFacts {
+			lines = append(lines, fmt.Sprintf("- #%d %s (%s)", fact.ID, fact.Title, fact.Status))
+		}
+		lines = append(lines, fmt.Sprintf("Send /confirm %s to apply, or /cancel to discard.", token))
+		return strings.Join(lines, "\n")
+	}
+	lines = append(lines, fmt.Sprintf("待确认维护：将对 %d 条知识事实执行 %s。", len(result.MatchedFacts), formatMaintenanceActionZH(result.Action)))
+	for _, fact := range result.MatchedFacts {
+		lines = append(lines, fmt.Sprintf("- #%d %s（当前 %s）", fact.ID, fact.Title, fact.Status))
+	}
+	lines = append(lines, fmt.Sprintf("发送 /confirm %s 执行，或发送 /cancel 取消。", token))
+	return strings.Join(lines, "\n")
+}
+
+func commandMaintenanceNoPendingText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "There is no pending knowledge update."
+	}
+	return "没有待确认的知识维护。"
+}
+
+func commandMaintenanceTokenMismatchText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "Confirmation code does not match the pending knowledge update."
+	}
+	return "确认码与待确认的知识维护不匹配。"
+}
+
+func commandMaintenanceCancelledText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "Pending knowledge update was cancelled."
+	}
+	return "已取消待确认的知识维护。"
+}
+
+func commandNaturalQueryEmptyText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "I could not extract a safe knowledge query. Try /knowledge <keyword> or /type <fact_type> <keyword>."
+	}
+	return "没有识别到可执行的知识查询。可以改用 /knowledge <关键词> 或 /type <事实类型> <关键词>。"
+}
+
+func formatMaintenanceActionZH(action string) string {
+	switch action {
+	case "expire":
+		return "过期"
+	case "dismiss":
+		return "忽略"
+	case "restore":
+		return "恢复"
+	default:
+		return action
+	}
 }
 
 func commandErrorText(language model.Language, err error) string {
