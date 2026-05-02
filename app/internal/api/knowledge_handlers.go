@@ -143,6 +143,7 @@ func (r *Router) handleKnowledgeFacts(w http.ResponseWriter, req *http.Request) 
 	query := req.URL.Query()
 	filter := store.KnowledgeFactFilter{
 		Status: model.KnowledgeFactStatus(strings.TrimSpace(query.Get("status"))),
+		Query:  strings.TrimSpace(query.Get("q")),
 	}
 	if spaceID, err := strconv.ParseInt(strings.TrimSpace(query.Get("spaceId")), 10, 64); err == nil {
 		filter.SpaceID = spaceID

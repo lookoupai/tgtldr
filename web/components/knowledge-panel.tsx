@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { AppSelect } from "@/components/app-select";
 import {
@@ -48,8 +48,11 @@ export function KnowledgePanel() {
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
   const [selectedSpaceId, setSelectedSpaceId] = useState<number | "all">("all");
   const [statusFilter, setStatusFilter] = useState<FactStatusFilter>("all");
+  const [factChatId, setFactChatId] = useState<number | "all">("all");
+  const [factQuery, setFactQuery] = useState("");
   const [runChatId, setRunChatId] = useState<number | "">("");
   const [runDate, setRunDate] = useState(localDateInputValue());
+  const deferredFactQuery = useDeferredValue(factQuery);
   const toast = useToast();
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export function KnowledgePanel() {
 
   useEffect(() => {
     void loadFacts();
-  }, [selectedSpaceId, statusFilter]);
+  }, [selectedSpaceId, statusFilter, factChatId, deferredFactQuery]);
 
   useEffect(() => {
     void loadRuns();
@@ -82,7 +85,9 @@ export function KnowledgePanel() {
   async function loadFacts(spaceId: number | "all" = selectedSpaceId) {
     try {
       const items = await api.listKnowledgeFacts({
+        q: deferredFactQuery,
         spaceId: spaceId === "all" ? undefined : spaceId,
+        chatId: factChatId === "all" ? undefined : factChatId,
         status: statusFilter,
         limit: 100,
       });
@@ -490,6 +495,13 @@ export function KnowledgePanel() {
         }
       >
         <div className="toolbar-grid">
+          <Field label="搜索事实">
+            <Input
+              onChange={(event) => setFactQuery(event.target.value)}
+              placeholder="商品、用户、地点"
+              value={factQuery}
+            />
+          </Field>
           <Field label="知识空间">
             <AppSelect
               onChange={(value) =>
@@ -515,6 +527,21 @@ export function KnowledgePanel() {
                 { value: "dismissed", label: "Dismissed" },
               ]}
               value={statusFilter}
+            />
+          </Field>
+          <Field label="群组">
+            <AppSelect
+              onChange={(value) =>
+                setFactChatId(value === "all" ? "all" : Number(value))
+              }
+              options={[
+                { value: "all", label: "全部群组" },
+                ...chats.map((chat) => ({
+                  value: String(chat.id),
+                  label: chat.title,
+                })),
+              ]}
+              value={String(factChatId)}
             />
           </Field>
         </div>

@@ -190,6 +190,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   listKnowledgeFacts: async (filters?: {
+    q?: string;
     spaceId?: number;
     chatId?: number;
     status?: KnowledgeFact["status"] | "all";
@@ -198,6 +199,7 @@ export const api = {
     normalizeList(
       await request<KnowledgeFact[] | null>(
         `/api/knowledge/facts${buildQuery({
+          q: filters?.q?.trim() || undefined,
           spaceId: filters?.spaceId,
           chatId: filters?.chatId,
           status: filters?.status && filters.status !== "all" ? filters.status : undefined,

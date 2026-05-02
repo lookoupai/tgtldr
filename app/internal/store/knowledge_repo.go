@@ -133,6 +133,7 @@ type KnowledgeFactFilter struct {
 	SpaceID int64
 	ChatID  int64
 	Status  model.KnowledgeFactStatus
+	Query   string
 	Limit   int
 }
 
@@ -151,7 +152,7 @@ func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFact
 		left join chats c on c.id = f.chat_id
 		where 1 = 1
 	`
-	args := make([]any, 0, 4)
+	args := make([]any, 0, 8)
 	if filter.SpaceID > 0 {
 		args = append(args, filter.SpaceID)
 		query += fmt.Sprintf(" and f.space_id = $%d", len(args))
@@ -163,6 +164,19 @@ func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFact
 	if strings.TrimSpace(string(filter.Status)) != "" {
 		args = append(args, filter.Status)
 		query += fmt.Sprintf(" and f.status = $%d", len(args))
+	}
+	for _, term := range searchTerms(strings.TrimSpace(filter.Query)) {
+		args = append(args, "%"+term+"%")
+		index := len(args)
+		query += fmt.Sprintf(
+			" and (f.title ilike $%d or f.fact_type ilike $%d or f.data_json::text ilike $%d or f.subject_sender_name ilike $%d or f.subject_username ilike $%d or c.title ilike $%d)",
+			index,
+			index,
+			index,
+			index,
+			index,
+			index,
+		)
 	}
 	args = append(args, limit)
 	query += fmt.Sprintf(" order by f.updated_at desc limit $%d", len(args))
