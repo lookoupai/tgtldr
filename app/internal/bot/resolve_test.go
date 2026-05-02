@@ -1,7 +1,11 @@
 package bot
 
 import (
+	"context"
+	"io"
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -119,4 +123,76 @@ func TestMatchTargetChatCandidatesZeroUserID(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("expected no candidates, got %#v", got)
 	}
+}
+
+func TestGetCommandUpdates(t *testing.T) {
+	t.Parallel()
+
+	service := &Service{client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/bottest-token/getUpdates" {
+			t.Fatalf("request path = %q, want /bottest-token/getUpdates", req.URL.Path)
+		}
+		query := req.URL.Query()
+		if query.Get("offset") != "30" {
+			t.Fatalf("offset = %q, want 30", query.Get("offset"))
+		}
+		if query.Get("timeout") != "3" {
+			t.Fatalf("timeout = %q, want 3", query.Get("timeout"))
+		}
+		if query.Get("allowed_updates") != `["message"]` {
+			t.Fatalf("allowed_updates = %q, want [\"message\"]", query.Get("allowed_updates"))
+		}
+		body := `{
+			"ok": true,
+			"result": [
+				{
+					"update_id": 30,
+					"message": {
+						"chat": {"id": -1001, "type": "supergroup"},
+						"text": "  /knowledge gpu  "
+					}
+				},
+				{
+					"update_id": 31,
+					"message": {
+						"chat": {"id": -1002, "type": "supergroup"},
+						"text": "   "
+					}
+				},
+				{"update_id": 32},
+				{
+					"update_id": 33,
+					"message": {
+						"chat": {"id": 0, "type": "private"},
+						"text": "/help"
+					}
+				}
+			]
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	})}}
+
+	got, err := service.GetCommandUpdates(context.Background(), "test-token", 30, 3)
+	if err != nil {
+		t.Fatalf("GetCommandUpdates() error = %v", err)
+	}
+	want := []CommandUpdate{
+		{UpdateID: 30, ChatID: "-1001", Text: "/knowledge gpu"},
+		{UpdateID: 31, ChatID: "-1002"},
+		{UpdateID: 32},
+		{UpdateID: 33, Text: "/help"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetCommandUpdates() = %#v, want %#v", got, want)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

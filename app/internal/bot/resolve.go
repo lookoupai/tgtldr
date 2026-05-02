@@ -32,6 +32,12 @@ type TargetChatCandidate struct {
 	Username string `json:"username,omitempty"`
 }
 
+type CommandUpdate struct {
+	UpdateID int64
+	ChatID   string
+	Text     string
+}
+
 type botAPIResponse[T any] struct {
 	OK          bool   `json:"ok"`
 	Result      T      `json:"result"`
@@ -47,6 +53,7 @@ type botMessage struct {
 	Date int64    `json:"date"`
 	From *botUser `json:"from"`
 	Chat botChat  `json:"chat"`
+	Text string   `json:"text,omitempty"`
 }
 
 type botUser struct {
@@ -81,6 +88,30 @@ func (s *Service) ResolveTargetChats(
 }
 
 func (s *Service) getUpdates(ctx context.Context, token string) ([]botUpdate, error) {
+	return s.getUpdatesWithOptions(ctx, token, 0, 5, 100)
+}
+
+func (s *Service) GetCommandUpdates(ctx context.Context, token string, offset int64, timeoutSeconds int) ([]CommandUpdate, error) {
+	updates, err := s.getUpdatesWithOptions(ctx, token, offset, timeoutSeconds, 100)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]CommandUpdate, 0, len(updates))
+	for _, update := range updates {
+		item := CommandUpdate{UpdateID: update.UpdateID}
+		if update.Message != nil {
+			if update.Message.Chat.ID != 0 {
+				item.ChatID = strconv.FormatInt(update.Message.Chat.ID, 10)
+			}
+			item.Text = strings.TrimSpace(update.Message.Text)
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *Service) getUpdatesWithOptions(ctx context.Context, token string, offset int64, timeoutSeconds int, limit int) ([]botUpdate, error) {
 	trimmed := strings.TrimSpace(token)
 	if trimmed == "" {
 		return nil, fmt.Errorf("missing bot token")
@@ -93,8 +124,17 @@ func (s *Service) getUpdates(ctx context.Context, token string) ([]botUpdate, er
 
 	query := endpoint.Query()
 	query.Set("allowed_updates", `["message"]`)
-	query.Set("limit", "100")
-	query.Set("timeout", "5")
+	if offset > 0 {
+		query.Set("offset", strconv.FormatInt(offset, 10))
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	query.Set("limit", strconv.Itoa(limit))
+	if timeoutSeconds <= 0 || timeoutSeconds > 10 {
+		timeoutSeconds = 10
+	}
+	query.Set("timeout", strconv.Itoa(timeoutSeconds))
 	endpoint.RawQuery = query.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)

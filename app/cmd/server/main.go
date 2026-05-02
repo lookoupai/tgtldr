@@ -11,6 +11,7 @@ import (
 
 	"github.com/frederic/tgtldr/app/internal/api"
 	"github.com/frederic/tgtldr/app/internal/bot"
+	"github.com/frederic/tgtldr/app/internal/botquery"
 	"github.com/frederic/tgtldr/app/internal/clock"
 	"github.com/frederic/tgtldr/app/internal/config"
 	"github.com/frederic/tgtldr/app/internal/knowledge"
@@ -49,6 +50,7 @@ func run() error {
 
 	sysClock := clock.System{}
 	botService := bot.New()
+	botQueryService := botquery.NewService(st, botService)
 	summaryService := summary.NewService(st, sysClock, cfg.OpenAITimeout)
 	knowledgeService := knowledge.NewService(st, sysClock, cfg.OpenAITimeout)
 	telegramService := telegramsvc.NewService(ctx, st, sysClock)
@@ -78,6 +80,12 @@ func run() error {
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		if err := schedulerService.Run(groupCtx); err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+		return nil
+	})
+	group.Go(func() error {
+		if err := botQueryService.Run(groupCtx); err != nil && !errors.Is(err, context.Canceled) {
 			return err
 		}
 		return nil
