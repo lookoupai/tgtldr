@@ -6,6 +6,7 @@ import {
   Chat,
   HistoryBackfillTask,
   KnowledgeFact,
+  KnowledgeMaintenanceEvent,
   KnowledgeQueryResult,
   KnowledgeRun,
   KnowledgeSpace,
@@ -271,6 +272,22 @@ export const api = {
     normalizeList(
       await request<KnowledgeRun[] | null>(
         `/api/knowledge/runs${buildQuery({
+          spaceId: filters?.spaceId,
+          chatId: filters?.chatId,
+          limit: filters?.limit,
+        })}`,
+      ),
+    ),
+  listKnowledgeMaintenanceEvents: async (filters?: {
+    factId?: number;
+    spaceId?: number;
+    chatId?: number;
+    limit?: number;
+  }) =>
+    normalizeList(
+      await request<KnowledgeMaintenanceEvent[] | null>(
+        `/api/knowledge/maintenance-events${buildQuery({
+          factId: filters?.factId,
           spaceId: filters?.spaceId,
           chatId: filters?.chatId,
           limit: filters?.limit,

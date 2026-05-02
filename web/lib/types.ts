@@ -245,3 +245,21 @@ export type KnowledgeRun = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type KnowledgeMaintenanceEvent = {
+  id: number;
+  factId: number;
+  factTitle: string;
+  spaceId: number;
+  spaceName: string;
+  chatId: number;
+  chatTitle: string;
+  action: "expire" | "dismiss" | "restore" | string;
+  source: "auto_status_update" | "bot_command" | "bot_update" | "web" | string;
+  reason: string;
+  operatorText: string;
+  matchedQuery: string;
+  previousStatus: KnowledgeFact["status"] | "";
+  nextStatus: KnowledgeFact["status"] | "";
+  createdAt: string;
+};

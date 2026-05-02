@@ -24,6 +24,7 @@ import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
 import {
   Chat,
   KnowledgeFact,
+  KnowledgeMaintenanceEvent,
   KnowledgeQueryResult,
   KnowledgeRun,
   KnowledgeSpace,
@@ -328,6 +329,7 @@ export function KnowledgePanel() {
   const [facts, setFacts] = useState<KnowledgeFact[]>([]);
   const [subjects, setSubjects] = useState<KnowledgeSubject[]>([]);
   const [runs, setRuns] = useState<KnowledgeRun[]>([]);
+  const [maintenanceEvents, setMaintenanceEvents] = useState<KnowledgeMaintenanceEvent[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [editing, setEditing] = useState<KnowledgeSpace | null>(null);
   const [knowledgeQueryPreview, setKnowledgeQueryPreview] =
@@ -362,6 +364,10 @@ export function KnowledgePanel() {
     void loadRuns();
   }, [selectedSpaceId]);
 
+  useEffect(() => {
+    void loadMaintenanceEvents();
+  }, [selectedSpaceId, factChatId]);
+
   async function load() {
     try {
       const [spaceItems, chatItems] = await Promise.all([
@@ -371,7 +377,7 @@ export function KnowledgePanel() {
       setSpaces(spaceItems.map(normalizeSpace));
       setChats(chatItems);
       setEditing((current) => current ?? (spaceItems[0] ? normalizeSpace(spaceItems[0]) : null));
-      await Promise.all([loadFacts(), loadSubjects(), loadRuns()]);
+      await Promise.all([loadFacts(), loadSubjects(), loadRuns(), loadMaintenanceEvents()]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -420,6 +426,19 @@ export function KnowledgePanel() {
     }
   }
 
+  async function loadMaintenanceEvents(spaceId: number | "all" = selectedSpaceId) {
+    try {
+      const items = await api.listKnowledgeMaintenanceEvents({
+        spaceId: spaceId === "all" ? undefined : spaceId,
+        chatId: factChatId === "all" ? undefined : factChatId,
+        limit: 50,
+      });
+      setMaintenanceEvents(items);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    }
+  }
+
   async function saveCurrent() {
     if (!editing) {
       return;
@@ -456,7 +475,12 @@ export function KnowledgePanel() {
         toast.showSuccess(`知识抽取完成：读取 ${run.inputMessageCount} 条消息，处理 ${run.extractedCount} 条知识事实或状态变更。`);
       }
       setSelectedSpaceId(editing.id);
-      await Promise.all([loadFacts(editing.id), loadSubjects(editing.id), loadRuns(editing.id)]);
+      await Promise.all([
+        loadFacts(editing.id),
+        loadSubjects(editing.id),
+        loadRuns(editing.id),
+        loadMaintenanceEvents(editing.id),
+      ]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -466,7 +490,7 @@ export function KnowledgePanel() {
     try {
       await api.updateKnowledgeFactStatus(fact.id, status);
       toast.showSuccess(status === "active" ? "已恢复这条事实。" : "已忽略这条事实。");
-      await Promise.all([loadFacts(), loadSubjects()]);
+      await Promise.all([loadFacts(), loadSubjects(), loadMaintenanceEvents()]);
     } catch (err) {
       toast.showError(asMessage(err));
     }
@@ -909,6 +933,55 @@ export function KnowledgePanel() {
                     <td>{formatDateTime(run.finishedAt ?? run.updatedAt)}</td>
                     <td>
                       <span className="muted">{run.errorMessage || "无"}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Surface>
+
+      <Surface
+        title="维护记录"
+        description="记录事实被恢复、过期或忽略的来源，便于排查知识库状态变化。"
+      >
+        {maintenanceEvents.length === 0 ? (
+          <EmptyState title="暂无维护记录" description="事实状态发生变化后会在这里记录来源。" />
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>来源</th>
+                  <th>操作</th>
+                  <th>事实</th>
+                  <th>状态</th>
+                  <th>匹配</th>
+                  <th>原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                {maintenanceEvents.map((event) => (
+                  <tr className="data-row" key={event.id}>
+                    <td>{formatDateTime(event.createdAt)}</td>
+                    <td>{formatMaintenanceSource(event.source)}</td>
+                    <td>{formatMaintenanceAction(event.action)}</td>
+                    <td>
+                      <div className="data-row-title">
+                        <strong>{event.factTitle || `#${event.factId}`}</strong>
+                        <span>{event.spaceName || event.spaceId} / {event.chatTitle || event.chatId}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <StatusPill tone={maintenanceEventStatusTone(event.nextStatus)}>
+                        {event.previousStatus || "unknown"} -&gt; {event.nextStatus || "unknown"}
+                      </StatusPill>
+                    </td>
+                    <td>{event.matchedQuery || "未记录"}</td>
+                    <td>
+                      <span className="muted">{event.reason || event.operatorText || "无"}</span>
                     </td>
                   </tr>
                 ))}
@@ -1365,6 +1438,41 @@ function formatFactExpiry(fact: KnowledgeFact) {
 
 function formatKnowledgeQueryPreviewDescription(result: KnowledgeQueryResult) {
   return `匹配 ${result.facts.length} 条事实，关联 ${result.subjects.length} 个用户。`;
+}
+
+function formatMaintenanceSource(source: KnowledgeMaintenanceEvent["source"]) {
+  switch (source) {
+    case "auto_status_update":
+      return "自动状态变更";
+    case "bot_command":
+      return "Bot 命令";
+    case "bot_update":
+      return "Bot 自然语言";
+    case "web":
+      return "网页操作";
+    default:
+      return source || "未知";
+  }
+}
+
+function formatMaintenanceAction(action: KnowledgeMaintenanceEvent["action"]) {
+  switch (action) {
+    case "expire":
+      return "过期";
+    case "dismiss":
+      return "忽略";
+    case "restore":
+      return "恢复";
+    default:
+      return action || "未知";
+  }
+}
+
+function maintenanceEventStatusTone(status: KnowledgeMaintenanceEvent["nextStatus"]) {
+  if (status === "active" || status === "expired" || status === "dismissed") {
+    return factStatusTone(status);
+  }
+  return "neutral";
 }
 
 function factStatusTone(status: KnowledgeFact["status"]) {

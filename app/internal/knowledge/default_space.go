@@ -1,0 +1,117 @@
+package knowledge
+
+import (
+	"context"
+	"strings"
+
+	"github.com/frederic/tgtldr/app/internal/model"
+)
+
+const defaultGeneralKnowledgeSpaceName = "通用群聊知识库"
+
+func DefaultGeneralKnowledgeSpace() model.KnowledgeSpace {
+	return model.KnowledgeSpace{
+		Name:        defaultGeneralKnowledgeSpaceName,
+		Description: "记录群聊中长期可复用的需求、供应、技能、教程、资源、风险和状态变化。",
+		Enabled:     true,
+		ChatIDs:     []int64{},
+		SchemaJSON: strings.TrimSpace(`
+{
+  "types": {
+    "demand": {
+      "label": "需求",
+      "fields": {
+        "item": "string",
+        "quantity": "string",
+        "budget": "string",
+        "location": "string",
+        "deadline": "string",
+        "status": "string"
+      }
+    },
+    "supply": {
+      "label": "供应",
+      "fields": {
+        "item": "string",
+        "quantity": "string",
+        "price": "string",
+        "location": "string",
+        "status": "string"
+      }
+    },
+    "skill": {
+      "label": "技能",
+      "fields": {
+        "area": "string",
+        "evidence": "string",
+        "level": "string"
+      }
+    },
+    "solution": {
+      "label": "教程方法",
+      "fields": {
+        "topic": "string",
+        "steps": "string",
+        "context": "string"
+      }
+    },
+    "resource": {
+      "label": "工具资源",
+      "fields": {
+        "name": "string",
+        "url": "string",
+        "usage": "string"
+      }
+    },
+    "risk": {
+      "label": "风险避坑",
+      "fields": {
+        "topic": "string",
+        "risk": "string",
+        "mitigation": "string"
+      }
+    },
+    "event": {
+      "label": "活动机会",
+      "fields": {
+        "name": "string",
+        "time": "string",
+        "location": "string",
+        "topic": "string"
+      }
+    },
+    "status_update": {
+      "label": "状态变更",
+      "fields": {
+        "target_type": "string",
+        "target_query": "string",
+        "action": "string",
+        "reason": "string",
+        "target_user": "string"
+      }
+    }
+  }
+}
+`),
+		ExtractPrompt:       "只记录未来可能复用的信息。覆盖需求、供应、技能、教程方法、工具资源、风险避坑、活动机会。技能画像必须基于用户自述、作品、持续高质量回答或明确承诺，不能凭一句闲聊推断。状态变更请用 status_update，target_type 填 demand/supply/skill/help_offer 等旧事实类型，target_query 填要失效的物品或主题，action 使用 resolved、expired、sold_out、paused、no_longer_needed 等英文短语。不要记录玩笑、猜测、纯闲聊、临时情绪或无证据结论。",
+		SummaryPrompt:       "摘要附加时按需求、供应、技能、教程、资源、风险、活动分组；保留可联系用户和置信度，不展示 status_update。",
+		ConfidenceThreshold: 0.75,
+		RetentionDays:       60,
+		IncludeInSummary:    true,
+	}
+}
+
+func (s *Service) EnsureDefaultGeneralSpace(ctx context.Context) (model.KnowledgeSpace, bool, error) {
+	spaces, err := s.store.KnowledgeSpaces.List(ctx)
+	if err != nil {
+		return model.KnowledgeSpace{}, false, err
+	}
+	if len(spaces) > 0 {
+		return model.KnowledgeSpace{}, false, nil
+	}
+	space, err := s.store.KnowledgeSpaces.Create(ctx, DefaultGeneralKnowledgeSpace())
+	if err != nil {
+		return model.KnowledgeSpace{}, false, err
+	}
+	return space, true, nil
+}

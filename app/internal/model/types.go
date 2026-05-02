@@ -257,6 +257,24 @@ type KnowledgeRun struct {
 	UpdatedAt         time.Time          `json:"updatedAt"`
 }
 
+type KnowledgeMaintenanceEvent struct {
+	ID             int64               `json:"id"`
+	FactID         int64               `json:"factId"`
+	FactTitle      string              `json:"factTitle"`
+	SpaceID        int64               `json:"spaceId"`
+	SpaceName      string              `json:"spaceName"`
+	ChatID         int64               `json:"chatId"`
+	ChatTitle      string              `json:"chatTitle"`
+	Action         string              `json:"action"`
+	Source         string              `json:"source"`
+	Reason         string              `json:"reason"`
+	OperatorText   string              `json:"operatorText"`
+	MatchedQuery   string              `json:"matchedQuery"`
+	PreviousStatus KnowledgeFactStatus `json:"previousStatus"`
+	NextStatus     KnowledgeFactStatus `json:"nextStatus"`
+	CreatedAt      time.Time           `json:"createdAt"`
+}
+
 type Message struct {
 	ID                int64     `json:"id"`
 	ChatID            int64     `json:"chatId"`

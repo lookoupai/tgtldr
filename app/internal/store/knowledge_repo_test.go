@@ -134,3 +134,20 @@ func TestNormalizeKnowledgeFactForUpsert(t *testing.T) {
 		So(normalized.FirstSeenAt, ShouldEqual, seenAt)
 	})
 }
+
+func TestNormalizeKnowledgeMaintenanceEvent(t *testing.T) {
+	Convey("维护事件写入前应清理文本并补默认来源", t, func() {
+		event := normalizeKnowledgeMaintenanceEvent(model.KnowledgeMaintenanceEvent{
+			Action:       " expire ",
+			Reason:       " 已买到 ",
+			OperatorText: " /update Alice 不需要 Gmail ",
+			MatchedQuery: " Gmail ",
+		})
+
+		So(event.Action, ShouldEqual, "expire")
+		So(event.Source, ShouldEqual, "manual")
+		So(event.Reason, ShouldEqual, "已买到")
+		So(event.OperatorText, ShouldEqual, "/update Alice 不需要 Gmail")
+		So(event.MatchedQuery, ShouldEqual, "Gmail")
+	})
+}

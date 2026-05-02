@@ -52,6 +52,9 @@ func run() error {
 	botService := bot.New()
 	summaryService := summary.NewService(st, sysClock, cfg.OpenAITimeout)
 	knowledgeService := knowledge.NewService(st, sysClock, cfg.OpenAITimeout)
+	if _, _, err := knowledgeService.EnsureDefaultGeneralSpace(ctx); err != nil {
+		return fmt.Errorf("ensure default knowledge space: %w", err)
+	}
 	botQueryService := botquery.NewService(st, botService, knowledgeService)
 	telegramService := telegramsvc.NewService(ctx, st, sysClock)
 	schedulerService := scheduler.NewService(st, sysClock, summaryService, botService, knowledgeService)

@@ -10,18 +10,19 @@ import (
 )
 
 type Store struct {
-	Pool            *pgxpool.Pool
-	Cipher          Cipher
-	Settings        *SettingsRepository
-	Auth            *AuthRepository
-	LocalAuth       *LocalAuthRepository
-	LocalSessions   *LocalSessionRepository
-	Chats           *ChatRepository
-	Messages        *MessageRepository
-	Summaries       *SummaryRepository
-	KnowledgeSpaces *KnowledgeSpaceRepository
-	KnowledgeFacts  *KnowledgeFactRepository
-	KnowledgeRuns   *KnowledgeRunRepository
+	Pool                       *pgxpool.Pool
+	Cipher                     Cipher
+	Settings                   *SettingsRepository
+	Auth                       *AuthRepository
+	LocalAuth                  *LocalAuthRepository
+	LocalSessions              *LocalSessionRepository
+	Chats                      *ChatRepository
+	Messages                   *MessageRepository
+	Summaries                  *SummaryRepository
+	KnowledgeSpaces            *KnowledgeSpaceRepository
+	KnowledgeFacts             *KnowledgeFactRepository
+	KnowledgeRuns              *KnowledgeRunRepository
+	KnowledgeMaintenanceEvents *KnowledgeMaintenanceEventRepository
 }
 
 func Open(ctx context.Context, cfg config.Config) (*Store, error) {
@@ -40,18 +41,19 @@ func Open(ctx context.Context, cfg config.Config) (*Store, error) {
 	}
 
 	st := &Store{
-		Pool:            pool,
-		Cipher:          cipher,
-		Settings:        &SettingsRepository{pool: pool, cipher: cipher},
-		Auth:            &AuthRepository{pool: pool, cipher: cipher},
-		LocalAuth:       &LocalAuthRepository{pool: pool},
-		LocalSessions:   &LocalSessionRepository{pool: pool},
-		Chats:           &ChatRepository{pool: pool},
-		Messages:        &MessageRepository{pool: pool},
-		Summaries:       &SummaryRepository{pool: pool},
-		KnowledgeSpaces: &KnowledgeSpaceRepository{pool: pool},
-		KnowledgeFacts:  &KnowledgeFactRepository{pool: pool},
-		KnowledgeRuns:   &KnowledgeRunRepository{pool: pool},
+		Pool:                       pool,
+		Cipher:                     cipher,
+		Settings:                   &SettingsRepository{pool: pool, cipher: cipher},
+		Auth:                       &AuthRepository{pool: pool, cipher: cipher},
+		LocalAuth:                  &LocalAuthRepository{pool: pool},
+		LocalSessions:              &LocalSessionRepository{pool: pool},
+		Chats:                      &ChatRepository{pool: pool},
+		Messages:                   &MessageRepository{pool: pool},
+		Summaries:                  &SummaryRepository{pool: pool},
+		KnowledgeSpaces:            &KnowledgeSpaceRepository{pool: pool},
+		KnowledgeFacts:             &KnowledgeFactRepository{pool: pool},
+		KnowledgeRuns:              &KnowledgeRunRepository{pool: pool},
+		KnowledgeMaintenanceEvents: &KnowledgeMaintenanceEventRepository{pool: pool},
 	}
 	return st, nil
 }

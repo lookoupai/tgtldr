@@ -110,7 +110,7 @@ Each group can configure its own summary behavior:
 - `Summary output language`: built-in options include Chinese, English, Russian, and Arabic; you can also enter a custom language name, and groups inherit the global default when left blank
 - Bot delivery respects Telegram's single-message limit and automatically splits content above 4096 visible characters
 
-Knowledge spaces maintain long-lived information instead of one-off summaries. Each space has its own JSON schema, extraction instructions, target groups, confidence threshold, and retention period. This makes the feature reusable for demand/supply channels, hiring, skill profiles, event signups, project leads, or other custom scenarios.
+Knowledge spaces maintain long-lived information instead of one-off summaries. Each space has its own JSON schema, extraction instructions, target groups, confidence threshold, and retention period. This makes the feature reusable for demand/supply channels, hiring, skill profiles, event signups, project leads, or other custom scenarios. TGTLDR creates a general-purpose template when no knowledge spaces exist, and you can edit or replace it with your own rules.
 
 Facts with the same knowledge space, chat, type, title, and subject user are merged automatically. TGTLDR keeps the earliest first-seen time, refreshes the latest last-seen time, and combines source messages as evidence.
 
@@ -132,7 +132,7 @@ If Bot delivery is enabled and a target chat is configured, you can query the kn
 
 Use `/type` for custom schema types, such as `/type hiring remote` or `/type skill rust`. `/fact` and `/facts` are aliases for the same query form.
 Query results include fact IDs. Use `/expire` to mark a fact expired, `/forget` to dismiss it, and `/restore` to reactivate it.
-You can also use natural-language maintenance commands such as `/update Alice no longer needs Gmail`; the system parses the affected user and item before updating matching facts.
+You can also use natural-language maintenance commands such as `/update Alice no longer needs Gmail`; the system parses the affected user and item before updating matching facts. Web actions, Bot commands, natural-language updates, and automatic status updates are recorded as maintenance events so you can audit the previous status, next status, and source.
 
 The Bot only responds in the configured target chat, so local knowledge is not sent to unauthorized conversations.
 

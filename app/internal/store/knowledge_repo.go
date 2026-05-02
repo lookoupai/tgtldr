@@ -298,6 +298,22 @@ func groupKnowledgeSubjects(facts []model.KnowledgeFact, limit int) []model.Know
 	return items
 }
 
+func (r *KnowledgeFactRepository) GetByID(ctx context.Context, id int64) (model.KnowledgeFact, error) {
+	item, err := scanKnowledgeFact(rowScanner{row: r.pool.QueryRow(ctx, `
+		select f.id, f.space_id, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
+		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
+		       f.subject_username, f.confidence, f.status, f.source_message_ids,
+		       f.first_seen_at, f.last_seen_at, f.expires_at, f.created_at, f.updated_at
+		from knowledge_facts f
+		left join chats c on c.id = f.chat_id
+		where f.id = $1
+	`, id)})
+	if err != nil {
+		return model.KnowledgeFact{}, fmt.Errorf("get knowledge fact %d: %w", id, err)
+	}
+	return item, nil
+}
+
 func (r *KnowledgeFactRepository) UpdateStatus(ctx context.Context, id int64, status model.KnowledgeFactStatus) (model.KnowledgeFact, error) {
 	item, err := scanKnowledgeFact(rowScanner{row: r.pool.QueryRow(ctx, `
 		with updated as (

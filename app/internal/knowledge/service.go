@@ -38,6 +38,7 @@ type MaintenanceResult struct {
 	TargetType   string
 	TargetQuery  string
 	TargetUser   string
+	Reason       string
 	UpdatedFacts []model.KnowledgeFact
 }
 
@@ -64,6 +65,13 @@ var codeFencePattern = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
 
 const extractionChunkTokenBudget = 12000
 const maintenanceMaxOutput = 800
+
+const (
+	MaintenanceSourceAutoStatusUpdate = "auto_status_update"
+	MaintenanceSourceBotCommand       = "bot_command"
+	MaintenanceSourceBotUpdate        = "bot_update"
+	MaintenanceSourceWeb              = "web"
+)
 
 func NewService(st *store.Store, c clock.Clock, openAITimeout time.Duration) *Service {
 	return &Service{store: st, clock: c, openAITimeout: openAITimeout}
@@ -193,6 +201,41 @@ func (s *Service) finishRun(ctx context.Context, runID int64, status model.Knowl
 	return s.store.KnowledgeRuns.Finish(ctx, runID, status, inputCount, extractedCount, errorMessage, s.clock.Now())
 }
 
+func (s *Service) UpdateFactStatus(ctx context.Context, factID int64, status model.KnowledgeFactStatus, source string, reason string, operatorText string, matchedQuery string) (model.KnowledgeFact, error) {
+	before, err := s.store.KnowledgeFacts.GetByID(ctx, factID)
+	if err != nil {
+		return model.KnowledgeFact{}, err
+	}
+	updated, err := s.store.KnowledgeFacts.UpdateStatus(ctx, factID, status)
+	if err != nil {
+		return model.KnowledgeFact{}, err
+	}
+	if before.Status == updated.Status || s.store.KnowledgeMaintenanceEvents == nil {
+		return updated, nil
+	}
+	action := maintenanceActionForStatus(status)
+	if action == "" {
+		return updated, nil
+	}
+
+	_, err = s.store.KnowledgeMaintenanceEvents.Create(ctx, model.KnowledgeMaintenanceEvent{
+		FactID:         updated.ID,
+		SpaceID:        updated.SpaceID,
+		ChatID:         updated.ChatID,
+		Action:         action,
+		Source:         source,
+		Reason:         reason,
+		OperatorText:   operatorText,
+		MatchedQuery:   matchedQuery,
+		PreviousStatus: before.Status,
+		NextStatus:     updated.Status,
+	})
+	if err != nil {
+		return model.KnowledgeFact{}, err
+	}
+	return updated, nil
+}
+
 func (s *Service) ApplyMaintenanceText(ctx context.Context, text string) (MaintenanceResult, error) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -221,7 +264,7 @@ func (s *Service) ApplyMaintenanceText(ctx context.Context, text string) (Mainte
 	if err != nil {
 		return MaintenanceResult{}, err
 	}
-	return s.applyMaintenanceInstruction(ctx, instruction)
+	return s.applyMaintenanceInstruction(ctx, instruction, trimmed)
 }
 
 func buildMaintenanceSystemPrompt(language model.Language) string {
@@ -285,12 +328,13 @@ func normalizeMaintenanceAction(action string) string {
 	}
 }
 
-func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction maintenanceInstruction) (MaintenanceResult, error) {
+func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction maintenanceInstruction, operatorText string) (MaintenanceResult, error) {
 	result := MaintenanceResult{
 		Action:      instruction.Action,
 		TargetType:  instruction.TargetType,
 		TargetQuery: instruction.TargetQuery,
 		TargetUser:  instruction.TargetUser,
+		Reason:      instruction.Reason,
 	}
 	if instruction.Action == "none" || instruction.TargetQuery == "" || instruction.TargetUser == "" {
 		return result, nil
@@ -328,7 +372,15 @@ func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction m
 			if !maintenanceMatchesCandidate(match, candidate, sourceStatus) {
 				continue
 			}
-			updated, err := s.store.KnowledgeFacts.UpdateStatus(ctx, candidate.ID, targetStatus)
+			updated, err := s.UpdateFactStatus(
+				ctx,
+				candidate.ID,
+				targetStatus,
+				MaintenanceSourceBotUpdate,
+				instruction.Reason,
+				operatorText,
+				instruction.TargetQuery,
+			)
 			if err != nil {
 				return result, err
 			}
@@ -337,6 +389,19 @@ func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction m
 	}
 	result.UpdatedFacts = sortedMaintenanceFacts(updatedByID)
 	return result, nil
+}
+
+func maintenanceActionForStatus(status model.KnowledgeFactStatus) string {
+	switch status {
+	case model.KnowledgeFactStatusActive:
+		return "restore"
+	case model.KnowledgeFactStatusExpired:
+		return "expire"
+	case model.KnowledgeFactStatusDismissed:
+		return "dismiss"
+	default:
+		return ""
+	}
 }
 
 func maintenanceStatuses(action string) (model.KnowledgeFactStatus, []model.KnowledgeFactStatus) {
@@ -531,13 +596,29 @@ func (s *Service) applyStatusUpdates(ctx context.Context, updates []model.Knowle
 			if !statusUpdateMatchesCandidate(update, match, candidate) {
 				continue
 			}
-			if _, err := s.store.KnowledgeFacts.UpdateStatus(ctx, candidate.ID, model.KnowledgeFactStatusExpired); err != nil {
+			updated, err := s.UpdateFactStatus(
+				ctx,
+				candidate.ID,
+				model.KnowledgeFactStatusExpired,
+				MaintenanceSourceAutoStatusUpdate,
+				match.reason,
+				statusUpdateOperatorText(update),
+				match.query,
+			)
+			if err != nil {
 				return len(updatedIDs), err
 			}
-			updatedIDs[candidate.ID] = struct{}{}
+			updatedIDs[updated.ID] = struct{}{}
 		}
 	}
 	return len(updatedIDs), nil
+}
+
+func statusUpdateOperatorText(update model.KnowledgeFact) string {
+	if title := strings.TrimSpace(update.Title); title != "" {
+		return title
+	}
+	return strings.TrimSpace(update.DataJSON)
 }
 
 func parseStatusUpdateMatch(fact model.KnowledgeFact) statusUpdateMatch {

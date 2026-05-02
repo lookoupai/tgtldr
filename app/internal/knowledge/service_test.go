@@ -27,6 +27,19 @@ func TestSummaryExtractionSpaces(t *testing.T) {
 	})
 }
 
+func TestDefaultGeneralKnowledgeSpace(t *testing.T) {
+	Convey("默认通用知识空间应启用并覆盖状态变更 schema", t, func() {
+		space := DefaultGeneralKnowledgeSpace()
+
+		So(space.Name, ShouldEqual, defaultGeneralKnowledgeSpaceName)
+		So(space.Enabled, ShouldBeTrue)
+		So(space.IncludeInSummary, ShouldBeTrue)
+		So(space.ChatIDs, ShouldHaveLength, 0)
+		So(space.SchemaJSON, ShouldContainSubstring, `"status_update"`)
+		So(space.ExtractPrompt, ShouldContainSubstring, "status_update")
+	})
+}
+
 func TestFilterMessages(t *testing.T) {
 	Convey("知识抽取复用群组过滤规则", t, func() {
 		base := time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)

@@ -37,6 +37,7 @@ type parsedCommand struct {
 
 type knowledgeMaintainer interface {
 	ApplyMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
+	UpdateFactStatus(ctx context.Context, factID int64, status model.KnowledgeFactStatus, source string, reason string, operatorText string, matchedQuery string) (model.KnowledgeFact, error)
 }
 
 type pollState struct {
@@ -161,7 +162,13 @@ func (s *Service) updateFactStatus(ctx context.Context, language model.Language,
 	if factID <= 0 {
 		return commandHelpText(language), true, nil
 	}
-	fact, err := s.store.KnowledgeFacts.UpdateStatus(ctx, factID, status)
+	var fact model.KnowledgeFact
+	var err error
+	if s.maintainer != nil {
+		fact, err = s.maintainer.UpdateFactStatus(ctx, factID, status, knowledge.MaintenanceSourceBotCommand, "", "", fmt.Sprintf("#%d", factID))
+	} else {
+		fact, err = s.store.KnowledgeFacts.UpdateStatus(ctx, factID, status)
+	}
 	if err != nil {
 		return "", true, err
 	}

@@ -70,6 +70,7 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/chats/", r.handleChatByID)
 	mux.HandleFunc("/api/knowledge/query", r.handleKnowledgeQuery)
 	mux.HandleFunc("/api/knowledge/query/send", r.handleSendKnowledgeQuery)
+	mux.HandleFunc("/api/knowledge/maintenance-events", r.handleKnowledgeMaintenanceEvents)
 	mux.HandleFunc("/api/knowledge/runs", r.handleKnowledgeRuns)
 	mux.HandleFunc("/api/knowledge/subjects", r.handleKnowledgeSubjects)
 	mux.HandleFunc("/api/knowledge/spaces", r.handleKnowledgeSpaces)
@@ -251,6 +252,7 @@ func (r *Router) handleSettings(w http.ResponseWriter, req *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	wasConfigured := settingsConfigured(current)
 	payload.TelegramAPIHash = preservedSecret(payload.TelegramAPIHash, current.TelegramAPIHash)
 	payload.OpenAIAPIKey = preservedSecret(payload.OpenAIAPIKey, current.OpenAIAPIKey)
 	payload.BotToken = preservedSecret(payload.BotToken, current.BotToken)
@@ -315,6 +317,12 @@ func (r *Router) handleSettings(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if !wasConfigured && settingsConfigured(saved) && r.knowledge != nil {
+		if _, _, err := r.knowledge.EnsureDefaultGeneralSpace(req.Context()); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	httpx.JSON(w, http.StatusOK, saved.Sanitized())
 }
