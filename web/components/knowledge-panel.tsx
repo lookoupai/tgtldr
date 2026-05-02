@@ -56,10 +56,12 @@ export function KnowledgePanel() {
   const [selectedSpaceId, setSelectedSpaceId] = useState<number | "all">("all");
   const [statusFilter, setStatusFilter] = useState<FactStatusFilter>("all");
   const [factChatId, setFactChatId] = useState<number | "all">("all");
+  const [factTypeFilter, setFactTypeFilter] = useState("");
   const [factQuery, setFactQuery] = useState("");
   const [runChatId, setRunChatId] = useState<number | "">("");
   const [runDate, setRunDate] = useState(localDateInputValue());
   const deferredFactQuery = useDeferredValue(factQuery);
+  const deferredFactTypeFilter = useDeferredValue(factTypeFilter);
   const toast = useToast();
 
   useEffect(() => {
@@ -68,11 +70,11 @@ export function KnowledgePanel() {
 
   useEffect(() => {
     void loadFacts();
-  }, [selectedSpaceId, statusFilter, factChatId, deferredFactQuery]);
+  }, [selectedSpaceId, statusFilter, factChatId, deferredFactQuery, deferredFactTypeFilter]);
 
   useEffect(() => {
     void loadSubjects();
-  }, [selectedSpaceId, factChatId, deferredFactQuery]);
+  }, [selectedSpaceId, factChatId, deferredFactQuery, deferredFactTypeFilter]);
 
   useEffect(() => {
     void loadRuns();
@@ -100,6 +102,7 @@ export function KnowledgePanel() {
         spaceId: spaceId === "all" ? undefined : spaceId,
         chatId: factChatId === "all" ? undefined : factChatId,
         status: statusFilter,
+        factType: deferredFactTypeFilter,
         limit: 100,
       });
       setFacts(items);
@@ -114,6 +117,7 @@ export function KnowledgePanel() {
         q: deferredFactQuery,
         spaceId: spaceId === "all" ? undefined : spaceId,
         chatId: factChatId === "all" ? undefined : factChatId,
+        factType: deferredFactTypeFilter,
         limit: 50,
       });
       setSubjects(items);
@@ -601,6 +605,13 @@ export function KnowledgePanel() {
                 { value: "dismissed", label: "Dismissed" },
               ]}
               value={statusFilter}
+            />
+          </Field>
+          <Field label="类型">
+            <Input
+              onChange={(event) => setFactTypeFilter(event.target.value)}
+              placeholder="demand / supply"
+              value={factTypeFilter}
             />
           </Field>
           <Field label="群组">

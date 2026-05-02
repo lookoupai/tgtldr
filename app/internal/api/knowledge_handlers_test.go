@@ -15,3 +15,11 @@ func TestNormalizeKnowledgeFactStatusForUpdate(t *testing.T) {
 		So(normalizeKnowledgeFactStatusForUpdate("unknown"), ShouldEqual, model.KnowledgeFactStatus(""))
 	})
 }
+
+func TestKnowledgeFactTypeParam(t *testing.T) {
+	Convey("事实类型参数应优先使用 type 并兼容 factType", t, func() {
+		So(knowledgeFactTypeParam(" demand ", "supply"), ShouldEqual, "demand")
+		So(knowledgeFactTypeParam("", " supply "), ShouldEqual, "supply")
+		So(knowledgeFactTypeParam(" ", ""), ShouldEqual, "")
+	})
+}

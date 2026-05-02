@@ -131,18 +131,20 @@ type KnowledgeFactRepository struct {
 }
 
 type KnowledgeFactFilter struct {
-	SpaceID int64
-	ChatID  int64
-	Status  model.KnowledgeFactStatus
-	Query   string
-	Limit   int
+	SpaceID  int64
+	ChatID   int64
+	Status   model.KnowledgeFactStatus
+	FactType string
+	Query    string
+	Limit    int
 }
 
 type KnowledgeSubjectFilter struct {
-	SpaceID int64
-	ChatID  int64
-	Query   string
-	Limit   int
+	SpaceID  int64
+	ChatID   int64
+	FactType string
+	Query    string
+	Limit    int
 }
 
 func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFactFilter) ([]model.KnowledgeFact, error) {
@@ -172,6 +174,10 @@ func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFact
 	if strings.TrimSpace(string(filter.Status)) != "" {
 		args = append(args, filter.Status)
 		query += fmt.Sprintf(" and f.status = $%d", len(args))
+	}
+	if factType := strings.TrimSpace(filter.FactType); factType != "" {
+		args = append(args, factType)
+		query += fmt.Sprintf(" and lower(f.fact_type) = lower($%d)", len(args))
 	}
 	for _, term := range searchTerms(strings.TrimSpace(filter.Query)) {
 		args = append(args, "%"+term+"%")
@@ -213,11 +219,12 @@ func (r *KnowledgeFactRepository) ListSubjects(ctx context.Context, filter Knowl
 	}
 
 	facts, err := r.List(ctx, KnowledgeFactFilter{
-		SpaceID: filter.SpaceID,
-		ChatID:  filter.ChatID,
-		Status:  model.KnowledgeFactStatusActive,
-		Query:   filter.Query,
-		Limit:   200,
+		SpaceID:  filter.SpaceID,
+		ChatID:   filter.ChatID,
+		Status:   model.KnowledgeFactStatusActive,
+		FactType: filter.FactType,
+		Query:    filter.Query,
+		Limit:    200,
 	})
 	if err != nil {
 		return nil, err

@@ -195,6 +195,7 @@ export const api = {
     spaceId?: number;
     chatId?: number;
     status?: KnowledgeFact["status"] | "all";
+    factType?: string;
     limit?: number;
   }) =>
     normalizeList(
@@ -204,6 +205,7 @@ export const api = {
           spaceId: filters?.spaceId,
           chatId: filters?.chatId,
           status: filters?.status && filters.status !== "all" ? filters.status : undefined,
+          type: filters?.factType?.trim() || undefined,
           limit: filters?.limit,
         })}`,
       ),
@@ -212,6 +214,7 @@ export const api = {
     q?: string;
     spaceId?: number;
     chatId?: number;
+    factType?: string;
     limit?: number;
   }) =>
     normalizeList(
@@ -220,6 +223,7 @@ export const api = {
           q: filters?.q?.trim() || undefined,
           spaceId: filters?.spaceId,
           chatId: filters?.chatId,
+          type: filters?.factType?.trim() || undefined,
           limit: filters?.limit,
         })}`,
       ),

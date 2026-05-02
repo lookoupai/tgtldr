@@ -143,8 +143,9 @@ func (r *Router) handleKnowledgeFacts(w http.ResponseWriter, req *http.Request) 
 
 	query := req.URL.Query()
 	filter := store.KnowledgeFactFilter{
-		Status: model.KnowledgeFactStatus(strings.TrimSpace(query.Get("status"))),
-		Query:  strings.TrimSpace(query.Get("q")),
+		Status:   model.KnowledgeFactStatus(strings.TrimSpace(query.Get("status"))),
+		FactType: knowledgeFactTypeParam(query.Get("type"), query.Get("factType")),
+		Query:    strings.TrimSpace(query.Get("q")),
 	}
 	if spaceID, err := strconv.ParseInt(strings.TrimSpace(query.Get("spaceId")), 10, 64); err == nil {
 		filter.SpaceID = spaceID
@@ -202,7 +203,8 @@ func (r *Router) handleKnowledgeSubjects(w http.ResponseWriter, req *http.Reques
 
 	query := req.URL.Query()
 	filter := store.KnowledgeSubjectFilter{
-		Query: strings.TrimSpace(query.Get("q")),
+		FactType: knowledgeFactTypeParam(query.Get("type"), query.Get("factType")),
+		Query:    strings.TrimSpace(query.Get("q")),
 	}
 	if spaceID, err := strconv.ParseInt(strings.TrimSpace(query.Get("spaceId")), 10, 64); err == nil {
 		filter.SpaceID = spaceID
@@ -276,4 +278,13 @@ func normalizeKnowledgeFactStatusForUpdate(status model.KnowledgeFactStatus) mod
 	default:
 		return ""
 	}
+}
+
+func knowledgeFactTypeParam(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
