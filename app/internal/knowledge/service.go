@@ -11,8 +11,10 @@ import (
 
 	"github.com/frederic/tgtldr/app/internal/clock"
 	"github.com/frederic/tgtldr/app/internal/model"
+	"github.com/frederic/tgtldr/app/internal/msgchunk"
 	"github.com/frederic/tgtldr/app/internal/openai"
 	"github.com/frederic/tgtldr/app/internal/store"
+	"golang.org/x/sync/errgroup"
 )
 
 type Service struct {
@@ -42,6 +44,8 @@ type extractedFact struct {
 }
 
 var codeFencePattern = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
+
+const extractionChunkTokenBudget = 12000
 
 func NewService(st *store.Store, c clock.Clock, openAITimeout time.Duration) *Service {
 	return &Service{store: st, clock: c, openAITimeout: openAITimeout}
@@ -95,27 +99,46 @@ func (s *Service) RunDailyExtraction(ctx context.Context, req RunRequest) (model
 		return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusSucceeded, 0, 0, "")
 	}
 
-	transcript, refs := buildExtractionTranscript(filtered, timezone)
 	client := openai.New(openai.Config{
 		BaseURL: settings.OpenAIBaseURL,
 		APIKey:  settings.OpenAIAPIKey,
 		Model:   resolveModel(chat, settings),
 		Timeout: s.openAITimeout,
 	})
-	response, err := client.Chat(ctx, openai.ChatRequest{
-		SystemPrompt: buildExtractionSystemPrompt(settings.Language, space),
-		UserPrompt:   transcript,
-		Temperature:  0.1,
-		MaxOutput:    settings.OpenAIMaxOutputToken,
-	})
-	if err != nil {
+
+	chunks := splitExtractionMessages(filtered)
+	factsByChunk := make([][]model.KnowledgeFact, len(chunks))
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(resolveExtractionParallelism(settings.SummaryParallelism))
+	systemPrompt := buildExtractionSystemPrompt(settings.Language, space)
+
+	for index, chunk := range chunks {
+		index := index
+		chunk := chunk
+		group.Go(func() error {
+			transcript, refs := buildExtractionTranscript(chunk.Messages, timezone)
+			response, err := client.Chat(groupCtx, openai.ChatRequest{
+				SystemPrompt: systemPrompt,
+				UserPrompt:   transcript,
+				Temperature:  0.1,
+				MaxOutput:    settings.OpenAIMaxOutputToken,
+			})
+			if err != nil {
+				return err
+			}
+			facts, err := parseExtractionFacts(response.Content, space, chat, refs, now)
+			if err != nil {
+				return err
+			}
+			factsByChunk[index] = facts
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
 		return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusFailed, len(filtered), 0, err.Error())
 	}
 
-	facts, err := parseExtractionFacts(response.Content, space, chat, refs, now)
-	if err != nil {
-		return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusFailed, len(filtered), 0, err.Error())
-	}
+	facts := flattenKnowledgeFacts(factsByChunk)
 	if err := s.store.KnowledgeFacts.UpsertMany(ctx, facts); err != nil {
 		return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusFailed, len(filtered), 0, err.Error())
 	}
@@ -208,6 +231,36 @@ func buildExtractionTranscript(messages []model.Message, timezone string) (strin
 		blocks = append(blocks, strings.Join(lines, "\n"))
 	}
 	return strings.Join(blocks, "\n\n"), refs
+}
+
+func splitExtractionMessages(messages []model.Message) []msgchunk.Chunk {
+	return splitExtractionMessagesWithBudget(messages, extractionChunkTokenBudget)
+}
+
+func splitExtractionMessagesWithBudget(messages []model.Message, tokenBudget int) []msgchunk.Chunk {
+	return msgchunk.SplitMessages(messages, tokenBudget)
+}
+
+func resolveExtractionParallelism(value int) int {
+	if value <= 0 {
+		return 2
+	}
+	if value > 6 {
+		return 6
+	}
+	return value
+}
+
+func flattenKnowledgeFacts(groups [][]model.KnowledgeFact) []model.KnowledgeFact {
+	total := 0
+	for _, group := range groups {
+		total += len(group)
+	}
+	out := make([]model.KnowledgeFact, 0, total)
+	for _, group := range groups {
+		out = append(out, group...)
+	}
+	return out
 }
 
 func parseExtractionFacts(raw string, space model.KnowledgeSpace, chat model.Chat, refs map[string]model.Message, now time.Time) ([]model.KnowledgeFact, error) {
