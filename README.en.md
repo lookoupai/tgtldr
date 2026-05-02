@@ -79,6 +79,8 @@ Each group can configure its own summary behavior:
 
 Knowledge spaces maintain long-lived information instead of one-off summaries. Each space has its own JSON schema, extraction instructions, target groups, confidence threshold, and retention period. This makes the feature reusable for demand/supply channels, hiring, skill profiles, event signups, project leads, or other custom scenarios.
 
+Facts with the same knowledge space, chat, type, title, and subject user are merged automatically. TGTLDR keeps the earliest first-seen time, refreshes the latest last-seen time, and combines source messages as evidence.
+
 If Bot delivery is enabled and a target chat is configured, you can query the knowledge base from that chat:
 
 ```text

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/frederic/tgtldr/app/internal/model"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -388,14 +389,24 @@ func (r *KnowledgeFactRepository) UpsertMany(ctx context.Context, facts []model.
 	defer tx.Rollback(ctx)
 
 	for _, fact := range facts {
-		dataJSON := strings.TrimSpace(fact.DataJSON)
-		if dataJSON == "" {
-			dataJSON = "{}"
-		}
-		if !json.Valid([]byte(dataJSON)) {
+		normalized := normalizeKnowledgeFactForUpsert(fact)
+		if !json.Valid([]byte(normalized.DataJSON)) {
 			return fmt.Errorf("knowledge fact data must be valid JSON")
 		}
-		_, err := tx.Exec(ctx, `
+
+		existing, err := findMergeableKnowledgeFact(ctx, tx, normalized)
+		if err != nil {
+			return err
+		}
+		if existing.ID > 0 {
+			merged := mergeKnowledgeFacts(existing, normalized)
+			if err := updateKnowledgeFact(ctx, tx, merged); err != nil {
+				return err
+			}
+			continue
+		}
+
+		_, err = tx.Exec(ctx, `
 			insert into knowledge_facts (
 				space_id, chat_id, fact_type, title, data_json, subject_sender_id,
 				subject_sender_name, subject_username, confidence, status,
@@ -415,20 +426,20 @@ func (r *KnowledgeFactRepository) UpsertMany(ctx context.Context, facts []model.
 				expires_at = excluded.expires_at,
 				updated_at = now()
 		`,
-			fact.SpaceID,
-			fact.ChatID,
-			strings.TrimSpace(fact.FactType),
-			strings.TrimSpace(fact.Title),
-			dataJSON,
-			fact.SubjectSenderID,
-			strings.TrimSpace(fact.SubjectSenderName),
-			strings.TrimSpace(fact.SubjectUsername),
-			fact.Confidence,
-			fact.Status,
-			fact.SourceMessageIDs,
-			fact.FirstSeenAt,
-			fact.LastSeenAt,
-			fact.ExpiresAt,
+			normalized.SpaceID,
+			normalized.ChatID,
+			normalized.FactType,
+			normalized.Title,
+			normalized.DataJSON,
+			normalized.SubjectSenderID,
+			normalized.SubjectSenderName,
+			normalized.SubjectUsername,
+			normalized.Confidence,
+			normalized.Status,
+			normalized.SourceMessageIDs,
+			normalized.FirstSeenAt,
+			normalized.LastSeenAt,
+			normalized.ExpiresAt,
 		)
 		if err != nil {
 			return fmt.Errorf("upsert knowledge fact: %w", err)
@@ -439,6 +450,160 @@ func (r *KnowledgeFactRepository) UpsertMany(ctx context.Context, facts []model.
 		return fmt.Errorf("commit knowledge facts tx: %w", err)
 	}
 	return nil
+}
+
+func findMergeableKnowledgeFact(ctx context.Context, tx pgx.Tx, fact model.KnowledgeFact) (model.KnowledgeFact, error) {
+	var existing model.KnowledgeFact
+	var sourceMessageIDs []int32
+	err := tx.QueryRow(ctx, `
+		select id, source_message_ids, first_seen_at, last_seen_at, expires_at,
+		       confidence, status, subject_sender_name, subject_username
+		from knowledge_facts
+		where space_id = $1
+		  and chat_id = $2
+		  and lower(fact_type) = lower($3)
+		  and lower(title) = lower($4)
+		  and subject_sender_id = $5
+		order by case
+			when status = 'active' then 0
+			when status = 'dismissed' then 1
+			else 2
+		end, updated_at desc, id desc
+		limit 1
+		for update
+	`,
+		fact.SpaceID,
+		fact.ChatID,
+		fact.FactType,
+		fact.Title,
+		fact.SubjectSenderID,
+	).Scan(
+		&existing.ID,
+		&sourceMessageIDs,
+		&existing.FirstSeenAt,
+		&existing.LastSeenAt,
+		&existing.ExpiresAt,
+		&existing.Confidence,
+		&existing.Status,
+		&existing.SubjectSenderName,
+		&existing.SubjectUsername,
+	)
+	if err == pgx.ErrNoRows {
+		return model.KnowledgeFact{}, nil
+	}
+	if err != nil {
+		return model.KnowledgeFact{}, fmt.Errorf("find mergeable knowledge fact: %w", err)
+	}
+	existing.SourceMessageIDs = int32sToInts(sourceMessageIDs)
+	return existing, nil
+}
+
+func updateKnowledgeFact(ctx context.Context, tx pgx.Tx, fact model.KnowledgeFact) error {
+	_, err := tx.Exec(ctx, `
+		update knowledge_facts
+		set data_json = $2::jsonb,
+		    subject_sender_name = $3,
+		    subject_username = $4,
+		    confidence = $5,
+		    status = case
+		        when status = 'dismissed' then status
+		        else $6
+		    end,
+		    source_message_ids = $7,
+		    first_seen_at = $8,
+		    last_seen_at = $9,
+		    expires_at = $10,
+		    updated_at = now()
+		where id = $1
+	`,
+		fact.ID,
+		fact.DataJSON,
+		fact.SubjectSenderName,
+		fact.SubjectUsername,
+		fact.Confidence,
+		fact.Status,
+		fact.SourceMessageIDs,
+		fact.FirstSeenAt,
+		fact.LastSeenAt,
+		fact.ExpiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("merge knowledge fact: %w", err)
+	}
+	return nil
+}
+
+func normalizeKnowledgeFactForUpsert(fact model.KnowledgeFact) model.KnowledgeFact {
+	fact.FactType = strings.TrimSpace(fact.FactType)
+	fact.Title = strings.TrimSpace(fact.Title)
+	fact.SubjectSenderName = strings.TrimSpace(fact.SubjectSenderName)
+	fact.SubjectUsername = strings.TrimSpace(fact.SubjectUsername)
+	if fact.DataJSON = strings.TrimSpace(fact.DataJSON); fact.DataJSON == "" {
+		fact.DataJSON = "{}"
+	}
+	if fact.Status == "" {
+		fact.Status = model.KnowledgeFactStatusActive
+	}
+	if fact.FirstSeenAt.IsZero() {
+		fact.FirstSeenAt = fact.LastSeenAt
+	}
+	if fact.LastSeenAt.IsZero() {
+		fact.LastSeenAt = fact.FirstSeenAt
+	}
+	fact.SourceMessageIDs = compactInts(fact.SourceMessageIDs)
+	return fact
+}
+
+func mergeKnowledgeFacts(existing model.KnowledgeFact, incoming model.KnowledgeFact) model.KnowledgeFact {
+	merged := incoming
+	merged.ID = existing.ID
+	merged.SourceMessageIDs = mergeInts(existing.SourceMessageIDs, incoming.SourceMessageIDs)
+	merged.FirstSeenAt = earlierTime(existing.FirstSeenAt, incoming.FirstSeenAt)
+	merged.LastSeenAt = laterTime(existing.LastSeenAt, incoming.LastSeenAt)
+	if existing.Confidence > incoming.Confidence {
+		merged.Confidence = existing.Confidence
+	}
+	if strings.TrimSpace(merged.SubjectSenderName) == "" {
+		merged.SubjectSenderName = existing.SubjectSenderName
+	}
+	if strings.TrimSpace(merged.SubjectUsername) == "" {
+		merged.SubjectUsername = existing.SubjectUsername
+	}
+	if existing.Status == model.KnowledgeFactStatusDismissed {
+		merged.Status = model.KnowledgeFactStatusDismissed
+	}
+	merged.ExpiresAt = laterOptionalTime(existing.ExpiresAt, incoming.ExpiresAt)
+	return merged
+}
+
+func earlierTime(a time.Time, b time.Time) time.Time {
+	if a.IsZero() {
+		return b
+	}
+	if b.IsZero() || a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func laterTime(a time.Time, b time.Time) time.Time {
+	if a.IsZero() {
+		return b
+	}
+	if b.IsZero() || a.After(b) {
+		return a
+	}
+	return b
+}
+
+func laterOptionalTime(a *time.Time, b *time.Time) *time.Time {
+	if a == nil || b == nil {
+		return nil
+	}
+	if a.After(*b) {
+		return a
+	}
+	return b
 }
 
 func (r *KnowledgeRunRepository) Create(ctx context.Context, run model.KnowledgeRun) (model.KnowledgeRun, error) {
@@ -714,6 +879,30 @@ func compactInt64s(values []int64) []int64 {
 		out = append(out, value)
 	}
 	return out
+}
+
+func compactInts(values []int) []int {
+	seen := make(map[int]struct{}, len(values))
+	out := make([]int, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Ints(out)
+	return out
+}
+
+func mergeInts(a []int, b []int) []int {
+	values := make([]int, 0, len(a)+len(b))
+	values = append(values, a...)
+	values = append(values, b...)
+	return compactInts(values)
 }
 
 func int32sToInts(values []int32) []int {
