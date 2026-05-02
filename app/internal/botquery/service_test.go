@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/frederic/tgtldr/app/internal/bot"
+	"github.com/frederic/tgtldr/app/internal/model"
 )
 
 func TestParseCommand(t *testing.T) {
@@ -50,6 +51,24 @@ func TestParseCommand(t *testing.T) {
 			name: "custom type without query",
 			text: "/fact event",
 			want: parsedCommand{factType: "event"},
+			ok:   true,
+		},
+		{
+			name: "expire fact by id",
+			text: "/expire #42",
+			want: parsedCommand{factID: 42, statusUpdate: model.KnowledgeFactStatusExpired},
+			ok:   true,
+		},
+		{
+			name: "forget fact by id",
+			text: "/forget 43",
+			want: parsedCommand{factID: 43, statusUpdate: model.KnowledgeFactStatusDismissed},
+			ok:   true,
+		},
+		{
+			name: "restore fact by id",
+			text: "/restore 44",
+			want: parsedCommand{factID: 44, statusUpdate: model.KnowledgeFactStatusActive},
 			ok:   true,
 		},
 		{

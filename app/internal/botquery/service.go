@@ -3,6 +3,7 @@ package botquery
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,9 +26,11 @@ type Service struct {
 }
 
 type parsedCommand struct {
-	query    string
-	factType string
-	help     bool
+	query        string
+	factType     string
+	help         bool
+	factID       int64
+	statusUpdate model.KnowledgeFactStatus
 }
 
 type pollState struct {
@@ -117,6 +120,9 @@ func (s *Service) responseForCommand(ctx context.Context, language model.Languag
 	if command.help {
 		return commandHelpText(language), true, nil
 	}
+	if command.statusUpdate != "" {
+		return s.updateFactStatus(ctx, language, command.factID, command.statusUpdate)
+	}
 
 	now := time.Now()
 	if err := s.store.KnowledgeFacts.ExpireDue(ctx, now); err != nil {
@@ -142,6 +148,17 @@ func (s *Service) responseForCommand(ctx context.Context, language model.Languag
 	return knowledge.FormatQueryResult(language, command.query, command.factType, facts, subjects), true, nil
 }
 
+func (s *Service) updateFactStatus(ctx context.Context, language model.Language, factID int64, status model.KnowledgeFactStatus) (string, bool, error) {
+	if factID <= 0 {
+		return commandHelpText(language), true, nil
+	}
+	fact, err := s.store.KnowledgeFacts.UpdateStatus(ctx, factID, status)
+	if err != nil {
+		return "", true, err
+	}
+	return commandStatusUpdatedText(language, fact, status), true, nil
+}
+
 func parseCommand(text string) (parsedCommand, bool) {
 	trimmed := strings.TrimSpace(text)
 	if !strings.HasPrefix(trimmed, "/") {
@@ -162,6 +179,12 @@ func parseCommand(text string) (parsedCommand, bool) {
 	switch name {
 	case "start", "help":
 		return parsedCommand{help: true}, true
+	case "expire", "resolve":
+		return parseStatusCommand(query, model.KnowledgeFactStatusExpired)
+	case "forget", "dismiss":
+		return parseStatusCommand(query, model.KnowledgeFactStatusDismissed)
+	case "restore":
+		return parseStatusCommand(query, model.KnowledgeFactStatusActive)
 	case "type", "fact", "facts":
 		return parseTypedCommand(query)
 	case "knowledge", "know", "query", "who":
@@ -173,6 +196,18 @@ func parseCommand(text string) (parsedCommand, bool) {
 	default:
 		return parsedCommand{}, false
 	}
+}
+
+func parseStatusCommand(input string, status model.KnowledgeFactStatus) (parsedCommand, bool) {
+	fields := strings.Fields(strings.TrimSpace(input))
+	if len(fields) != 1 {
+		return parsedCommand{help: true}, true
+	}
+	id, err := strconv.ParseInt(strings.TrimPrefix(fields[0], "#"), 10, 64)
+	if err != nil || id <= 0 {
+		return parsedCommand{help: true}, true
+	}
+	return parsedCommand{factID: id, statusUpdate: status}, true
 }
 
 func parseTypedCommand(input string) (parsedCommand, bool) {
@@ -213,6 +248,9 @@ func commandHelpText(language model.Language) string {
 - /demand <keyword>: search demand facts
 - /supply <keyword>: search supply facts
 - /who <keyword>: search people and their facts
+- /expire <fact_id>: mark a fact expired
+- /forget <fact_id>: dismiss a fact
+- /restore <fact_id>: restore an expired or dismissed fact
 `)
 	}
 	return strings.TrimSpace(`
@@ -224,7 +262,24 @@ func commandHelpText(language model.Language) string {
 - /demand <关键词>：查询需求事实
 - /supply <关键词>：查询供应事实
 - /who <关键词>：查询用户及相关事实
+- /expire <事实ID>：将事实标记为过期
+- /forget <事实ID>：忽略一条事实
+- /restore <事实ID>：恢复过期或忽略的事实
 `)
+}
+
+func commandStatusUpdatedText(language model.Language, fact model.KnowledgeFact, status model.KnowledgeFactStatus) string {
+	if language == model.LanguageEN {
+		return fmt.Sprintf("Knowledge fact #%d was marked as %s: %s", fact.ID, status, fact.Title)
+	}
+	switch status {
+	case model.KnowledgeFactStatusActive:
+		return fmt.Sprintf("已恢复知识事实 #%d：%s", fact.ID, fact.Title)
+	case model.KnowledgeFactStatusExpired:
+		return fmt.Sprintf("已将知识事实 #%d 标记为过期：%s", fact.ID, fact.Title)
+	default:
+		return fmt.Sprintf("已忽略知识事实 #%d：%s", fact.ID, fact.Title)
+	}
 }
 
 func commandErrorText(language model.Language, err error) string {

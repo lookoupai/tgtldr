@@ -31,7 +31,7 @@ import {
 } from "@/lib/types";
 
 type FactStatusFilter = "all" | KnowledgeFact["status"];
-type KnowledgeTemplateKey = "marketplace" | "hiring" | "skills" | "events" | "blank";
+type KnowledgeTemplateKey = "general" | "marketplace" | "hiring" | "skills" | "events" | "blank";
 
 type KnowledgeSpaceTemplate = {
   key: KnowledgeTemplateKey;
@@ -60,9 +60,96 @@ type KnowledgeSpaceExport = {
   };
 };
 
-const defaultTemplateKey: KnowledgeTemplateKey = "marketplace";
+const defaultTemplateKey: KnowledgeTemplateKey = "general";
 
 const knowledgeSpaceTemplates: KnowledgeSpaceTemplate[] = [
+  {
+    key: "general",
+    label: "通用",
+    name: "通用群聊知识库",
+    description: "记录群聊中长期可复用的需求、供应、技能、教程、资源、风险和状态变化。",
+    schemaJson: schemaString({
+      types: {
+        demand: {
+          label: "需求",
+          fields: {
+            item: "string",
+            quantity: "string",
+            budget: "string",
+            location: "string",
+            deadline: "string",
+            status: "string",
+          },
+        },
+        supply: {
+          label: "供应",
+          fields: {
+            item: "string",
+            quantity: "string",
+            price: "string",
+            location: "string",
+            status: "string",
+          },
+        },
+        skill: {
+          label: "技能",
+          fields: {
+            area: "string",
+            evidence: "string",
+            level: "string",
+          },
+        },
+        solution: {
+          label: "教程方法",
+          fields: {
+            topic: "string",
+            steps: "string",
+            context: "string",
+          },
+        },
+        resource: {
+          label: "工具资源",
+          fields: {
+            name: "string",
+            url: "string",
+            usage: "string",
+          },
+        },
+        risk: {
+          label: "风险避坑",
+          fields: {
+            topic: "string",
+            risk: "string",
+            mitigation: "string",
+          },
+        },
+        event: {
+          label: "活动机会",
+          fields: {
+            name: "string",
+            time: "string",
+            location: "string",
+            topic: "string",
+          },
+        },
+        status_update: {
+          label: "状态变更",
+          fields: {
+            target_type: "string",
+            target_query: "string",
+            action: "string",
+            reason: "string",
+            target_user: "string",
+          },
+        },
+      },
+    }),
+    extractPrompt:
+      "只记录未来可能复用的信息。覆盖需求、供应、技能、教程方法、工具资源、风险避坑、活动机会。技能画像必须基于用户自述、作品、持续高质量回答或明确承诺，不能凭一句闲聊推断。状态变更请用 status_update，target_type 填 demand/supply/skill/help_offer 等旧事实类型，target_query 填要失效的物品或主题，action 使用 resolved、expired、sold_out、paused、no_longer_needed 等英文短语。不要记录玩笑、猜测、纯闲聊、临时情绪或无证据结论。",
+    summaryPrompt: "摘要附加时按需求、供应、技能、教程、资源、风险、活动分组；保留可联系用户和置信度，不展示 status_update。",
+    confidenceThreshold: 0.75,
+    retentionDays: 60,
+  },
   {
     key: "marketplace",
     label: "供需",
@@ -366,7 +453,7 @@ export function KnowledgePanel() {
       if (run.status === "failed") {
         toast.showError(run.errorMessage || "知识抽取失败。");
       } else {
-        toast.showSuccess(`知识抽取完成：读取 ${run.inputMessageCount} 条消息，写入 ${run.extractedCount} 条事实。`);
+        toast.showSuccess(`知识抽取完成：读取 ${run.inputMessageCount} 条消息，处理 ${run.extractedCount} 条知识事实或状态变更。`);
       }
       setSelectedSpaceId(editing.id);
       await Promise.all([loadFacts(editing.id), loadSubjects(editing.id), loadRuns(editing.id)]);

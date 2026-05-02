@@ -105,3 +105,82 @@ func TestFlattenKnowledgeFacts(t *testing.T) {
 		So(facts[2].ID, ShouldEqual, 3)
 	})
 }
+
+func TestStatusUpdateFacts(t *testing.T) {
+	Convey("status_update 会从普通事实中拆出", t, func() {
+		persisted, updates := splitStatusUpdateFacts([]model.KnowledgeFact{
+			{FactType: "demand", Title: "需要 Gmail"},
+			{FactType: "status_update", Title: "不再需要 Gmail"},
+		})
+
+		So(persisted, ShouldHaveLength, 1)
+		So(updates, ShouldHaveLength, 1)
+		So(updates[0].Title, ShouldEqual, "不再需要 Gmail")
+	})
+
+	Convey("状态变更只匹配同一用户、可失效类型和关键词命中的 active 事实", t, func() {
+		update := model.KnowledgeFact{
+			FactType:        "status_update",
+			Title:           "Alice 不再需要 Gmail",
+			DataJSON:        `{"target_type":"demand","target_query":"Gmail","action":"no_longer_needed","target_user":"alice"}`,
+			SubjectUsername: "alice",
+		}
+		match := parseStatusUpdateMatch(update)
+
+		So(match.shouldExpire(), ShouldBeTrue)
+		So(statusUpdateMatchesCandidate(update, match, model.KnowledgeFact{
+			ID:              10,
+			FactType:        "demand",
+			Title:           "购买 Gmail 邮箱",
+			DataJSON:        `{"item":"Gmail"}`,
+			SubjectUsername: "alice",
+			Status:          model.KnowledgeFactStatusActive,
+		}), ShouldBeTrue)
+		So(statusUpdateMatchesCandidate(update, match, model.KnowledgeFact{
+			ID:              11,
+			FactType:        "demand",
+			Title:           "购买 Gmail 邮箱",
+			DataJSON:        `{"item":"Gmail"}`,
+			SubjectUsername: "bob",
+			Status:          model.KnowledgeFactStatusActive,
+		}), ShouldBeFalse)
+		So(statusUpdateMatchesCandidate(update, match, model.KnowledgeFact{
+			ID:              12,
+			FactType:        "solution",
+			Title:           "Gmail 配置教程",
+			DataJSON:        `{"topic":"Gmail"}`,
+			SubjectUsername: "alice",
+			Status:          model.KnowledgeFactStatusActive,
+		}), ShouldBeFalse)
+	})
+
+	Convey("显式 target_user 存在时不会按维护消息发送者误匹配", t, func() {
+		update := model.KnowledgeFact{
+			FactType:        "status_update",
+			Title:           "Bob 不再需要 Gmail",
+			DataJSON:        `{"target_type":"demand","target_query":"Gmail","action":"no_longer_needed","target_user":"bob"}`,
+			SubjectSenderID: 1,
+			SubjectUsername: "alice",
+		}
+		match := parseStatusUpdateMatch(update)
+
+		So(statusUpdateMatchesCandidate(update, match, model.KnowledgeFact{
+			ID:              20,
+			FactType:        "demand",
+			Title:           "购买 Gmail 邮箱",
+			DataJSON:        `{"item":"Gmail"}`,
+			SubjectSenderID: 1,
+			SubjectUsername: "alice",
+			Status:          model.KnowledgeFactStatusActive,
+		}), ShouldBeFalse)
+		So(statusUpdateMatchesCandidate(update, match, model.KnowledgeFact{
+			ID:              21,
+			FactType:        "demand",
+			Title:           "购买 Gmail 邮箱",
+			DataJSON:        `{"item":"Gmail"}`,
+			SubjectSenderID: 2,
+			SubjectUsername: "bob",
+			Status:          model.KnowledgeFactStatusActive,
+		}), ShouldBeTrue)
+	})
+}

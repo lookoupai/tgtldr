@@ -139,10 +139,15 @@ func (s *Service) RunDailyExtraction(ctx context.Context, req RunRequest) (model
 	}
 
 	facts := flattenKnowledgeFacts(factsByChunk)
-	if err := s.store.KnowledgeFacts.UpsertMany(ctx, facts); err != nil {
+	persistedFacts, statusUpdates := splitStatusUpdateFacts(facts)
+	expiredCount, err := s.applyStatusUpdates(ctx, statusUpdates)
+	if err != nil {
 		return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusFailed, len(filtered), 0, err.Error())
 	}
-	return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusSucceeded, len(filtered), len(facts), "")
+	if err := s.store.KnowledgeFacts.UpsertMany(ctx, persistedFacts); err != nil {
+		return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusFailed, len(filtered), 0, err.Error())
+	}
+	return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusSucceeded, len(filtered), len(persistedFacts)+expiredCount, "")
 }
 
 func (s *Service) RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error) {
@@ -184,6 +189,8 @@ Rules:
 - sourceMessageRefs must list the message refs used as evidence.
 - Do not invent prices, quantities, locations, users, or deadlines.
 - If evidence is weak, either lower confidence or skip the fact.
+- If a message says an earlier demand, supply, offer, registration, or skill/profile item is no longer valid, output a status_update fact instead of repeating the old fact.
+- For status_update data, include target_type when clear, target_query as the item/topic to match, action such as resolved, expired, sold_out, paused, or no_longer_needed, and target_user when the affected user is named.
 `) + "\n\nKnowledge space:\n" + space.Name + "\n\nSchema JSON:\n" + space.SchemaJSON + optionalSection("Extra extraction requirements", space.ExtractPrompt)
 	}
 	return strings.TrimSpace(`
@@ -198,6 +205,8 @@ Rules:
 - sourceMessageRefs 必须列出支持该事实的消息 ref。
 - 不要编造价格、数量、地点、用户或截止时间。
 - 证据较弱时降低 confidence；无法确认时跳过该事实。
+- 如果消息表示之前的需求、供应、服务、报名或用户画像已经不再有效，请输出 status_update 类型，而不是重复旧事实。
+- status_update 的 data 中尽量包含 target_type、target_query、action 和 reason；target_query 填要匹配的物品或主题，action 使用 resolved、expired、sold_out、paused、no_longer_needed 等英文短语；如果明确提到受影响用户，填写 target_user。
 `) + "\n\n知识空间：\n" + space.Name + "\n\nSchema JSON：\n" + space.SchemaJSON + optionalSection("抽取额外要求", space.ExtractPrompt)
 }
 
@@ -261,6 +270,274 @@ func flattenKnowledgeFacts(groups [][]model.KnowledgeFact) []model.KnowledgeFact
 		out = append(out, group...)
 	}
 	return out
+}
+
+func splitStatusUpdateFacts(facts []model.KnowledgeFact) ([]model.KnowledgeFact, []model.KnowledgeFact) {
+	persisted := make([]model.KnowledgeFact, 0, len(facts))
+	updates := make([]model.KnowledgeFact, 0)
+	for _, fact := range facts {
+		if isStatusUpdateFact(fact) {
+			updates = append(updates, fact)
+			continue
+		}
+		persisted = append(persisted, fact)
+	}
+	return persisted, updates
+}
+
+func isStatusUpdateFact(fact model.KnowledgeFact) bool {
+	return strings.EqualFold(strings.TrimSpace(fact.FactType), "status_update")
+}
+
+type statusUpdateMatch struct {
+	factType        string
+	query           string
+	action          string
+	reason          string
+	subjectAliases  []string
+	explicitSubject bool
+}
+
+func (s *Service) applyStatusUpdates(ctx context.Context, updates []model.KnowledgeFact) (int, error) {
+	if len(updates) == 0 || s.store == nil || s.store.KnowledgeFacts == nil {
+		return 0, nil
+	}
+
+	updatedIDs := make(map[int64]struct{})
+	for _, update := range updates {
+		match := parseStatusUpdateMatch(update)
+		if !match.shouldExpire() || match.query == "" {
+			continue
+		}
+		candidates, err := s.store.KnowledgeFacts.List(ctx, store.KnowledgeFactFilter{
+			SpaceID:  update.SpaceID,
+			ChatID:   update.ChatID,
+			Status:   model.KnowledgeFactStatusActive,
+			FactType: match.factType,
+			Query:    match.query,
+			Limit:    100,
+		})
+		if err != nil {
+			return len(updatedIDs), err
+		}
+		for _, candidate := range candidates {
+			if _, seen := updatedIDs[candidate.ID]; seen {
+				continue
+			}
+			if !statusUpdateMatchesCandidate(update, match, candidate) {
+				continue
+			}
+			if _, err := s.store.KnowledgeFacts.UpdateStatus(ctx, candidate.ID, model.KnowledgeFactStatusExpired); err != nil {
+				return len(updatedIDs), err
+			}
+			updatedIDs[candidate.ID] = struct{}{}
+		}
+	}
+	return len(updatedIDs), nil
+}
+
+func parseStatusUpdateMatch(fact model.KnowledgeFact) statusUpdateMatch {
+	data := decodeKnowledgeFactData(fact.DataJSON)
+	explicitSubject := firstDataString(data, "target_user", "targetUser", "user", "username", "subject", "subject_user", "subjectUser")
+	match := statusUpdateMatch{
+		factType:        normalizeStatusUpdateFactType(firstDataString(data, "target_type", "targetType", "fact_type", "factType", "type")),
+		query:           firstDataString(data, "target_query", "targetQuery", "query", "item", "topic", "resource", "title", "keyword"),
+		action:          firstDataString(data, "action", "status", "state"),
+		reason:          firstDataString(data, "reason", "note", "evidence"),
+		explicitSubject: strings.TrimSpace(explicitSubject) != "",
+	}
+	match.query = compactText(firstNonEmpty(match.query, fact.Title))
+	match.action = compactText(firstNonEmpty(match.action, fact.Title))
+	match.reason = compactText(match.reason)
+	match.subjectAliases = statusUpdateSubjectAliases(fact, explicitSubject)
+	return match
+}
+
+func decodeKnowledgeFactData(raw string) map[string]any {
+	var data map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &data); err != nil {
+		return nil
+	}
+	return data
+}
+
+func firstDataString(data map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := data[key]
+		if !ok {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			if trimmed := strings.TrimSpace(typed); trimmed != "" {
+				return trimmed
+			}
+		case float64:
+			return fmt.Sprintf("%.0f", typed)
+		case bool:
+			return fmt.Sprintf("%t", typed)
+		}
+	}
+	return ""
+}
+
+func normalizeStatusUpdateFactType(value string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(value))
+	switch trimmed {
+	case "need", "needs", "request", "buy", "wanted":
+		return "demand"
+	case "offer", "sell", "sale", "seller":
+		return "supply"
+	default:
+		return trimmed
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func statusUpdateSubjectAliases(fact model.KnowledgeFact, explicitSubject string) []string {
+	if strings.TrimSpace(explicitSubject) != "" {
+		return compactNormalizedStrings([]string{explicitSubject})
+	}
+	values := []string{
+		fact.SubjectUsername,
+		fact.SubjectSenderName,
+	}
+	return compactNormalizedStrings(values)
+}
+
+func compactNormalizedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := normalizeMatchText(value)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func (m statusUpdateMatch) shouldExpire() bool {
+	text := normalizeMatchText(m.action + " " + m.reason)
+	if text == "" {
+		return false
+	}
+	expireSignals := []string{
+		"resolved",
+		"fulfilled",
+		"expired",
+		"invalid",
+		"sold",
+		"soldout",
+		"sold out",
+		"paused",
+		"stopped",
+		"cancelled",
+		"canceled",
+		"no longer",
+		"no longer needed",
+		"not needed",
+		"unavailable",
+		"finished",
+		"closed",
+		"不需要",
+		"不要了",
+		"买到了",
+		"已买",
+		"已卖",
+		"卖完",
+		"售罄",
+		"暂停",
+		"失效",
+		"结束",
+		"关闭",
+		"取消",
+	}
+	for _, signal := range expireSignals {
+		if strings.Contains(text, normalizeMatchText(signal)) {
+			return true
+		}
+	}
+	return false
+}
+
+func statusUpdateMatchesCandidate(update model.KnowledgeFact, match statusUpdateMatch, candidate model.KnowledgeFact) bool {
+	if candidate.ID <= 0 || candidate.Status != model.KnowledgeFactStatusActive || isStatusUpdateFact(candidate) {
+		return false
+	}
+	if !isExpirableKnowledgeFactType(candidate.FactType) {
+		return false
+	}
+	if match.factType != "" && !strings.EqualFold(candidate.FactType, match.factType) {
+		return false
+	}
+	if !statusUpdateMatchesSubject(update, match, candidate) {
+		return false
+	}
+	return statusUpdateMatchesQuery(match.query, candidate)
+}
+
+func isExpirableKnowledgeFactType(factType string) bool {
+	switch strings.ToLower(strings.TrimSpace(factType)) {
+	case "demand", "supply", "help_offer", "registration", "candidate", "hiring", "referral", "event":
+		return true
+	default:
+		return false
+	}
+}
+
+func statusUpdateMatchesSubject(update model.KnowledgeFact, match statusUpdateMatch, candidate model.KnowledgeFact) bool {
+	if !match.explicitSubject && update.SubjectSenderID > 0 && candidate.SubjectSenderID == update.SubjectSenderID {
+		return true
+	}
+	candidateAliases := compactNormalizedStrings([]string{
+		candidate.SubjectUsername,
+		candidate.SubjectSenderName,
+	})
+	if len(match.subjectAliases) == 0 || len(candidateAliases) == 0 {
+		return false
+	}
+	for _, left := range match.subjectAliases {
+		for _, right := range candidateAliases {
+			if left == right {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func statusUpdateMatchesQuery(query string, candidate model.KnowledgeFact) bool {
+	terms := strings.Fields(normalizeMatchText(query))
+	if len(terms) == 0 {
+		return false
+	}
+	target := normalizeMatchText(candidate.Title + " " + candidate.DataJSON)
+	for _, term := range terms {
+		if !strings.Contains(target, term) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeMatchText(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(value, "@")))
+	normalized = strings.NewReplacer("_", " ", "-", " ").Replace(normalized)
+	return strings.Join(strings.Fields(normalized), " ")
 }
 
 func parseExtractionFacts(raw string, space model.KnowledgeSpace, chat model.Chat, refs map[string]model.Message, now time.Time) ([]model.KnowledgeFact, error) {

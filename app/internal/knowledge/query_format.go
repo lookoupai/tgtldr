@@ -93,6 +93,9 @@ func formatQueryFact(language model.Language, fact model.KnowledgeFact) string {
 	}
 
 	meta := make([]string, 0, 3)
+	if fact.ID > 0 {
+		meta = append(meta, fmt.Sprintf("#%d", fact.ID))
+	}
 	if fact.FactType != "" {
 		meta = append(meta, fact.FactType)
 	}
