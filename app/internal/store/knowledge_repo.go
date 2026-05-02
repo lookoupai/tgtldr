@@ -175,35 +175,35 @@ func (r *KnowledgeFactRepository) List(ctx context.Context, filter KnowledgeFact
 
 	items := make([]model.KnowledgeFact, 0)
 	for rows.Next() {
-		var item model.KnowledgeFact
-		var sourceMessageIDs []int32
-		err := rows.Scan(
-			&item.ID,
-			&item.SpaceID,
-			&item.ChatID,
-			&item.ChatTitle,
-			&item.FactType,
-			&item.Title,
-			&item.DataJSON,
-			&item.SubjectSenderID,
-			&item.SubjectSenderName,
-			&item.SubjectUsername,
-			&item.Confidence,
-			&item.Status,
-			&sourceMessageIDs,
-			&item.FirstSeenAt,
-			&item.LastSeenAt,
-			&item.ExpiresAt,
-			&item.CreatedAt,
-			&item.UpdatedAt,
-		)
+		item, err := scanKnowledgeFact(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan knowledge fact: %w", err)
 		}
-		item.SourceMessageIDs = int32sToInts(sourceMessageIDs)
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (r *KnowledgeFactRepository) UpdateStatus(ctx context.Context, id int64, status model.KnowledgeFactStatus) (model.KnowledgeFact, error) {
+	item, err := scanKnowledgeFact(rowScanner{row: r.pool.QueryRow(ctx, `
+		with updated as (
+			update knowledge_facts
+			set status = $1,
+			    updated_at = now()
+			where id = $2
+			returning *
+		)
+		select f.id, f.space_id, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
+		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
+		       f.subject_username, f.confidence, f.status, f.source_message_ids,
+		       f.first_seen_at, f.last_seen_at, f.expires_at, f.created_at, f.updated_at
+		from updated f
+		left join chats c on c.id = f.chat_id
+	`, status, id)})
+	if err != nil {
+		return model.KnowledgeFact{}, fmt.Errorf("update knowledge fact %d status: %w", id, err)
+	}
+	return item, nil
 }
 
 func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int64, start, end time.Time) ([]model.KnowledgeFact, error) {
@@ -413,6 +413,36 @@ func scanKnowledgeRun(scanner chatScanner) (model.KnowledgeRun, error) {
 		return model.KnowledgeRun{}, err
 	}
 	return run, nil
+}
+
+func scanKnowledgeFact(scanner chatScanner) (model.KnowledgeFact, error) {
+	var item model.KnowledgeFact
+	var sourceMessageIDs []int32
+	err := scanner.Scan(
+		&item.ID,
+		&item.SpaceID,
+		&item.ChatID,
+		&item.ChatTitle,
+		&item.FactType,
+		&item.Title,
+		&item.DataJSON,
+		&item.SubjectSenderID,
+		&item.SubjectSenderName,
+		&item.SubjectUsername,
+		&item.Confidence,
+		&item.Status,
+		&sourceMessageIDs,
+		&item.FirstSeenAt,
+		&item.LastSeenAt,
+		&item.ExpiresAt,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return model.KnowledgeFact{}, err
+	}
+	item.SourceMessageIDs = int32sToInts(sourceMessageIDs)
+	return item, nil
 }
 
 func scanKnowledgeFactWithSpace(scanner chatScanner) (model.KnowledgeFact, error) {

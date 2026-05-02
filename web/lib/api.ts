@@ -210,6 +210,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ chatId, date }),
     }),
+  updateKnowledgeFactStatus: (factId: number, status: KnowledgeFact["status"]) =>
+    request<KnowledgeFact>(`/api/knowledge/facts/${factId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    }),
   startHistoryBackfill: (chatId: number, fromDate: string, toDate: string) =>
     request<HistoryBackfillTask>("/api/history-backfills", {
       method: "POST",

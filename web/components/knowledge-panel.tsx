@@ -129,6 +129,16 @@ export function KnowledgePanel() {
     }
   }
 
+  async function updateFactStatus(fact: KnowledgeFact, status: KnowledgeFact["status"]) {
+    try {
+      await api.updateKnowledgeFactStatus(fact.id, status);
+      toast.showSuccess(status === "active" ? "已恢复这条事实。" : "已忽略这条事实。");
+      await loadFacts();
+    } catch (err) {
+      toast.showError(asMessage(err));
+    }
+  }
+
   const activeCount = spaces.filter((space) => space.enabled).length;
   const includedCount = spaces.filter((space) => space.includeInSummary).length;
   const activeFacts = facts.filter((fact) => fact.status === "active").length;
@@ -140,7 +150,7 @@ export function KnowledgePanel() {
   return (
     <DashboardPage
       title="知识空间"
-      description="为不同群组配置长期知识抽取规则。当前阶段先维护 schema、适用群组和事实列表，后续抽取引擎会复用这些配置。"
+      description="为不同群组配置长期知识抽取规则，管理自动抽取出的事实。"
       actions={
         <Button onClick={() => setEditing(newKnowledgeSpace())} type="button">
           新建知识空间
@@ -444,7 +454,7 @@ export function KnowledgePanel() {
         </div>
 
         {facts.length === 0 ? (
-          <EmptyState title="暂无事实" description="P3 抽取引擎完成后会在这里展示结果。" />
+          <EmptyState title="暂无事实" description="运行抽取或生成摘要后，会在这里展示结构化事实。" />
         ) : (
           <div className="data-table-wrap">
             <table className="data-table">
@@ -456,6 +466,7 @@ export function KnowledgePanel() {
                   <th>用户</th>
                   <th>置信度</th>
                   <th>状态</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -475,6 +486,33 @@ export function KnowledgePanel() {
                       <StatusPill tone={fact.status === "active" ? "good" : "neutral"}>
                         {fact.status}
                       </StatusPill>
+                    </td>
+                    <td>
+                      <div className="table-row-actions">
+                        {fact.status === "active" ? (
+                          <button
+                            className="text-link-button"
+                            onClick={() =>
+                              startTransition(() =>
+                                void updateFactStatus(fact, "dismissed"),
+                              )
+                            }
+                            type="button"
+                          >
+                            忽略
+                          </button>
+                        ) : (
+                          <button
+                            className="text-link-button"
+                            onClick={() =>
+                              startTransition(() => void updateFactStatus(fact, "active"))
+                            }
+                            type="button"
+                          >
+                            恢复
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

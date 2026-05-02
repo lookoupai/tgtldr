@@ -186,6 +186,7 @@ export type KnowledgeSpace = {
 export type KnowledgeFact = {
   id: number;
   spaceId: number;
+  spaceName?: string;
   chatId: number;
   chatTitle?: string;
   factType: string;

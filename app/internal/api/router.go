@@ -71,6 +71,7 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/knowledge/spaces", r.handleKnowledgeSpaces)
 	mux.HandleFunc("/api/knowledge/spaces/", r.handleKnowledgeSpaceByID)
 	mux.HandleFunc("/api/knowledge/facts", r.handleKnowledgeFacts)
+	mux.HandleFunc("/api/knowledge/facts/", r.handleKnowledgeFactByID)
 	mux.HandleFunc("/api/history-backfills", r.handleStartHistoryBackfill)
 	mux.HandleFunc("/api/history-backfills/", r.handleHistoryBackfillByID)
 	mux.HandleFunc("/api/summaries", r.handleSummaries)

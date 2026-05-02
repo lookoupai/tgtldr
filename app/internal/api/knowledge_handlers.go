@@ -161,3 +161,55 @@ func (r *Router) handleKnowledgeFacts(w http.ResponseWriter, req *http.Request) 
 	}
 	httpx.JSON(w, http.StatusOK, items)
 }
+
+func (r *Router) handleKnowledgeFactByID(w http.ResponseWriter, req *http.Request) {
+	path := strings.TrimPrefix(req.URL.Path, "/api/knowledge/facts/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[1] != "status" {
+		httpx.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if req.Method != http.MethodPost {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid knowledge fact id")
+		return
+	}
+
+	var payload struct {
+		Status model.KnowledgeFactStatus `json:"status"`
+	}
+	if err := httpx.DecodeJSON(req, &payload); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status := normalizeKnowledgeFactStatusForUpdate(payload.Status)
+	if status == "" {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "状态只能设置为 active 或 dismissed。", "Status can only be set to active or dismissed."))
+		return
+	}
+
+	item, err := r.store.KnowledgeFacts.UpdateStatus(req.Context(), id, status)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if store.IsNotFound(err) {
+			statusCode = http.StatusNotFound
+		}
+		httpx.Error(w, statusCode, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, item)
+}
+
+func normalizeKnowledgeFactStatusForUpdate(status model.KnowledgeFactStatus) model.KnowledgeFactStatus {
+	switch status {
+	case model.KnowledgeFactStatusActive, model.KnowledgeFactStatusDismissed:
+		return status
+	default:
+		return ""
+	}
+}
