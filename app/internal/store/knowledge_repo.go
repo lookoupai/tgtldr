@@ -220,7 +220,22 @@ func (r *KnowledgeFactRepository) UpdateStatus(ctx context.Context, id int64, st
 	return item, nil
 }
 
-func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int64, start, end time.Time) ([]model.KnowledgeFact, error) {
+func (r *KnowledgeFactRepository) ExpireDue(ctx context.Context, now time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+		update knowledge_facts
+		set status = $1,
+		    updated_at = now()
+		where status = $2
+		  and expires_at is not null
+		  and expires_at <= $3
+	`, model.KnowledgeFactStatusExpired, model.KnowledgeFactStatusActive, now)
+	if err != nil {
+		return fmt.Errorf("expire due knowledge facts: %w", err)
+	}
+	return nil
+}
+
+func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int64, start, end, now time.Time) ([]model.KnowledgeFact, error) {
 	rows, err := r.pool.Query(ctx, `
 		select f.id, f.space_id, s.name, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
 		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
@@ -231,6 +246,7 @@ func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int
 		left join chats c on c.id = f.chat_id
 		where f.chat_id = $1
 		  and f.status = $2
+		  and (f.expires_at is null or f.expires_at > $5)
 		  and s.enabled = true
 		  and s.include_in_summary = true
 		  and (cardinality(s.chat_ids) = 0 or $1 = any(s.chat_ids))
@@ -250,7 +266,7 @@ func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int
 		      )
 		  )
 		order by lower(s.name) asc, lower(f.fact_type) asc, f.confidence desc, f.last_seen_at desc, f.id desc
-	`, chatID, model.KnowledgeFactStatusActive, start, end)
+	`, chatID, model.KnowledgeFactStatusActive, start, end, now)
 	if err != nil {
 		return nil, fmt.Errorf("query summary knowledge facts: %w", err)
 	}
@@ -307,7 +323,10 @@ func (r *KnowledgeFactRepository) UpsertMany(ctx context.Context, facts []model.
 				subject_sender_name = excluded.subject_sender_name,
 				subject_username = excluded.subject_username,
 				confidence = excluded.confidence,
-				status = excluded.status,
+				status = case
+					when knowledge_facts.status = 'dismissed' then knowledge_facts.status
+					else excluded.status
+				end,
 				last_seen_at = excluded.last_seen_at,
 				expires_at = excluded.expires_at,
 				updated_at = now()

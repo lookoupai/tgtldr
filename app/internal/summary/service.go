@@ -191,7 +191,11 @@ func (s *Service) appendKnowledgeFacts(ctx context.Context, summary *model.Summa
 	if s.store == nil || s.store.KnowledgeFacts == nil || summary == nil || summary.Status != model.SummaryStatusSucceeded {
 		return nil
 	}
-	facts, err := s.store.KnowledgeFacts.ListForSummary(ctx, summary.ChatID, start, end)
+	now := s.clock.Now()
+	if err := s.store.KnowledgeFacts.ExpireDue(ctx, now); err != nil {
+		return err
+	}
+	facts, err := s.store.KnowledgeFacts.ListForSummary(ctx, summary.ChatID, start, end, now)
 	if err != nil {
 		return err
 	}

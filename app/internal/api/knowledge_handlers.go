@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/frederic/tgtldr/app/internal/httpx"
 	"github.com/frederic/tgtldr/app/internal/knowledge"
@@ -155,6 +156,10 @@ func (r *Router) handleKnowledgeFacts(w http.ResponseWriter, req *http.Request) 
 		filter.Limit = limit
 	}
 
+	if err := r.store.KnowledgeFacts.ExpireDue(req.Context(), time.Now()); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	items, err := r.store.KnowledgeFacts.List(req.Context(), filter)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
