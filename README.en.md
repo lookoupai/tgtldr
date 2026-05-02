@@ -12,9 +12,12 @@ This project exists because many Telegram groups are large, noisy communities th
 
 - Monitor Telegram groups you have joined and store messages in a local database
 - Configure daily summary time, prompts, filters, and summary model per group
+- Summarize by channel, or group summaries by AI-detected topics or configured topic groups
 - Generate group summaries through an OpenAI-compatible API
-- Read summaries in the web app, with optional Telegram Bot delivery
+- Read summaries in the web app, with optional Telegram Bot delivery; long Bot messages are split automatically
 - Manually trigger summaries, view historical summaries, and retry failed Bot deliveries
+- Define custom knowledge spaces to extract long-lived structured facts and user profiles from messages
+- Query knowledge facts from the web app or Bot commands, such as demands, supplies, skills, events, or your own schema types
 - Complete first-time Telegram, OpenAI, and group setup through the web wizard
 
 ## Requirements
@@ -65,6 +68,27 @@ After startup, open:
 - Web app: `http://localhost:${TGTLDR_HOST_WEB_PORT}` (default `http://localhost:3000`)
 
 On first visit, follow the setup wizard to configure the access password, Telegram, OpenAI, and group summary settings.
+
+## Summaries and Knowledge Spaces
+
+Each group can configure its own summary behavior:
+
+- `Channel`: the default mode, producing one summary for the previous day's messages
+- `Topics`: AI groups discussions by topic; you can also configure topic names and descriptions per group
+- Bot delivery respects Telegram's single-message limit and automatically splits content above 4096 visible characters
+
+Knowledge spaces maintain long-lived information instead of one-off summaries. Each space has its own JSON schema, extraction instructions, target groups, confidence threshold, and retention period. This makes the feature reusable for demand/supply channels, hiring, skill profiles, event signups, project leads, or other custom scenarios.
+
+If Bot delivery is enabled and a target chat is configured, you can query the knowledge base from that chat:
+
+```text
+/knowledge <keyword>
+/demand <keyword>
+/supply <keyword>
+/who <keyword>
+```
+
+The Bot only responds in the configured target chat, so local knowledge is not sent to unauthorized conversations.
 
 ### Developer: local Docker build
 
