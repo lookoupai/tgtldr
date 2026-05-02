@@ -184,3 +184,41 @@ func TestStatusUpdateFacts(t *testing.T) {
 		}), ShouldBeTrue)
 	})
 }
+
+func TestMaintenanceInstruction(t *testing.T) {
+	Convey("维护指令解析会规整动作、类型和查询", t, func() {
+		instruction, err := parseMaintenanceInstruction(`{"action":"resolved","targetType":"need","targetQuery":" Gmail 邮箱 ","targetUser":" @alice ","reason":"已经买到","confidence":0.91}`)
+
+		So(err, ShouldBeNil)
+		So(instruction.Action, ShouldEqual, "expire")
+		So(instruction.TargetType, ShouldEqual, "demand")
+		So(instruction.TargetQuery, ShouldEqual, "Gmail 邮箱")
+		So(instruction.TargetUser, ShouldEqual, "@alice")
+	})
+
+	Convey("维护匹配要求用户、关键词和可维护类型同时命中", t, func() {
+		match := statusUpdateMatch{
+			factType:        "demand",
+			query:           "Gmail",
+			subjectAliases:  compactNormalizedStrings([]string{"alice"}),
+			explicitSubject: true,
+		}
+
+		So(maintenanceMatchesCandidate(match, model.KnowledgeFact{
+			ID:              30,
+			FactType:        "demand",
+			Title:           "需要 Gmail 邮箱",
+			DataJSON:        `{"item":"Gmail"}`,
+			SubjectUsername: "alice",
+			Status:          model.KnowledgeFactStatusActive,
+		}, model.KnowledgeFactStatusActive), ShouldBeTrue)
+		So(maintenanceMatchesCandidate(match, model.KnowledgeFact{
+			ID:              31,
+			FactType:        "demand",
+			Title:           "需要 Gmail 邮箱",
+			DataJSON:        `{"item":"Gmail"}`,
+			SubjectUsername: "alice",
+			Status:          model.KnowledgeFactStatusExpired,
+		}, model.KnowledgeFactStatusActive), ShouldBeFalse)
+	})
+}

@@ -21,8 +21,9 @@ const (
 )
 
 type Service struct {
-	store *store.Store
-	bot   *bot.Service
+	store      *store.Store
+	bot        *bot.Service
+	maintainer knowledgeMaintainer
 }
 
 type parsedCommand struct {
@@ -31,6 +32,11 @@ type parsedCommand struct {
 	help         bool
 	factID       int64
 	statusUpdate model.KnowledgeFactStatus
+	updateText   string
+}
+
+type knowledgeMaintainer interface {
+	ApplyMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
 }
 
 type pollState struct {
@@ -40,8 +46,8 @@ type pollState struct {
 	initialized  bool
 }
 
-func NewService(st *store.Store, botService *bot.Service) *Service {
-	return &Service{store: st, bot: botService}
+func NewService(st *store.Store, botService *bot.Service, maintainer knowledgeMaintainer) *Service {
+	return &Service{store: st, bot: botService, maintainer: maintainer}
 }
 
 func (s *Service) Run(ctx context.Context) error {
@@ -123,6 +129,9 @@ func (s *Service) responseForCommand(ctx context.Context, language model.Languag
 	if command.statusUpdate != "" {
 		return s.updateFactStatus(ctx, language, command.factID, command.statusUpdate)
 	}
+	if command.updateText != "" {
+		return s.applyMaintenanceText(ctx, language, command.updateText)
+	}
 
 	now := time.Now()
 	if err := s.store.KnowledgeFacts.ExpireDue(ctx, now); err != nil {
@@ -159,6 +168,17 @@ func (s *Service) updateFactStatus(ctx context.Context, language model.Language,
 	return commandStatusUpdatedText(language, fact, status), true, nil
 }
 
+func (s *Service) applyMaintenanceText(ctx context.Context, language model.Language, text string) (string, bool, error) {
+	if s.maintainer == nil {
+		return "", true, fmt.Errorf("knowledge maintainer is not configured")
+	}
+	result, err := s.maintainer.ApplyMaintenanceText(ctx, text)
+	if err != nil {
+		return "", true, err
+	}
+	return commandMaintenanceResultText(language, result), true, nil
+}
+
 func parseCommand(text string) (parsedCommand, bool) {
 	trimmed := strings.TrimSpace(text)
 	if !strings.HasPrefix(trimmed, "/") {
@@ -185,6 +205,11 @@ func parseCommand(text string) (parsedCommand, bool) {
 		return parseStatusCommand(query, model.KnowledgeFactStatusDismissed)
 	case "restore":
 		return parseStatusCommand(query, model.KnowledgeFactStatusActive)
+	case "update", "maintain":
+		if query == "" {
+			return parsedCommand{help: true}, true
+		}
+		return parsedCommand{updateText: query}, true
 	case "type", "fact", "facts":
 		return parseTypedCommand(query)
 	case "knowledge", "know", "query", "who":
@@ -251,6 +276,7 @@ func commandHelpText(language model.Language) string {
 - /expire <fact_id>: mark a fact expired
 - /forget <fact_id>: dismiss a fact
 - /restore <fact_id>: restore an expired or dismissed fact
+- /update <natural language>: update facts from a maintenance note, such as "Alice no longer needs Gmail"
 `)
 	}
 	return strings.TrimSpace(`
@@ -265,6 +291,7 @@ func commandHelpText(language model.Language) string {
 - /expire <事实ID>：将事实标记为过期
 - /forget <事实ID>：忽略一条事实
 - /restore <事实ID>：恢复过期或忽略的事实
+- /update <自然语言说明>：根据说明维护事实，例如“A 不再需要 Gmail 邮箱”
 `)
 }
 
@@ -280,6 +307,34 @@ func commandStatusUpdatedText(language model.Language, fact model.KnowledgeFact,
 	default:
 		return fmt.Sprintf("已忽略知识事实 #%d：%s", fact.ID, fact.Title)
 	}
+}
+
+func commandMaintenanceResultText(language model.Language, result knowledge.MaintenanceResult) string {
+	if result.Action == "" || result.Action == "none" {
+		if language == model.LanguageEN {
+			return "No safe knowledge update was detected. Please include an affected user and item/topic, or use /expire <fact_id>."
+		}
+		return "没有识别到可安全执行的知识维护。请同时说明受影响用户和物品/主题，或使用 /expire <事实ID>。"
+	}
+	if len(result.UpdatedFacts) == 0 {
+		if language == model.LanguageEN {
+			return "No matching knowledge facts were found. Try a fact ID command such as /expire <fact_id>."
+		}
+		return "没有找到匹配的知识事实。可以先查询并使用 /expire <事实ID> 这类命令。"
+	}
+	lines := make([]string, 0, len(result.UpdatedFacts)+1)
+	if language == model.LanguageEN {
+		lines = append(lines, fmt.Sprintf("Updated %d knowledge facts:", len(result.UpdatedFacts)))
+		for _, fact := range result.UpdatedFacts {
+			lines = append(lines, fmt.Sprintf("- #%d %s (%s)", fact.ID, fact.Title, fact.Status))
+		}
+		return strings.Join(lines, "\n")
+	}
+	lines = append(lines, fmt.Sprintf("已维护 %d 条知识事实：", len(result.UpdatedFacts)))
+	for _, fact := range result.UpdatedFacts {
+		lines = append(lines, fmt.Sprintf("- #%d %s（%s）", fact.ID, fact.Title, fact.Status))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func commandErrorText(language model.Language, err error) string {

@@ -50,9 +50,9 @@ func run() error {
 
 	sysClock := clock.System{}
 	botService := bot.New()
-	botQueryService := botquery.NewService(st, botService)
 	summaryService := summary.NewService(st, sysClock, cfg.OpenAITimeout)
 	knowledgeService := knowledge.NewService(st, sysClock, cfg.OpenAITimeout)
+	botQueryService := botquery.NewService(st, botService, knowledgeService)
 	telegramService := telegramsvc.NewService(ctx, st, sysClock)
 	schedulerService := scheduler.NewService(st, sysClock, summaryService, botService, knowledgeService)
 	telegramService.SetHistoryBackfillCompletionHook(func(chat model.Chat, fromDate, toDate string) {

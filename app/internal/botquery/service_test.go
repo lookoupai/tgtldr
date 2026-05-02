@@ -72,6 +72,12 @@ func TestParseCommand(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "natural language maintenance command",
+			text: "/update Alice 不再需要 Gmail 邮箱",
+			want: parsedCommand{updateText: "Alice 不再需要 Gmail 邮箱"},
+			ok:   true,
+		},
+		{
 			name: "type command without type shows help",
 			text: "/type",
 			want: parsedCommand{help: true},

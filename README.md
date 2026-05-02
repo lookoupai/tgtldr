@@ -127,10 +127,12 @@ docker compose up -d
 /expire <事实ID>
 /forget <事实ID>
 /restore <事实ID>
+/update <自然语言说明>
 ```
 
 其中 `/type` 可用于查询自定义 schema 类型，例如 `/type hiring remote` 或 `/type skill rust`。`/fact` 和 `/facts` 是同等用途的别名。
 查询结果会显示事实 ID，可用 `/expire` 标记过期、`/forget` 忽略、`/restore` 恢复。
+也可以用 `/update A 不再需要 Gmail 邮箱` 这类自然语言维护命令，系统会先解析受影响用户和物品，再更新匹配事实。
 
 Bot 只会响应配置的目标会话，避免把本地知识库内容发送到未授权聊天。
 

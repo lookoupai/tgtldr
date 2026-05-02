@@ -33,6 +33,23 @@ type extractionResponse struct {
 	Facts []extractedFact `json:"facts"`
 }
 
+type MaintenanceResult struct {
+	Action       string
+	TargetType   string
+	TargetQuery  string
+	TargetUser   string
+	UpdatedFacts []model.KnowledgeFact
+}
+
+type maintenanceInstruction struct {
+	Action      string  `json:"action"`
+	TargetType  string  `json:"targetType"`
+	TargetQuery string  `json:"targetQuery"`
+	TargetUser  string  `json:"targetUser"`
+	Reason      string  `json:"reason"`
+	Confidence  float64 `json:"confidence"`
+}
+
 type extractedFact struct {
 	Type              string          `json:"type"`
 	Title             string          `json:"title"`
@@ -46,6 +63,7 @@ type extractedFact struct {
 var codeFencePattern = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
 
 const extractionChunkTokenBudget = 12000
+const maintenanceMaxOutput = 800
 
 func NewService(st *store.Store, c clock.Clock, openAITimeout time.Duration) *Service {
 	return &Service{store: st, clock: c, openAITimeout: openAITimeout}
@@ -173,6 +191,192 @@ func (s *Service) RunDailyExtractionsForSummary(ctx context.Context, chat model.
 
 func (s *Service) finishRun(ctx context.Context, runID int64, status model.KnowledgeRunStatus, inputCount int, extractedCount int, errorMessage string) (model.KnowledgeRun, error) {
 	return s.store.KnowledgeRuns.Finish(ctx, runID, status, inputCount, extractedCount, errorMessage, s.clock.Now())
+}
+
+func (s *Service) ApplyMaintenanceText(ctx context.Context, text string) (MaintenanceResult, error) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return MaintenanceResult{}, nil
+	}
+	settings, err := s.store.Settings.Get(ctx)
+	if err != nil {
+		return MaintenanceResult{}, err
+	}
+	client := openai.New(openai.Config{
+		BaseURL: settings.OpenAIBaseURL,
+		APIKey:  settings.OpenAIAPIKey,
+		Model:   settings.OpenAIModel,
+		Timeout: s.openAITimeout,
+	})
+	resp, err := client.Chat(ctx, openai.ChatRequest{
+		SystemPrompt: buildMaintenanceSystemPrompt(settings.Language),
+		UserPrompt:   trimmed,
+		Temperature:  0,
+		MaxOutput:    maintenanceMaxOutput,
+	})
+	if err != nil {
+		return MaintenanceResult{}, err
+	}
+	instruction, err := parseMaintenanceInstruction(resp.Content)
+	if err != nil {
+		return MaintenanceResult{}, err
+	}
+	return s.applyMaintenanceInstruction(ctx, instruction)
+}
+
+func buildMaintenanceSystemPrompt(language model.Language) string {
+	if language == model.LanguageEN {
+		return strings.TrimSpace(`
+You parse one user message into a knowledge maintenance instruction.
+Output ONLY valid JSON in this exact shape:
+{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|","targetQuery":"item or topic to match","targetUser":"username or display name when explicitly mentioned","reason":"short reason","confidence":0.8}
+
+Rules:
+- Use action "expire" when the message says a demand, supply, offer, registration, or opportunity is no longer valid, fulfilled, sold out, paused, cancelled, or expired.
+- Use action "dismiss" only when the user explicitly asks to ignore/remove a fact.
+- Use action "restore" only when the user explicitly says a fact should become valid again.
+- Use action "none" if this is only a query, a new fact, or too ambiguous.
+- targetQuery must be the item/topic, not the whole sentence.
+- targetUser must be filled when the affected person is named or @mentioned. If no affected person is clear, leave it empty.
+`)
+	}
+	return strings.TrimSpace(`
+你负责把用户发给知识库机器人的一句维护说明解析成结构化指令。
+只输出合法 JSON，格式必须是：
+{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|","targetQuery":"要匹配的物品或主题","targetUser":"明确提到的用户名或显示名","reason":"简短原因","confidence":0.8}
+
+规则：
+- 如果用户表示某个需求、供应、服务、报名或机会“不需要了、已买到、卖完了、暂停、取消、失效”，action 用 expire。
+- 只有用户明确要求“忽略、删除、不再记录”时，action 才用 dismiss。
+- 只有用户明确表示“恢复、重新有效、又开始接单”等，action 才用 restore。
+- 如果只是查询、新增事实或含义不明确，action 用 none。
+- targetQuery 只填物品或主题，不要填整句话。
+- 如果明确提到受影响用户或 @用户，填写 targetUser；不明确时留空。
+`)
+}
+
+func parseMaintenanceInstruction(raw string) (maintenanceInstruction, error) {
+	cleaned := strings.TrimSpace(raw)
+	if match := codeFencePattern.FindStringSubmatch(cleaned); len(match) == 2 {
+		cleaned = strings.TrimSpace(match[1])
+	}
+	var instruction maintenanceInstruction
+	if err := json.Unmarshal([]byte(cleaned), &instruction); err != nil {
+		return maintenanceInstruction{}, fmt.Errorf("parse maintenance instruction: %w", err)
+	}
+	instruction.Action = normalizeMaintenanceAction(instruction.Action)
+	instruction.TargetType = normalizeStatusUpdateFactType(instruction.TargetType)
+	instruction.TargetQuery = compactText(instruction.TargetQuery)
+	instruction.TargetUser = compactText(instruction.TargetUser)
+	instruction.Reason = compactText(instruction.Reason)
+	return instruction, nil
+}
+
+func normalizeMaintenanceAction(action string) string {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "expire", "expired", "resolve", "resolved", "close", "closed":
+		return "expire"
+	case "dismiss", "forget", "ignore", "remove", "delete":
+		return "dismiss"
+	case "restore", "active", "reactivate", "resume":
+		return "restore"
+	default:
+		return "none"
+	}
+}
+
+func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction maintenanceInstruction) (MaintenanceResult, error) {
+	result := MaintenanceResult{
+		Action:      instruction.Action,
+		TargetType:  instruction.TargetType,
+		TargetQuery: instruction.TargetQuery,
+		TargetUser:  instruction.TargetUser,
+	}
+	if instruction.Action == "none" || instruction.TargetQuery == "" || instruction.TargetUser == "" {
+		return result, nil
+	}
+
+	targetStatus, sourceStatuses := maintenanceStatuses(instruction.Action)
+	if targetStatus == "" || len(sourceStatuses) == 0 {
+		result.Action = "none"
+		return result, nil
+	}
+
+	match := statusUpdateMatch{
+		factType:        instruction.TargetType,
+		query:           instruction.TargetQuery,
+		action:          instruction.Action,
+		reason:          instruction.Reason,
+		subjectAliases:  compactNormalizedStrings([]string{instruction.TargetUser}),
+		explicitSubject: true,
+	}
+	updatedByID := make(map[int64]model.KnowledgeFact)
+	for _, sourceStatus := range sourceStatuses {
+		candidates, err := s.store.KnowledgeFacts.List(ctx, store.KnowledgeFactFilter{
+			Status:   sourceStatus,
+			FactType: instruction.TargetType,
+			Query:    instruction.TargetQuery,
+			Limit:    100,
+		})
+		if err != nil {
+			return result, err
+		}
+		for _, candidate := range candidates {
+			if _, seen := updatedByID[candidate.ID]; seen {
+				continue
+			}
+			if !maintenanceMatchesCandidate(match, candidate, sourceStatus) {
+				continue
+			}
+			updated, err := s.store.KnowledgeFacts.UpdateStatus(ctx, candidate.ID, targetStatus)
+			if err != nil {
+				return result, err
+			}
+			updatedByID[updated.ID] = updated
+		}
+	}
+	result.UpdatedFacts = sortedMaintenanceFacts(updatedByID)
+	return result, nil
+}
+
+func maintenanceStatuses(action string) (model.KnowledgeFactStatus, []model.KnowledgeFactStatus) {
+	switch action {
+	case "expire":
+		return model.KnowledgeFactStatusExpired, []model.KnowledgeFactStatus{model.KnowledgeFactStatusActive}
+	case "dismiss":
+		return model.KnowledgeFactStatusDismissed, []model.KnowledgeFactStatus{model.KnowledgeFactStatusActive, model.KnowledgeFactStatusExpired}
+	case "restore":
+		return model.KnowledgeFactStatusActive, []model.KnowledgeFactStatus{model.KnowledgeFactStatusExpired, model.KnowledgeFactStatusDismissed}
+	default:
+		return "", nil
+	}
+}
+
+func maintenanceMatchesCandidate(match statusUpdateMatch, candidate model.KnowledgeFact, sourceStatus model.KnowledgeFactStatus) bool {
+	if candidate.ID <= 0 || candidate.Status != sourceStatus || isStatusUpdateFact(candidate) {
+		return false
+	}
+	if !isExpirableKnowledgeFactType(candidate.FactType) {
+		return false
+	}
+	if match.factType != "" && !strings.EqualFold(candidate.FactType, match.factType) {
+		return false
+	}
+	if !statusUpdateMatchesSubject(model.KnowledgeFact{}, match, candidate) {
+		return false
+	}
+	return statusUpdateMatchesQuery(match.query, candidate)
+}
+
+func sortedMaintenanceFacts(factsByID map[int64]model.KnowledgeFact) []model.KnowledgeFact {
+	facts := make([]model.KnowledgeFact, 0, len(factsByID))
+	for _, fact := range factsByID {
+		facts = append(facts, fact)
+	}
+	sort.SliceStable(facts, func(i, j int) bool {
+		return facts[i].ID < facts[j].ID
+	})
+	return facts
 }
 
 func buildExtractionSystemPrompt(language model.Language, space model.KnowledgeSpace) string {

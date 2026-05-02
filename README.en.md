@@ -127,10 +127,12 @@ If Bot delivery is enabled and a target chat is configured, you can query the kn
 /expire <fact_id>
 /forget <fact_id>
 /restore <fact_id>
+/update <natural language>
 ```
 
 Use `/type` for custom schema types, such as `/type hiring remote` or `/type skill rust`. `/fact` and `/facts` are aliases for the same query form.
 Query results include fact IDs. Use `/expire` to mark a fact expired, `/forget` to dismiss it, and `/restore` to reactivate it.
+You can also use natural-language maintenance commands such as `/update Alice no longer needs Gmail`; the system parses the affected user and item before updating matching facts.
 
 The Bot only responds in the configured target chat, so local knowledge is not sent to unauthorized conversations.
 
