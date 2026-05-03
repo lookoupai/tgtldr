@@ -9,7 +9,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   app:
-    image: ${TGTLDR_IMAGE_NAMESPACE:-fr0der1c}/tgtldr-app:${TGTLDR_IMAGE_TAG:-latest}
+    image: ${TGTLDR_IMAGE_NAMESPACE:-lookoupai}/tgtldr-app:${TGTLDR_IMAGE_TAG:-latest}
     environment:
       TGTLDR_DATABASE_URL: postgres://postgres:postgres@postgres:5432/tgtldr?sslmode=disable
       TGTLDR_MASTER_KEY: ${TGTLDR_MASTER_KEY:-}
@@ -22,7 +22,7 @@ services:
       - app-data:/var/lib/tgtldr
 
   web:
-    image: ${TGTLDR_IMAGE_NAMESPACE:-fr0der1c}/tgtldr-web:${TGTLDR_IMAGE_TAG:-latest}
+    image: ${TGTLDR_IMAGE_NAMESPACE:-lookoupai}/tgtldr-web:${TGTLDR_IMAGE_TAG:-latest}
     environment:
       TGTLDR_INTERNAL_API_BASE_URL: http://app:8080
     depends_on:

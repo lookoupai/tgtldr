@@ -34,7 +34,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: fr0der1c/tgtldr-app
+          images: lookoupai/tgtldr-app
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
@@ -77,7 +77,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: fr0der1c/tgtldr-web
+          images: lookoupai/tgtldr-web
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag

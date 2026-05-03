@@ -42,7 +42,7 @@ If `TGTLDR_MASTER_KEY` is not explicitly set, the system generates a random mast
 To pull a specific image version before startup:
 
 ```bash
-export TGTLDR_IMAGE_NAMESPACE=fr0der1c
+export TGTLDR_IMAGE_NAMESPACE=lookoupai
 export TGTLDR_IMAGE_TAG=latest
 docker compose up -d
 ```
@@ -233,8 +233,8 @@ server {
 - The default `docker-compose.yml` is for regular users and uses prebuilt images directly.
 - `docker-compose.dev.yml` is for developers and keeps the local build workflow.
 - GitHub Actions automatically builds and pushes these images when `main` or `v*` tags are pushed:
-  - `fr0der1c/tgtldr-app`
-  - `fr0der1c/tgtldr-web`
+  - `lookoupai/tgtldr-app`
+  - `lookoupai/tgtldr-web`
 
 ## License
 

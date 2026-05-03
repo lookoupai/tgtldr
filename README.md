@@ -42,7 +42,7 @@ docker compose up -d
 如果你想拉取指定版本的镜像，可以在启动前设置：
 
 ```bash
-export TGTLDR_IMAGE_NAMESPACE=fr0der1c
+export TGTLDR_IMAGE_NAMESPACE=lookoupai
 export TGTLDR_IMAGE_TAG=latest
 docker compose up -d
 ```
@@ -233,8 +233,8 @@ server {
 - 默认 `docker-compose.yml` 面向普通用户，直接使用预构建镜像。
 - `docker-compose.dev.yml` 面向开发者，保留本地 build 工作流。
 - GitHub Actions 会在推送 `main` 或 `v*` tag 时，自动构建并推送：
-  - `fr0der1c/tgtldr-app`
-  - `fr0der1c/tgtldr-web`
+  - `lookoupai/tgtldr-app`
+  - `lookoupai/tgtldr-web`
 
 ## License
 
