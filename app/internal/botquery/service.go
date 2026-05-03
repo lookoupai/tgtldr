@@ -44,6 +44,7 @@ type parsedCommand struct {
 
 type knowledgeMaintainer interface {
 	ApplyMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
+	AnswerQueryText(ctx context.Context, text string, opts knowledge.KnowledgeAnswerOptions) (knowledge.KnowledgeAnswerResult, error)
 	PreviewMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
 	ParseQueryText(ctx context.Context, text string) (knowledge.KnowledgeQueryInstruction, error)
 	UpdateFactStatus(ctx context.Context, factID int64, status model.KnowledgeFactStatus, source string, reason string, operatorText string, matchedQuery string) (model.KnowledgeFact, error)
@@ -224,6 +225,16 @@ func (s *Service) respondToNaturalQuery(ctx context.Context, language model.Lang
 	if s.maintainer == nil {
 		return "", true, fmt.Errorf("knowledge maintainer is not configured")
 	}
+	answer, err := s.maintainer.AnswerQueryText(ctx, text, knowledge.KnowledgeAnswerOptions{Limit: commandResultLimit})
+	if err == nil {
+		if strings.TrimSpace(answer.Query) == "" && strings.TrimSpace(answer.FactType) == "" {
+			return commandNaturalQueryEmptyText(language), true, nil
+		}
+		if strings.TrimSpace(answer.Answer) != "" {
+			return answer.Answer, true, nil
+		}
+	}
+
 	query, err := s.maintainer.ParseQueryText(ctx, text)
 	if err != nil {
 		return "", true, err
@@ -418,7 +429,7 @@ func commandHelpText(language model.Language) string {
 - /demand <keyword>: search demand facts
 - /supply <keyword>: search supply facts
 - /who <keyword>: search people and their facts
-- /ask <question>: parse a natural-language knowledge question
+- /ask <question>: answer from knowledge-base evidence
 - /expire <fact_id>: mark a fact expired
 - /forget <fact_id>: dismiss a fact
 - /restore <fact_id>: restore an expired or dismissed fact
@@ -436,7 +447,7 @@ func commandHelpText(language model.Language) string {
 - /demand <关键词>：查询需求事实
 - /supply <关键词>：查询供应事实
 - /who <关键词>：查询用户及相关事实
-- /ask <问题>：解析自然语言知识库问题
+- /ask <问题>：基于知识库证据回答问题
 - /expire <事实ID>：将事实标记为过期
 - /forget <事实ID>：忽略一条事实
 - /restore <事实ID>：恢复过期或忽略的事实

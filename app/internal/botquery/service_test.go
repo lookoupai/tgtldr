@@ -1,10 +1,12 @@
 package botquery
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
 	"github.com/frederic/tgtldr/app/internal/bot"
+	"github.com/frederic/tgtldr/app/internal/knowledge"
 	"github.com/frederic/tgtldr/app/internal/model"
 )
 
@@ -169,4 +171,68 @@ func TestMaintenanceTargetStatus(t *testing.T) {
 	if got := maintenanceTargetStatus("restore"); got != model.KnowledgeFactStatusActive {
 		t.Fatalf("restore status = %q", got)
 	}
+}
+
+func TestNaturalQueryUsesKnowledgeAnswer(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{
+		answer: knowledge.KnowledgeAnswerResult{
+			Query:    "Rust",
+			FactType: "skill",
+			Answer:   "可以先看 @alice，依据 #42。",
+		},
+	})
+
+	got, ok, err := service.responseForCommand(context.Background(), model.LanguageZhCN, "/ask 谁了解 Rust")
+	if err != nil {
+		t.Fatalf("responseForCommand() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("responseForCommand() ok = false")
+	}
+	if got != "可以先看 @alice，依据 #42。" {
+		t.Fatalf("responseForCommand() = %q", got)
+	}
+}
+
+func TestNaturalQueryEmptyAnswerShowsEmptyQueryText(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{})
+
+	got, ok, err := service.responseForCommand(context.Background(), model.LanguageZhCN, "/ask ???")
+	if err != nil {
+		t.Fatalf("responseForCommand() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("responseForCommand() ok = false")
+	}
+	if got != commandNaturalQueryEmptyText(model.LanguageZhCN) {
+		t.Fatalf("responseForCommand() = %q", got)
+	}
+}
+
+type fakeKnowledgeMaintainer struct {
+	answer knowledge.KnowledgeAnswerResult
+}
+
+func (f fakeKnowledgeMaintainer) ApplyMaintenanceText(context.Context, string) (knowledge.MaintenanceResult, error) {
+	return knowledge.MaintenanceResult{}, nil
+}
+
+func (f fakeKnowledgeMaintainer) AnswerQueryText(context.Context, string, knowledge.KnowledgeAnswerOptions) (knowledge.KnowledgeAnswerResult, error) {
+	return f.answer, nil
+}
+
+func (f fakeKnowledgeMaintainer) PreviewMaintenanceText(context.Context, string) (knowledge.MaintenanceResult, error) {
+	return knowledge.MaintenanceResult{}, nil
+}
+
+func (f fakeKnowledgeMaintainer) ParseQueryText(context.Context, string) (knowledge.KnowledgeQueryInstruction, error) {
+	return knowledge.KnowledgeQueryInstruction{}, nil
+}
+
+func (f fakeKnowledgeMaintainer) UpdateFactStatus(context.Context, int64, model.KnowledgeFactStatus, string, string, string, string) (model.KnowledgeFact, error) {
+	return model.KnowledgeFact{}, nil
 }
