@@ -21,6 +21,53 @@ const historyRangeOptions = [
   { value: "custom", label: "自定义日期范围" }
 ];
 
+const topicGroupTemplates: {
+  key: string;
+  label: string;
+  groups: Chat["topicGroups"];
+}[] = [
+  {
+    key: "general",
+    label: "通用社群",
+    groups: [
+      { name: "公告", description: "官方通知、规则调整、重要提醒" },
+      { name: "新闻", description: "政策、市场、突发事件" },
+      { name: "讨论", description: "观点交流、问题解答、经验分享" },
+      { name: "活动", description: "会议、线下活动、报名信息" }
+    ]
+  },
+  {
+    key: "crypto",
+    label: "加密投资",
+    groups: [
+      { name: "行情", description: "价格走势、资金费率、宏观影响" },
+      { name: "项目", description: "新项目、生态进展、代币经济" },
+      { name: "链上", description: "链上数据、地址异动、合约交互" },
+      { name: "风险", description: "安全事件、骗局提醒、清算风险" }
+    ]
+  },
+  {
+    key: "product",
+    label: "产品技术",
+    groups: [
+      { name: "需求", description: "用户反馈、功能建议、使用场景" },
+      { name: "研发", description: "技术方案、Bug、发布进度" },
+      { name: "运营", description: "增长、内容、社群维护" },
+      { name: "决策", description: "结论、负责人、后续行动" }
+    ]
+  },
+  {
+    key: "ops",
+    label: "运营活动",
+    groups: [
+      { name: "报名", description: "报名、名单、资格确认" },
+      { name: "日程", description: "时间、地点、流程安排" },
+      { name: "物料", description: "海报、文案、链接、资料" },
+      { name: "复盘", description: "效果、问题、改进项" }
+    ]
+  }
+];
+
 export function ChatsPanel() {
   const [items, setItems] = useState<Chat[]>([]);
   const [savedItems, setSavedItems] = useState<Chat[]>([]);
@@ -265,7 +312,7 @@ function formatTopicGroups(groups: Chat["topicGroups"]) {
 function parseTopicGroups(value: string): Chat["topicGroups"] {
   return value
     .split("\n")
-    .map((item) => item.trim().replace("｜", "|"))
+    .map((item) => item.trim().replaceAll("｜", "|"))
     .filter(Boolean)
     .map((item) => {
       const [name, ...descriptionParts] = item.split("|");
@@ -296,8 +343,32 @@ function ChatTableRow({
   const [historyFromDate, setHistoryFromDate] = useState(localDateOffset(-29));
   const [historyToDate, setHistoryToDate] = useState(localDateInputValue());
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [topicGroupsInput, setTopicGroupsInput] = useState(() =>
+    formatTopicGroups(chat.topicGroups)
+  );
   const historyRange = resolveHistoryRange(historyMode, historyFromDate, historyToDate);
   const expanded = editing || historyExpanded;
+
+  useEffect(() => {
+    if (editing) {
+      setTopicGroupsInput(formatTopicGroups(chat.topicGroups));
+    }
+  }, [chat.id, editing]);
+
+  function patchTopicGroupsInput(value: string) {
+    setTopicGroupsInput(value);
+    onPatch({ topicGroups: parseTopicGroups(value) });
+  }
+
+  function applyTopicGroupTemplate(templateKey: string) {
+    const template = topicGroupTemplates.find((item) => item.key === templateKey);
+    if (!template) {
+      return;
+    }
+    const value = formatTopicGroups(template.groups);
+    setTopicGroupsInput(value);
+    onPatch({ topicGroups: template.groups });
+  }
 
   return (
     <>
@@ -464,14 +535,29 @@ function ChatTableRow({
                           label="话题分组"
                           hint="每行一个，格式为「名称 | 描述」。未命中的内容会归入“其他”。"
                         >
-                          <Textarea
-                            rows={5}
-                            placeholder={"新闻 | 政策、市场、突发事件\n活动 | 会议、线下活动、报名信息\n体育 | 比赛、转会、赛事讨论"}
-                            value={formatTopicGroups(chat.topicGroups)}
-                            onChange={(event) =>
-                              onPatch({ topicGroups: parseTopicGroups(event.target.value) })
-                            }
-                          />
+                          <div className="topic-group-editor">
+                            <div className="topic-group-template">
+                              <AppSelect
+                                onChange={applyTopicGroupTemplate}
+                                options={[
+                                  { value: "", label: "选择常用模板" },
+                                  ...topicGroupTemplates.map((template) => ({
+                                    value: template.key,
+                                    label: template.label
+                                  }))
+                                ]}
+                                value=""
+                              />
+                            </div>
+                            <Textarea
+                              rows={5}
+                              placeholder={"新闻 | 政策、市场、突发事件\n活动 | 会议、线下活动、报名信息\n体育 | 比赛、转会、赛事讨论"}
+                              value={topicGroupsInput}
+                              onChange={(event) =>
+                                patchTopicGroupsInput(event.target.value)
+                              }
+                            />
+                          </div>
                         </Field>
                       ) : null}
 

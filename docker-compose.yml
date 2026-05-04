@@ -14,7 +14,7 @@ services:
       TGTLDR_DATABASE_URL: postgres://postgres:postgres@postgres:5432/tgtldr?sslmode=disable
       TGTLDR_MASTER_KEY: ${TGTLDR_MASTER_KEY:-}
       TGTLDR_MASTER_KEY_FILE: /var/lib/tgtldr/master.key
-      TGTLDR_WEB_ORIGIN: http://localhost:${TGTLDR_HOST_WEB_PORT:-3000}
+      TGTLDR_WEB_ORIGIN: http://localhost:${TGTLDR_HOST_WEB_PORT:-3050}
       TGTLDR_HTTP_ADDR: :8080
     depends_on:
       - postgres
@@ -28,7 +28,7 @@ services:
     depends_on:
       - app
     ports:
-      - "${TGTLDR_HOST_BIND:-127.0.0.1}:${TGTLDR_HOST_WEB_PORT:-3000}:3000"
+      - "${TGTLDR_HOST_BIND:-127.0.0.1}:${TGTLDR_HOST_WEB_PORT:-3050}:3000"
 
 volumes:
   app-data:

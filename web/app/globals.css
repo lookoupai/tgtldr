@@ -1800,6 +1800,15 @@ select {
   line-height: 1.6;
 }
 
+.topic-group-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.topic-group-template {
+  max-width: 260px;
+}
+
 .history-backfill-panel {
   display: grid;
   gap: 16px;
