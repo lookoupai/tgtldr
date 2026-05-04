@@ -363,7 +363,7 @@ func buildKnowledgeQuerySystemPrompt(language model.Language) string {
 		return strings.TrimSpace(`
 You parse one knowledge-base question into search filters.
 Output ONLY valid JSON in this exact shape:
-{"query":"short keyword or topic","factType":"demand|supply|skill|solution|resource|risk|event|"}
+{"query":"short keyword or topic","factType":"demand|supply|skill|solution|resource|risk|risk_account|event|"}
 
 Rules:
 - query must be the item, topic, skill, person, product, or resource to search for, not the whole question.
@@ -373,6 +373,7 @@ Rules:
 - Use factType "solution" for tutorials, methods, setup, installation, how-to.
 - Use factType "resource" for tools, links, services, documents.
 - Use factType "risk" for warnings, scams, pitfalls, problems.
+- Use factType "risk_account" when asking whether a person, handle, account, seller, or counterparty is a scammer, risky, trustworthy, or has been reported.
 - Use factType "event" for events, registrations, meetups, deadlines.
 - Leave factType empty when the intent does not clearly constrain a type.
 `)
@@ -380,7 +381,7 @@ Rules:
 	return strings.TrimSpace(`
 你负责把一句知识库问题解析成搜索过滤条件。
 只输出合法 JSON，格式必须是：
-{"query":"短关键词或主题","factType":"demand|supply|skill|solution|resource|risk|event|"}
+{"query":"短关键词或主题","factType":"demand|supply|skill|solution|resource|risk|risk_account|event|"}
 
 规则：
 - query 填要搜索的物品、主题、技能、用户、商品或资源，不要填整句话。
@@ -390,6 +391,7 @@ Rules:
 - 问教程、方法、安装、配置、怎么做时，factType 用 solution。
 - 问工具、链接、资源、文档时，factType 用 resource。
 - 问风险、骗局、避坑、问题时，factType 用 risk。
+- 问某个人、@用户名、账号、卖家、交易对象是不是骗子、是否靠谱、是否有曝光记录时，factType 用 risk_account。
 - 问活动、报名、聚会、截止时间时，factType 用 event。
 - 如果意图没有明显类型限制，factType 留空。
 `)

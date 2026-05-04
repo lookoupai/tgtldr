@@ -178,6 +178,8 @@ Rules:
 - Answer only from the provided evidence.
 - Every important claim must cite one or more fact IDs such as #123.
 - Do not invent users, contacts, prices, deadlines, skills, availability, or certainty.
+- In risk_account facts, reported_account_* is the reported account and subject/reporter is the reporting source; do not treat a mutable @username as a stable identity ID.
+- Unless the evidence explicitly says confirmed, describe risk-account claims as reported, exposed in the group, or disputed instead of stating them as proven facts.
 - If the evidence is weak, outdated, or insufficient, say so clearly.
 - Keep the answer concise and suitable for a Telegram message.
 `)
@@ -190,6 +192,8 @@ Rules:
 - 只能基于提供的证据回答。
 - 关键判断必须引用事实 ID，例如 #123。
 - 不要编造用户、联系方式、价格、截止时间、技能、可用性或确定性。
+- 风险账号事实中，reported_account_* 是被举报对象，subject/reporter 是举报来源；不要把可变 @username 当成稳定身份 ID。
+- 除非证据字段明确为 confirmed，否则只能表述为“有人举报/群内曾曝光/存在争议”，不要直接定性为事实。
 - 证据薄弱、过期风险或信息不足时，要明确说明。
 - 回答要简洁，适合 Telegram 消息阅读。
 `)

@@ -36,6 +36,7 @@
 - [招聘线索](examples/knowledge-spaces/hiring.json)
 - [技能画像](examples/knowledge-spaces/skills.json)
 - [活动报名](examples/knowledge-spaces/events.json)
+- [风险账号库](examples/knowledge-spaces/risk-accounts.json)
 
 下面是通用群聊知识库示例的完整结构：
 
@@ -101,6 +102,20 @@
             "mitigation": "string"
           }
         },
+        "risk_account": {
+          "label": "风险账号",
+          "fields": {
+            "reported_account_username": "string",
+            "reported_account_id": "string",
+            "reported_account_name": "string",
+            "reporter": "string",
+            "risk_type": "string",
+            "allegation": "string",
+            "evidence": "string",
+            "status": "reported|confirmed|disputed|cleared",
+            "mitigation": "string"
+          }
+        },
         "event": {
           "label": "活动机会",
           "fields": {
@@ -122,8 +137,8 @@
         }
       }
     },
-    "extractPrompt": "只记录未来可能复用的信息。覆盖需求、供应、技能、教程方法、工具资源、风险避坑、活动机会。技能画像必须基于用户自述、作品、持续高质量回答或明确承诺，不能凭一句闲聊推断。状态变更请用 status_update，target_type 填 demand/supply/skill/help_offer 等旧事实类型，target_query 填要失效的物品或主题，action 使用 resolved、expired、sold_out、paused、no_longer_needed 等英文短语。不要记录玩笑、猜测、纯闲聊、临时情绪或无证据结论。",
-    "summaryPrompt": "摘要附加时按需求、供应、技能、教程、资源、风险、活动分组；保留可联系用户和置信度，不展示 status_update。",
+    "extractPrompt": "只记录未来可能复用的信息。覆盖需求、供应、技能、教程方法、工具资源、风险避坑、风险账号、活动机会。技能画像必须基于用户自述、作品、持续高质量回答或明确承诺，不能凭一句闲聊推断。风险账号请用 risk_account：reported_account_username 记录被举报的 @username；reported_account_id 只有在消息中明确出现稳定数字 ID 或可从被举报账号本人消息确认时才填写；reporter 记录举报/曝光来源；status 默认 reported，只有多方证据或明确结论时才用 confirmed，出现澄清或争议时用 disputed/cleared；subjectMessageRef 指向举报/曝光消息，不要把可变 @username 当成稳定身份。状态变更请用 status_update，target_type 填 demand/supply/skill/help_offer 等旧事实类型，target_query 填要失效的物品或主题，action 使用 resolved、expired、sold_out、paused、no_longer_needed 等英文短语。不要记录玩笑、猜测、纯闲聊、临时情绪或无证据结论。",
+    "summaryPrompt": "摘要附加时按需求、供应、技能、教程、资源、风险、风险账号、活动分组；风险账号只写“有人举报/已确认/存在争议”等证据状态，保留可联系用户、置信度和事实 ID，不展示 status_update。",
     "confidenceThreshold": 0.75,
     "retentionDays": 60,
     "includeInSummary": true

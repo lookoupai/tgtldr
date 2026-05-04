@@ -252,4 +252,12 @@ func TestKnowledgeQueryInstruction(t *testing.T) {
 		So(instruction.Query, ShouldEqual, "Gmail")
 		So(instruction.FactType, ShouldEqual, "supply")
 	})
+
+	Convey("自然语言查询会保留风险账号类型", t, func() {
+		instruction, err := parseKnowledgeQueryInstruction(`{"query":"alice","factType":"risk_account"}`)
+
+		So(err, ShouldBeNil)
+		So(instruction.Query, ShouldEqual, "alice")
+		So(instruction.FactType, ShouldEqual, "risk_account")
+	})
 }
