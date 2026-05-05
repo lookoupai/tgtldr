@@ -80,6 +80,22 @@ export type BotStatus = {
   commands?: BotCommand[];
   expectedCommands: BotCommand[];
   error?: string;
+  runtime?: BotRuntimeState;
+  lastPollAt?: string | null;
+  lastUpdateAt?: string | null;
+  lastHandledAt?: string | null;
+  lastError?: string;
+  runtimeBotUsername?: string;
+};
+
+export type BotRuntimeState = {
+  id: number;
+  botUsername: string;
+  lastPollAt?: string | null;
+  lastUpdateAt?: string | null;
+  lastHandledAt?: string | null;
+  lastError: string;
+  updatedAt: string;
 };
 
 export type DeliveryMode = "dashboard" | "bot";
@@ -111,6 +127,7 @@ export type Chat = {
   filteredKeywords: string[];
   botChatId: string;
   botInteractionEnabled: boolean;
+  botAllowedUsers: string[];
 };
 
 export type HistoryBackfillTask = {

@@ -166,8 +166,19 @@ type Chat struct {
 	FilteredKeywords []string              `json:"filteredKeywords"`
 	BotChatID        string                `json:"botChatId"`
 	BotInteraction   bool                  `json:"botInteractionEnabled"`
+	BotAllowedUsers  []string              `json:"botAllowedUsers"`
 	CreatedAt        time.Time             `json:"createdAt"`
 	UpdatedAt        time.Time             `json:"updatedAt"`
+}
+
+type BotRuntimeState struct {
+	ID            int64      `json:"id"`
+	BotUsername   string     `json:"botUsername"`
+	LastPollAt    *time.Time `json:"lastPollAt,omitempty"`
+	LastUpdateAt  *time.Time `json:"lastUpdateAt,omitempty"`
+	LastHandledAt *time.Time `json:"lastHandledAt,omitempty"`
+	LastError     string     `json:"lastError"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
 type TopicGroup struct {

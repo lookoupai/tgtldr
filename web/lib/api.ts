@@ -190,6 +190,7 @@ export const api = {
         filteredKeywords: chat.filteredKeywords,
         botChatId: chat.botChatId,
         botInteractionEnabled: chat.botInteractionEnabled,
+        botAllowedUsers: chat.botAllowedUsers,
       }),
     }),
   listKnowledgeSpaces: async () =>

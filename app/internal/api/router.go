@@ -418,6 +418,19 @@ func (r *Router) handleBotStatus(w http.ResponseWriter, req *http.Request) {
 		"commandsSynced":   false,
 		"expectedCommands": botquery.BotCommands(settings.Language),
 	}
+	if r.store.BotRuntime != nil {
+		runtimeState, err := r.store.BotRuntime.Get(req.Context())
+		if err == nil {
+			status["runtime"] = runtimeState
+			status["lastPollAt"] = runtimeState.LastPollAt
+			status["lastUpdateAt"] = runtimeState.LastUpdateAt
+			status["lastHandledAt"] = runtimeState.LastHandledAt
+			status["lastError"] = runtimeState.LastError
+			if runtimeState.BotUsername != "" {
+				status["runtimeBotUsername"] = runtimeState.BotUsername
+			}
+		}
+	}
 	if !settings.BotEnabled || strings.TrimSpace(settings.BotToken) == "" {
 		httpx.JSON(w, http.StatusOK, status)
 		return
@@ -600,6 +613,7 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 		FilteredKeywords []string                    `json:"filteredKeywords"`
 		BotChatID        string                      `json:"botChatId"`
 		BotInteraction   bool                        `json:"botInteractionEnabled"`
+		BotAllowedUsers  []string                    `json:"botAllowedUsers"`
 	}
 	if err := httpx.DecodeJSON(req, &payload); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
@@ -621,6 +635,7 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 	current.FilteredKeywords = compactStrings(payload.FilteredKeywords)
 	current.BotChatID = strings.TrimSpace(payload.BotChatID)
 	current.BotInteraction = payload.BotInteraction
+	current.BotAllowedUsers = compactStrings(payload.BotAllowedUsers)
 
 	saved, err := r.store.Chats.Save(req.Context(), current)
 	if err != nil {

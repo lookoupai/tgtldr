@@ -845,10 +845,18 @@ export function SettingsPanel() {
                     label="目标会话"
                     value={botStatus?.targetChatId || "未绑定"}
                   />
+                  <BotStatusItem
+                    label="最近轮询"
+                    value={formatBotRuntimeTime(botStatus?.lastPollAt)}
+                  />
+                  <BotStatusItem
+                    label="最近响应"
+                    value={formatBotRuntimeTime(botStatus?.lastHandledAt)}
+                  />
                 </div>
-                {botStatus?.error ? (
+                {botStatus?.error || botStatus?.lastError ? (
                   <p className="field-hint bot-status-error">
-                    {botStatus.error}
+                    {botStatus.error || botStatus.lastError}
                   </p>
                 ) : null}
                 <div className="button-row">
@@ -1102,6 +1110,17 @@ function BotStatusItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+function formatBotRuntimeTime(value?: string | null) {
+  if (!value) {
+    return "暂无";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "暂无";
+  }
+  return date.toLocaleString();
+}
+
 function botStatusTone(
   status: BotStatus | null,
   settings: AppSettings,
@@ -1112,7 +1131,7 @@ function botStatusTone(
   if (!status || !status.tokenConfigured || !status.targetChatId) {
     return "warn";
   }
-  if (status.error) {
+  if (status.error || status.lastError) {
     return "bad";
   }
   return status.commandsSynced ? "good" : "warn";
@@ -1128,7 +1147,7 @@ function botStatusLabel(status: BotStatus | null, settings: AppSettings) {
   if (!status.tokenConfigured) {
     return "缺少 Token";
   }
-  if (status.error) {
+  if (status.error || status.lastError) {
     return "验证失败";
   }
   if (!status.targetChatId) {

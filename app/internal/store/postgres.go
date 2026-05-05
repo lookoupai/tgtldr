@@ -23,6 +23,7 @@ type Store struct {
 	KnowledgeFacts             *KnowledgeFactRepository
 	KnowledgeRuns              *KnowledgeRunRepository
 	KnowledgeMaintenanceEvents *KnowledgeMaintenanceEventRepository
+	BotRuntime                 *BotRuntimeRepository
 }
 
 func Open(ctx context.Context, cfg config.Config) (*Store, error) {
@@ -54,6 +55,7 @@ func Open(ctx context.Context, cfg config.Config) (*Store, error) {
 		KnowledgeFacts:             &KnowledgeFactRepository{pool: pool},
 		KnowledgeRuns:              &KnowledgeRunRepository{pool: pool},
 		KnowledgeMaintenanceEvents: &KnowledgeMaintenanceEventRepository{pool: pool},
+		BotRuntime:                 &BotRuntimeRepository{pool: pool},
 	}
 	return st, nil
 }

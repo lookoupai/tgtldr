@@ -187,6 +187,53 @@ func TestResponseLanguage(t *testing.T) {
 	}
 }
 
+func TestTargetAllowsUpdate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target responseTarget
+		update bot.CommandUpdate
+		want   bool
+	}{
+		{
+			name:   "empty whitelist allows all",
+			target: responseTarget{},
+			update: bot.CommandUpdate{FromID: 42, FromUsername: "alice"},
+			want:   true,
+		},
+		{
+			name:   "matches numeric user id",
+			target: responseTarget{allowedUsers: []string{"42"}},
+			update: bot.CommandUpdate{FromID: 42, FromUsername: "alice"},
+			want:   true,
+		},
+		{
+			name:   "matches username with at prefix",
+			target: responseTarget{allowedUsers: []string{"@alice"}},
+			update: bot.CommandUpdate{FromID: 42, FromUsername: "Alice"},
+			want:   true,
+		},
+		{
+			name:   "rejects non-matching user",
+			target: responseTarget{allowedUsers: []string{"@bob", "99"}},
+			update: bot.CommandUpdate{FromID: 42, FromUsername: "alice"},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := targetAllowsUpdate(tt.target, tt.update); got != tt.want {
+				t.Fatalf("targetAllowsUpdate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBotQueryReady(t *testing.T) {
 	t.Parallel()
 

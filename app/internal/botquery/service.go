@@ -69,8 +69,9 @@ type pollState struct {
 }
 
 type responseTarget struct {
-	chatID   int64
-	language model.SummaryOutputLanguage
+	chatID       int64
+	language     model.SummaryOutputLanguage
+	allowedUsers []string
 }
 
 type commandDefinition struct {
@@ -160,6 +161,7 @@ func (s *Service) Run(ctx context.Context) error {
 		if !state.initialized {
 			self, err := s.bot.GetMe(ctx, token)
 			if err != nil {
+				s.markRuntimeError(ctx, state.botUsername, err)
 				if !sleep(ctx, commandErrorDelay) {
 					return nil
 				}
@@ -169,11 +171,13 @@ func (s *Service) Run(ctx context.Context) error {
 			state.botUsername = strings.TrimSpace(self.Username)
 			updates, err := s.bot.GetCommandUpdates(ctx, token, 0, 1)
 			if err != nil {
+				s.markRuntimeError(ctx, state.botUsername, err)
 				if !sleep(ctx, commandErrorDelay) {
 					return nil
 				}
 				continue
 			}
+			s.markRuntimePoll(ctx, state.botUsername, len(updates) > 0)
 			state.offset = nextOffset(updates, state.offset)
 			state.initialized = true
 			continue
@@ -181,13 +185,16 @@ func (s *Service) Run(ctx context.Context) error {
 
 		updates, err := s.bot.GetCommandUpdates(ctx, token, state.offset, commandPollTimeoutSeconds)
 		if err != nil {
+			s.markRuntimeError(ctx, state.botUsername, err)
 			if !sleep(ctx, commandErrorDelay) {
 				return nil
 			}
 			continue
 		}
+		s.markRuntimePoll(ctx, state.botUsername, len(updates) > 0)
 		targets, err := s.responseTargets(ctx, settings)
 		if err != nil {
+			s.markRuntimeError(ctx, state.botUsername, err)
 			if !sleep(ctx, commandErrorDelay) {
 				return nil
 			}
@@ -201,6 +208,9 @@ func (s *Service) Run(ctx context.Context) error {
 			if !ok {
 				continue
 			}
+			if !targetAllowsUpdate(target, update) {
+				continue
+			}
 			language := responseLanguage(settings, target)
 			response, ok, err := s.responseForUpdate(ctx, language, update, state.botID, state.botUsername)
 			if err != nil {
@@ -210,7 +220,11 @@ func (s *Service) Run(ctx context.Context) error {
 			if !ok {
 				continue
 			}
-			_ = s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, language, update.MessageID)
+			if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, language, update.MessageID); err != nil {
+				s.markRuntimeError(ctx, state.botUsername, err)
+				continue
+			}
+			s.markRuntimeHandled(ctx, state.botUsername)
 		}
 	}
 }
@@ -230,11 +244,61 @@ func (s *Service) responseTargets(ctx context.Context, settings model.AppSetting
 			continue
 		}
 		targets[targetChatID] = responseTarget{
-			chatID:   chat.ID,
-			language: model.ResolveSummaryOutputLanguage(settings, chat),
+			chatID:       chat.ID,
+			language:     model.ResolveSummaryOutputLanguage(settings, chat),
+			allowedUsers: chat.BotAllowedUsers,
 		}
 	}
 	return targets, nil
+}
+
+func targetAllowsUpdate(target responseTarget, update bot.CommandUpdate) bool {
+	if len(target.allowedUsers) == 0 {
+		return true
+	}
+	fromID := ""
+	if update.FromID != 0 {
+		fromID = strconv.FormatInt(update.FromID, 10)
+	}
+	fromUsername := normalizeAllowedUsername(update.FromUsername)
+	for _, allowed := range target.allowedUsers {
+		trimmed := strings.TrimSpace(allowed)
+		if trimmed == "" {
+			continue
+		}
+		if fromID != "" && trimmed == fromID {
+			return true
+		}
+		if fromUsername != "" && normalizeAllowedUsername(trimmed) == fromUsername {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeAllowedUsername(value string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
+}
+
+func (s *Service) markRuntimePoll(ctx context.Context, username string, hasUpdates bool) {
+	if s.store == nil || s.store.BotRuntime == nil {
+		return
+	}
+	_ = s.store.BotRuntime.MarkPoll(ctx, username, hasUpdates)
+}
+
+func (s *Service) markRuntimeHandled(ctx context.Context, username string) {
+	if s.store == nil || s.store.BotRuntime == nil {
+		return
+	}
+	_ = s.store.BotRuntime.MarkHandled(ctx, username)
+}
+
+func (s *Service) markRuntimeError(ctx context.Context, username string, err error) {
+	if s.store == nil || s.store.BotRuntime == nil {
+		return
+	}
+	_ = s.store.BotRuntime.MarkError(ctx, username, err)
 }
 
 func responseLanguage(settings model.AppSettings, target responseTarget) model.Language {

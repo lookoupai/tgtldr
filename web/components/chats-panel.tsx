@@ -260,6 +260,7 @@ export function ChatsPanel() {
                   <th>群类型</th>
                   <th>消息保存</th>
                   <th>AI 总结</th>
+                  <th>Bot 查询</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -310,7 +311,8 @@ function normalizeChat(chat: Chat): Chat {
     filteredSenders: Array.isArray(chat.filteredSenders) ? chat.filteredSenders : [],
     keepBotMessages: chat.keepBotMessages ?? true,
     botChatId: chat.botChatId ?? "",
-    botInteractionEnabled: chat.botInteractionEnabled ?? false
+    botInteractionEnabled: chat.botInteractionEnabled ?? false,
+    botAllowedUsers: Array.isArray(chat.botAllowedUsers) ? chat.botAllowedUsers : []
   };
 }
 
@@ -351,6 +353,53 @@ function parseTopicGroups(value: string): Chat["topicGroups"] {
     .filter((item) => item.name);
 }
 
+function matchBotCandidate(
+  chat: Chat,
+  candidates: BotTargetChatCandidate[]
+): BotTargetChatCandidate | null {
+  const username = normalizeName(chat.username);
+  if (username) {
+    const byUsername = candidates.find(
+      (candidate) => normalizeName(candidate.username ?? "") === username
+    );
+    if (byUsername) {
+      return byUsername;
+    }
+  }
+
+  const title = normalizeName(chat.title);
+  if (!title) {
+    return null;
+  }
+  return (
+    candidates.find((candidate) => normalizeName(candidate.title ?? "") === title) ??
+    null
+  );
+}
+
+function normalizeName(value: string) {
+  return value.trim().replace(/^@/, "").toLowerCase();
+}
+
+function botChatStatus(
+  chat: Chat,
+  botTokenAvailable: boolean
+): { label: string; tone: "neutral" | "good" | "warn" | "bad" } {
+  if (!botTokenAvailable) {
+    return { label: "缺 Token", tone: "warn" };
+  }
+  if (!chat.botChatId.trim()) {
+    return { label: "未绑定", tone: "neutral" };
+  }
+  if (!chat.botInteractionEnabled) {
+    return { label: "未开放", tone: "neutral" };
+  }
+  if (chat.botAllowedUsers.length > 0) {
+    return { label: "白名单", tone: "good" };
+  }
+  return { label: "可查询", tone: "good" };
+}
+
 function ChatTableRow({
   chat,
   editing,
@@ -386,6 +435,7 @@ function ChatTableRow({
   const toast = useToast();
   const historyRange = resolveHistoryRange(historyMode, historyFromDate, historyToDate);
   const expanded = editing || historyExpanded;
+  const botStatus = botChatStatus(chat, botTokenAvailable);
 
   useEffect(() => {
     if (editing) {
@@ -426,6 +476,12 @@ function ChatTableRow({
         toast.showError("未找到最近消息，请先在目标会话里给 Bot 发一条消息后再重试。");
         return;
       }
+      const matched = matchBotCandidate(chat, result.candidates);
+      if (matched) {
+        onBindBotChat(matched.chatId);
+        setBotTargetChatCandidates([]);
+        return;
+      }
       if (result.candidates.length === 1) {
         const [candidate] = result.candidates;
         onBindBotChat(candidate.chatId);
@@ -461,6 +517,9 @@ function ChatTableRow({
           </StatusPill>
         </td>
         <td>
+          <StatusPill tone={botStatus.tone}>{botStatus.label}</StatusPill>
+        </td>
+        <td>
           <div className="table-row-actions">
             <Button
               aria-label={editing ? "收起编辑" : "编辑群组配置"}
@@ -488,7 +547,7 @@ function ChatTableRow({
 
       {expanded ? (
         <tr className="data-row-detail">
-          <td colSpan={5}>
+          <td colSpan={6}>
             <div className="table-editor">
               {editing ? (
                 <>
@@ -519,57 +578,57 @@ function ChatTableRow({
                   </div>
 
                   <div className="form-grid">
-                        <Field
-                          label="Bot Chat ID"
-                          hint="把 Bot 加入目标私聊或群聊并发一条消息后，可自动获取并绑定。"
-                        >
-                          <div className="bot-target-chat-field">
-                            <Input
-                              placeholder="例如 -1001234567890"
-                              value={chat.botChatId}
-                              onChange={(event) => {
-                                setBotTargetChatCandidates([]);
-                                onPatch({ botChatId: event.target.value });
-                              }}
-                            />
-                            <div className="button-row">
+                    <Field
+                      label="Bot Chat ID"
+                      hint="把 Bot 加入目标私聊或群聊并发一条消息后，可自动获取并绑定。"
+                    >
+                      <div className="bot-target-chat-field">
+                        <Input
+                          placeholder="例如 -1001234567890"
+                          value={chat.botChatId}
+                          onChange={(event) => {
+                            setBotTargetChatCandidates([]);
+                            onPatch({ botChatId: event.target.value });
+                          }}
+                        />
+                        <div className="button-row">
+                          <Button
+                            disabled={
+                              resolvingBotTargetChat ||
+                              !telegramAuthorized ||
+                              !botTokenAvailable
+                            }
+                            onClick={() => void resolveBotTargetChat()}
+                            type="button"
+                            variant="secondary"
+                          >
+                            {resolvingBotTargetChat ? "正在获取..." : "获取 Chat ID"}
+                          </Button>
+                        </div>
+                        {botTargetChatCandidates.length > 1 ? (
+                          <div className="bot-chat-candidates">
+                            {botTargetChatCandidates.map((candidate) => (
                               <Button
-                                disabled={
-                                  resolvingBotTargetChat ||
-                                  !telegramAuthorized ||
-                                  !botTokenAvailable
-                                }
-                                onClick={() => void resolveBotTargetChat()}
+                                className="bot-chat-candidate"
+                                key={candidate.chatId}
+                                onClick={() => {
+                                  onBindBotChat(candidate.chatId);
+                                  setBotTargetChatCandidates([]);
+                                }}
                                 type="button"
-                                variant="secondary"
+                                variant={
+                                  chat.botChatId === candidate.chatId
+                                    ? "primary"
+                                    : "secondary"
+                                }
                               >
-                                {resolvingBotTargetChat ? "正在获取..." : "获取 Chat ID"}
+                                {describeBotChatCandidate(candidate)}
                               </Button>
-                            </div>
-                            {botTargetChatCandidates.length > 1 ? (
-                              <div className="bot-chat-candidates">
-                                {botTargetChatCandidates.map((candidate) => (
-                                  <Button
-                                    className="bot-chat-candidate"
-                                    key={candidate.chatId}
-                                    onClick={() => {
-                                      onBindBotChat(candidate.chatId);
-                                      setBotTargetChatCandidates([]);
-                                    }}
-                                    type="button"
-                                    variant={
-                                      chat.botChatId === candidate.chatId
-                                        ? "primary"
-                                        : "secondary"
-                                    }
-                                  >
-                                    {describeBotChatCandidate(candidate)}
-                                  </Button>
-                                ))}
-                              </div>
-                            ) : null}
+                            ))}
                           </div>
-                        </Field>
+                        ) : null}
+                      </div>
+                    </Field>
 
                     <Field label="允许 Bot 查询">
                       <AppSelect
@@ -584,8 +643,22 @@ function ChatTableRow({
                       />
                     </Field>
                   </div>
+
+                  <Field
+                    label="允许查询用户"
+                    hint="留空表示该 Bot Chat ID 内所有用户都可查询；每行填写 @username 或 Telegram 数字用户 ID。"
+                  >
+                    <Textarea
+                      rows={4}
+                      placeholder={"@alice\n123456789"}
+                      value={joinLines(chat.botAllowedUsers)}
+                      onChange={(event) =>
+                        onPatch({ botAllowedUsers: splitLines(event.target.value) })
+                      }
+                    />
+                  </Field>
                   <p className="table-editor-note">
-                    启用后，Bot 只会响应这个 Chat ID 里的明确命令、@BotName 提问或对 Bot 消息的回复；普通群消息不会触发查询。
+                    当前状态：{botStatus.label}。启用后，Bot 只会响应这个 Chat ID 里的明确命令、@BotName 提问或对 Bot 消息的回复；普通群消息不会触发查询。
                   </p>
 
                   {chat.summaryEnabled ? (

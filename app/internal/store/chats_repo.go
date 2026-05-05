@@ -131,8 +131,9 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		    filtered_keywords = $13,
 		    bot_chat_id = $14,
 		    bot_interaction_enabled = $15,
+		    bot_allowed_users = $16,
 		    updated_at = now()
-		where id = $16
+		where id = $17
 		returning `+chatColumns()+`
 	`,
 		chat.Enabled,
@@ -150,6 +151,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		chat.FilteredKeywords,
 		strings.TrimSpace(chat.BotChatID),
 		chat.BotInteraction,
+		compactStrings(chat.BotAllowedUsers),
 		chat.ID,
 	)})
 	if err != nil {
@@ -237,7 +239,7 @@ func chatColumns() string {
 		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
 		       summary_time_local, summary_timezone,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
-		       bot_chat_id, bot_interaction_enabled,
+		       bot_chat_id, bot_interaction_enabled, bot_allowed_users,
 		       created_at, updated_at`
 }
 
@@ -267,6 +269,7 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 		&chat.FilteredKeywords,
 		&chat.BotChatID,
 		&chat.BotInteraction,
+		&chat.BotAllowedUsers,
 		&chat.CreatedAt,
 		&chat.UpdatedAt,
 	)
@@ -276,11 +279,24 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 	chat.SummaryMode = model.NormalizeSummaryMode(chat.SummaryMode)
 	chat.SummaryLanguage = normalizeChatSummaryLanguage(chat.SummaryLanguage)
 	chat.TopicGroups = unmarshalTopicGroups(topicGroupsJSON)
+	chat.BotAllowedUsers = compactStrings(chat.BotAllowedUsers)
 	return chat, nil
 }
 
 func normalizeChatSummaryLanguage(language model.SummaryOutputLanguage) model.SummaryOutputLanguage {
 	return model.NormalizeOptionalSummaryOutputLanguage(language)
+}
+
+func compactStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func marshalTopicGroups(groups []model.TopicGroup) (string, error) {
