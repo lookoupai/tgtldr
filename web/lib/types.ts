@@ -109,6 +109,8 @@ export type Chat = {
   keepBotMessages: boolean;
   filteredSenders: string[];
   filteredKeywords: string[];
+  botChatId: string;
+  botInteractionEnabled: boolean;
 };
 
 export type HistoryBackfillTask = {

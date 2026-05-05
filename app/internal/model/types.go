@@ -164,6 +164,8 @@ type Chat struct {
 	KeepBotMessages  bool                  `json:"keepBotMessages"`
 	FilteredSenders  []string              `json:"filteredSenders"`
 	FilteredKeywords []string              `json:"filteredKeywords"`
+	BotChatID        string                `json:"botChatId"`
+	BotInteraction   bool                  `json:"botInteractionEnabled"`
 	CreatedAt        time.Time             `json:"createdAt"`
 	UpdatedAt        time.Time             `json:"updatedAt"`
 }

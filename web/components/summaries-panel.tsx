@@ -164,7 +164,8 @@ export function SummariesPanel() {
 			setBotReady(
 				settingsData.botEnabled &&
 					Boolean(settingsData.botToken?.trim()) &&
-					Boolean(settingsData.botTargetChatId?.trim()),
+					(Boolean(settingsData.botTargetChatId?.trim()) ||
+						chatData.some((chat) => Boolean(chat.botChatId?.trim()))),
 			);
 			setSelectedChatId((current) => {
 				if (current && manualChats.some((chat) => String(chat.id) === current)) {

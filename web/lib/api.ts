@@ -188,6 +188,8 @@ export const api = {
         keepBotMessages: chat.keepBotMessages,
         filteredSenders: chat.filteredSenders,
         filteredKeywords: chat.filteredKeywords,
+        botChatId: chat.botChatId,
+        botInteractionEnabled: chat.botInteractionEnabled,
       }),
     }),
   listKnowledgeSpaces: async () =>

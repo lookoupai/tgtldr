@@ -68,6 +68,11 @@ type pollState struct {
 	initialized  bool
 }
 
+type responseTarget struct {
+	chatID   int64
+	language model.SummaryOutputLanguage
+}
+
 type commandDefinition struct {
 	command       string
 	descriptionZH string
@@ -181,24 +186,65 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			continue
 		}
+		targets, err := s.responseTargets(ctx, settings)
+		if err != nil {
+			if !sleep(ctx, commandErrorDelay) {
+				return nil
+			}
+			continue
+		}
 		for _, update := range updates {
 			if update.UpdateID >= state.offset {
 				state.offset = update.UpdateID + 1
 			}
-			if update.ChatID != targetChatID {
+			target, ok := targets[update.ChatID]
+			if !ok {
 				continue
 			}
-			response, ok, err := s.responseForUpdate(ctx, settings.Language, update, state.botID, state.botUsername)
+			language := responseLanguage(settings, target)
+			response, ok, err := s.responseForUpdate(ctx, language, update, state.botID, state.botUsername)
 			if err != nil {
-				response = commandErrorText(settings.Language, err)
+				response = commandErrorText(language, err)
 				ok = true
 			}
 			if !ok {
 				continue
 			}
-			_ = s.bot.SendMessageWithLanguage(ctx, token, targetChatID, response, settings.Language)
+			_ = s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, language, update.MessageID)
 		}
 	}
+}
+
+func (s *Service) responseTargets(ctx context.Context, settings model.AppSettings) (map[string]responseTarget, error) {
+	targets := make(map[string]responseTarget)
+	if targetChatID := strings.TrimSpace(settings.BotTargetChatID); targetChatID != "" {
+		targets[targetChatID] = responseTarget{}
+	}
+	chats, err := s.store.Chats.ListBotInteractionEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, chat := range chats {
+		targetChatID := strings.TrimSpace(chat.BotChatID)
+		if targetChatID == "" {
+			continue
+		}
+		targets[targetChatID] = responseTarget{
+			chatID:   chat.ID,
+			language: model.ResolveSummaryOutputLanguage(settings, chat),
+		}
+	}
+	return targets, nil
+}
+
+func responseLanguage(settings model.AppSettings, target responseTarget) model.Language {
+	if target.chatID == 0 {
+		return settings.Language
+	}
+	if target.language == model.SummaryLanguageEN {
+		return model.LanguageEN
+	}
+	return model.LanguageZhCN
 }
 
 func (s *Service) responseForUpdate(ctx context.Context, language model.Language, update bot.CommandUpdate, botID int64, botUsername string) (string, bool, error) {
@@ -515,8 +561,7 @@ func nextOffset(updates []bot.CommandUpdate, current int64) int64 {
 
 func botQueryReady(settings model.AppSettings) bool {
 	return settings.BotEnabled &&
-		strings.TrimSpace(settings.BotToken) != "" &&
-		strings.TrimSpace(settings.BotTargetChatID) != ""
+		strings.TrimSpace(settings.BotToken) != ""
 }
 
 func maintenanceResultNeedsConfirmation(result knowledge.MaintenanceResult) bool {

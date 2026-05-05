@@ -273,12 +273,23 @@ func (s *Service) deliverSummary(ctx context.Context, chat model.Chat, result mo
 	if !settings.BotEnabled {
 		return fmt.Errorf("bot delivery is disabled")
 	}
-	if strings.TrimSpace(settings.BotToken) == "" || strings.TrimSpace(settings.BotTargetChatID) == "" {
+	if strings.TrimSpace(settings.BotToken) == "" {
+		return fmt.Errorf("bot delivery target is not configured")
+	}
+	targetChatID := resolveBotDeliveryTarget(settings, chat)
+	if targetChatID == "" {
 		return fmt.Errorf("bot delivery target is not configured")
 	}
 
 	message := buildBotDeliveryMessage(chat, result)
-	return s.botService.SendMessageWithSummaryLanguage(ctx, settings.BotToken, settings.BotTargetChatID, message, model.ResolveSummaryOutputLanguage(settings, chat))
+	return s.botService.SendMessageWithSummaryLanguage(ctx, settings.BotToken, targetChatID, message, model.ResolveSummaryOutputLanguage(settings, chat))
+}
+
+func resolveBotDeliveryTarget(settings model.AppSettings, chat model.Chat) string {
+	if target := strings.TrimSpace(chat.BotChatID); target != "" {
+		return target
+	}
+	return strings.TrimSpace(settings.BotTargetChatID)
 }
 
 func buildBotDeliveryMessage(chat model.Chat, result model.Summary) string {

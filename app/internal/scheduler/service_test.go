@@ -111,6 +111,21 @@ func TestSummaryReadyForDelivery(t *testing.T) {
 	})
 }
 
+func TestResolveBotDeliveryTarget(t *testing.T) {
+	Convey("群组 Bot Chat ID 优先于全局默认目标", t, func() {
+		settings := model.AppSettings{BotTargetChatID: "global-target"}
+		chat := model.Chat{BotChatID: "chat-target"}
+
+		So(resolveBotDeliveryTarget(settings, chat), ShouldEqual, "chat-target")
+	})
+
+	Convey("群组未配置时回退到全局默认目标", t, func() {
+		settings := model.AppSettings{BotTargetChatID: "global-target"}
+
+		So(resolveBotDeliveryTarget(settings, model.Chat{}), ShouldEqual, "global-target")
+	})
+}
+
 func TestDatesInRange(t *testing.T) {
 	Convey("日期范围会包含首尾两天", t, func() {
 		So(datesInRange("2026-04-10", "2026-04-12", "Asia/Shanghai"), ShouldResemble, []string{

@@ -598,6 +598,8 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 		KeepBotMessages  bool                        `json:"keepBotMessages"`
 		FilteredSenders  []string                    `json:"filteredSenders"`
 		FilteredKeywords []string                    `json:"filteredKeywords"`
+		BotChatID        string                      `json:"botChatId"`
+		BotInteraction   bool                        `json:"botInteractionEnabled"`
 	}
 	if err := httpx.DecodeJSON(req, &payload); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
@@ -617,6 +619,8 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 	current.KeepBotMessages = payload.KeepBotMessages
 	current.FilteredSenders = compactStrings(payload.FilteredSenders)
 	current.FilteredKeywords = compactStrings(payload.FilteredKeywords)
+	current.BotChatID = strings.TrimSpace(payload.BotChatID)
+	current.BotInteraction = payload.BotInteraction
 
 	saved, err := r.store.Chats.Save(req.Context(), current)
 	if err != nil {

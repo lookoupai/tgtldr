@@ -3,11 +3,12 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { AppSelect } from "@/components/app-select";
-import { Chat } from "@/lib/types";
+import { AppSettings, Bootstrap, BotTargetChatCandidate, Chat } from "@/lib/types";
 import { DashboardPage, EmptyState, MetricCard, MetricRail, Surface } from "@/components/dashboard-page";
 import { useToast } from "@/components/toast";
 import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
 import { SummaryLanguageControl } from "@/components/summary-language-control";
+import { describeBotChatCandidate, hasAvailableBotToken } from "@/lib/bot-target-chat";
 
 type ChatTypeFilter = "all" | Chat["chatType"];
 type SwitchFilter = "all" | "yes" | "no";
@@ -76,6 +77,8 @@ export function ChatsPanel() {
   const [chatType, setChatType] = useState<ChatTypeFilter>("all");
   const [messageSaveFilter, setMessageSaveFilter] = useState<SwitchFilter>("all");
   const [summaryFilter, setSummaryFilter] = useState<SwitchFilter>("all");
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const deferredQuery = useDeferredValue(query);
   const toast = useToast();
 
@@ -85,9 +88,16 @@ export function ChatsPanel() {
 
   async function load() {
     try {
-      const chats = (await api.listChats()).map(normalizeChat);
+      const [chatsData, settingsData, bootstrapData] = await Promise.all([
+        api.listChats(),
+        api.settings(),
+        api.bootstrap()
+      ]);
+      const chats = chatsData.map(normalizeChat);
       setItems(chats);
       setSavedItems(chats);
+      setSettings(settingsData);
+      setBootstrap(bootstrapData);
       setEditingId((current) =>
         current && chats.some((chat) => chat.id === current) ? current : null
       );
@@ -100,6 +110,18 @@ export function ChatsPanel() {
     try {
       await api.saveChat(chat);
       toast.showSuccess(`已保存「${chat.title}」的配置。`);
+      await load();
+    } catch (err) {
+      toast.showError(asMessage(err));
+    }
+  }
+
+  async function bindBotChat(chat: Chat, chatID: string) {
+    const nextChat = { ...chat, botChatId: chatID };
+    patchChat(chat.id, { botChatId: chatID });
+    try {
+      await api.saveChat(nextChat);
+      toast.showSuccess(`已绑定「${chat.title}」的 Bot Chat ID。`);
       await load();
     } catch (err) {
       toast.showError(asMessage(err));
@@ -247,10 +269,13 @@ export function ChatsPanel() {
                     key={chat.id}
                     chat={chat}
                     editing={editingId === chat.id}
+                    botTokenAvailable={hasAvailableBotToken(settings?.botToken)}
+                    telegramAuthorized={bootstrap?.telegramAuthorized ?? false}
                     onBackfill={(fromDate, toDate) =>
                       startTransition(() => void startHistoryBackfill(chat, fromDate, toDate))
                     }
                     onPatch={(patch) => patchChat(chat.id, patch)}
+                    onBindBotChat={(chatID) => startTransition(() => void bindBotChat(chat, chatID))}
                     onEdit={() =>
                       setEditingId((current) => (current === chat.id ? null : chat.id))
                     }
@@ -283,7 +308,9 @@ function normalizeChat(chat: Chat): Chat {
     topicGroups: Array.isArray(chat.topicGroups) ? chat.topicGroups : [],
     filteredKeywords: Array.isArray(chat.filteredKeywords) ? chat.filteredKeywords : [],
     filteredSenders: Array.isArray(chat.filteredSenders) ? chat.filteredSenders : [],
-    keepBotMessages: chat.keepBotMessages ?? true
+    keepBotMessages: chat.keepBotMessages ?? true,
+    botChatId: chat.botChatId ?? "",
+    botInteractionEnabled: chat.botInteractionEnabled ?? false
   };
 }
 
@@ -327,14 +354,20 @@ function parseTopicGroups(value: string): Chat["topicGroups"] {
 function ChatTableRow({
   chat,
   editing,
+  botTokenAvailable,
+  telegramAuthorized,
   onBackfill,
+  onBindBotChat,
   onPatch,
   onEdit,
   onSave
 }: {
   chat: Chat;
   editing: boolean;
+  botTokenAvailable: boolean;
+  telegramAuthorized: boolean;
   onBackfill: (fromDate: string, toDate: string) => void;
+  onBindBotChat: (chatID: string) => void;
   onPatch: (patch: Partial<Chat>) => void;
   onEdit: () => void;
   onSave: () => void;
@@ -346,6 +379,11 @@ function ChatTableRow({
   const [topicGroupsInput, setTopicGroupsInput] = useState(() =>
     formatTopicGroups(chat.topicGroups)
   );
+  const [botTargetChatCandidates, setBotTargetChatCandidates] = useState<
+    BotTargetChatCandidate[]
+  >([]);
+  const [resolvingBotTargetChat, setResolvingBotTargetChat] = useState(false);
+  const toast = useToast();
   const historyRange = resolveHistoryRange(historyMode, historyFromDate, historyToDate);
   const expanded = editing || historyExpanded;
 
@@ -368,6 +406,38 @@ function ChatTableRow({
     const value = formatTopicGroups(template.groups);
     setTopicGroupsInput(value);
     onPatch({ topicGroups: template.groups });
+  }
+
+  async function resolveBotTargetChat() {
+    if (!telegramAuthorized) {
+      toast.showError("自动获取前请先完成 Telegram 登录。");
+      return;
+    }
+    if (!botTokenAvailable) {
+      toast.showError("请先在系统配置中保存 Bot Token。");
+      return;
+    }
+
+    setResolvingBotTargetChat(true);
+    try {
+      const result = await api.resolveBotTargetChat();
+      setBotTargetChatCandidates(result.candidates);
+      if (result.candidates.length === 0) {
+        toast.showError("未找到最近消息，请先在目标会话里给 Bot 发一条消息后再重试。");
+        return;
+      }
+      if (result.candidates.length === 1) {
+        const [candidate] = result.candidates;
+        onBindBotChat(candidate.chatId);
+        setBotTargetChatCandidates([]);
+        return;
+      }
+      toast.showSuccess("找到了多个可能的会话，请选择一个。");
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setResolvingBotTargetChat(false);
+    }
   }
 
   return (
@@ -447,6 +517,76 @@ function ChatTableRow({
                       />
                     </Field>
                   </div>
+
+                  <div className="form-grid">
+                        <Field
+                          label="Bot Chat ID"
+                          hint="把 Bot 加入目标私聊或群聊并发一条消息后，可自动获取并绑定。"
+                        >
+                          <div className="bot-target-chat-field">
+                            <Input
+                              placeholder="例如 -1001234567890"
+                              value={chat.botChatId}
+                              onChange={(event) => {
+                                setBotTargetChatCandidates([]);
+                                onPatch({ botChatId: event.target.value });
+                              }}
+                            />
+                            <div className="button-row">
+                              <Button
+                                disabled={
+                                  resolvingBotTargetChat ||
+                                  !telegramAuthorized ||
+                                  !botTokenAvailable
+                                }
+                                onClick={() => void resolveBotTargetChat()}
+                                type="button"
+                                variant="secondary"
+                              >
+                                {resolvingBotTargetChat ? "正在获取..." : "获取 Chat ID"}
+                              </Button>
+                            </div>
+                            {botTargetChatCandidates.length > 1 ? (
+                              <div className="bot-chat-candidates">
+                                {botTargetChatCandidates.map((candidate) => (
+                                  <Button
+                                    className="bot-chat-candidate"
+                                    key={candidate.chatId}
+                                    onClick={() => {
+                                      onBindBotChat(candidate.chatId);
+                                      setBotTargetChatCandidates([]);
+                                    }}
+                                    type="button"
+                                    variant={
+                                      chat.botChatId === candidate.chatId
+                                        ? "primary"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {describeBotChatCandidate(candidate)}
+                                  </Button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </Field>
+
+                    <Field label="允许 Bot 查询">
+                      <AppSelect
+                        onChange={(value) =>
+                          onPatch({ botInteractionEnabled: value === "yes" })
+                        }
+                        options={[
+                          { value: "no", label: "不允许" },
+                          { value: "yes", label: "允许" }
+                        ]}
+                        value={chat.botInteractionEnabled ? "yes" : "no"}
+                      />
+                    </Field>
+                  </div>
+                  <p className="table-editor-note">
+                    启用后，Bot 只会响应这个 Chat ID 里的明确命令、@BotName 提问或对 Bot 消息的回复；普通群消息不会触发查询。
+                  </p>
 
                   {chat.summaryEnabled ? (
                     <>

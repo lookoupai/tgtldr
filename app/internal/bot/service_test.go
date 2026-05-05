@@ -54,6 +54,27 @@ func TestSendMessageWithLanguage(t *testing.T) {
 	})
 }
 
+func TestSendReplyWithLanguage(t *testing.T) {
+	Convey("Bot 查询回复会携带原消息引用", t, func() {
+		transport := &captureTransport{}
+		service := &Service{client: &http.Client{Transport: transport}}
+
+		err := service.SendReplyWithLanguage(
+			context.Background(),
+			"test-token",
+			"-1001",
+			"可以先看 #42。",
+			model.LanguageZhCN,
+			99,
+		)
+
+		So(err, ShouldBeNil)
+		So(len(transport.requests), ShouldEqual, 1)
+		So(transport.requests[0].ReplyParameters.MessageID, ShouldEqual, 99)
+		So(transport.requests[0].ReplyParameters.AllowSendingWithoutReply, ShouldBeTrue)
+	})
+}
+
 func TestSetMyCommands(t *testing.T) {
 	Convey("会向 Telegram 注册 Bot 命令菜单", t, func() {
 		transport := &commandCaptureTransport{}
@@ -134,6 +155,10 @@ type capturedBotRequest struct {
 	Text                  string `json:"text"`
 	ParseMode             string `json:"parse_mode"`
 	DisableWebPagePreview bool   `json:"disable_web_page_preview"`
+	ReplyParameters       struct {
+		MessageID                int64 `json:"message_id"`
+		AllowSendingWithoutReply bool  `json:"allow_sending_without_reply"`
+	} `json:"reply_parameters"`
 }
 
 type captureTransport struct {

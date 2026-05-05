@@ -182,34 +182,49 @@ func (s *Service) GetMyCommands(ctx context.Context, token string) ([]Command, e
 }
 
 func (s *Service) SendMessageWithLanguage(ctx context.Context, token, chatID, text string, language model.Language) error {
-	return s.sendMessageParts(ctx, token, chatID, text, language)
+	return s.sendMessageParts(ctx, token, chatID, text, language, 0)
 }
 
 func (s *Service) SendMessageWithSummaryLanguage(ctx context.Context, token, chatID, text string, language model.SummaryOutputLanguage) error {
-	return s.sendMessageParts(ctx, token, chatID, text, language)
+	return s.sendMessageParts(ctx, token, chatID, text, language, 0)
 }
 
-func (s *Service) sendMessageParts(ctx context.Context, token, chatID, text string, language any) error {
+func (s *Service) SendReplyWithLanguage(ctx context.Context, token, chatID, text string, language model.Language, replyToMessageID int64) error {
+	return s.sendMessageParts(ctx, token, chatID, text, language, replyToMessageID)
+}
+
+func (s *Service) sendMessageParts(ctx context.Context, token, chatID, text string, language any, replyToMessageID int64) error {
 	if strings.TrimSpace(token) == "" || strings.TrimSpace(chatID) == "" {
 		return fmt.Errorf("missing bot token or chat id")
 	}
 
 	parts := formatTelegramMessages(text, language)
 	for index, part := range parts {
-		if err := s.sendHTMLMessage(ctx, token, chatID, part); err != nil {
+		replyTo := int64(0)
+		if index == 0 {
+			replyTo = replyToMessageID
+		}
+		if err := s.sendHTMLMessage(ctx, token, chatID, part, replyTo); err != nil {
 			return fmt.Errorf("send bot message part %d/%d: %w", index+1, len(parts), err)
 		}
 	}
 	return nil
 }
 
-func (s *Service) sendHTMLMessage(ctx context.Context, token, chatID, text string) error {
-	payload, err := json.Marshal(map[string]any{
+func (s *Service) sendHTMLMessage(ctx context.Context, token, chatID, text string, replyToMessageID int64) error {
+	message := map[string]any{
 		"chat_id":                  chatID,
 		"text":                     text,
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": false,
-	})
+	}
+	if replyToMessageID > 0 {
+		message["reply_parameters"] = map[string]any{
+			"message_id":                  replyToMessageID,
+			"allow_sending_without_reply": true,
+		}
+	}
+	payload, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("marshal bot payload: %w", err)
 	}

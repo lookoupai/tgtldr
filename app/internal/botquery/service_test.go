@@ -172,6 +172,32 @@ func TestCommandsEqual(t *testing.T) {
 	}
 }
 
+func TestResponseLanguage(t *testing.T) {
+	t.Parallel()
+
+	settings := model.AppSettings{Language: model.LanguageZhCN}
+	if got := responseLanguage(settings, responseTarget{}); got != model.LanguageZhCN {
+		t.Fatalf("global response language = %q", got)
+	}
+	if got := responseLanguage(settings, responseTarget{chatID: 1, language: model.SummaryLanguageEN}); got != model.LanguageEN {
+		t.Fatalf("chat English response language = %q", got)
+	}
+	if got := responseLanguage(settings, responseTarget{chatID: 1, language: model.SummaryLanguageZhCN}); got != model.LanguageZhCN {
+		t.Fatalf("chat Chinese response language = %q", got)
+	}
+}
+
+func TestBotQueryReady(t *testing.T) {
+	t.Parallel()
+
+	if !botQueryReady(model.AppSettings{BotEnabled: true, BotToken: "token"}) {
+		t.Fatal("botQueryReady() should not require a global target chat")
+	}
+	if botQueryReady(model.AppSettings{BotEnabled: true}) {
+		t.Fatal("botQueryReady() should require a token")
+	}
+}
+
 func TestNextOffset(t *testing.T) {
 	t.Parallel()
 
