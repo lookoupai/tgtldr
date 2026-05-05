@@ -81,6 +81,41 @@ func (r *BotTargetChatRepository) ListByBotAndFromUser(
 	return candidates, rows.Err()
 }
 
+func (r *BotTargetChatRepository) ListByBot(
+	ctx context.Context,
+	botID int64,
+	limit int,
+) ([]model.BotTargetChatCandidate, error) {
+	if botID == 0 {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := r.pool.Query(ctx, `
+		select bot_id, chat_id, from_user_id, chat_type, title, username, from_username,
+		       message_date, update_id, created_at, updated_at
+		from bot_target_chat_candidates
+		where bot_id = $1
+		order by message_date desc, update_id desc, updated_at desc
+		limit $2
+	`, botID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query bot target chat candidates: %w", err)
+	}
+	defer rows.Close()
+
+	candidates := make([]model.BotTargetChatCandidate, 0)
+	for rows.Next() {
+		candidate, err := scanBotTargetChatCandidate(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan bot target chat candidate: %w", err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates, rows.Err()
+}
+
 func scanBotTargetChatCandidate(scanner chatScanner) (model.BotTargetChatCandidate, error) {
 	var candidate model.BotTargetChatCandidate
 	err := scanner.Scan(

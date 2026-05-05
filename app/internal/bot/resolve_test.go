@@ -85,21 +85,24 @@ func TestMatchTargetChatCandidates(t *testing.T) {
 	got := matchTargetChatCandidates(updates, 42)
 	want := []TargetChatCandidate{
 		{
-			ChatID:   "-1002",
-			ChatType: "supergroup",
-			Title:    "团队群",
-			Username: "team_group",
+			ChatID:     "-1002",
+			ChatType:   "supergroup",
+			Title:      "团队群",
+			Username:   "team_group",
+			FromUserID: 42,
 		},
 		{
-			ChatID:   "1003",
-			ChatType: "private",
-			Title:    "Frederic Zhang",
-			Username: "frederic",
+			ChatID:     "1003",
+			ChatType:   "private",
+			Title:      "Frederic Zhang",
+			Username:   "frederic",
+			FromUserID: 42,
 		},
 		{
-			ChatID:   "1001",
-			ChatType: "private",
-			Title:    "与 Bot 的私聊",
+			ChatID:     "1001",
+			ChatType:   "private",
+			Title:      "与 Bot 的私聊",
+			FromUserID: 42,
 		},
 	}
 
@@ -120,8 +123,16 @@ func TestMatchTargetChatCandidatesZeroUserID(t *testing.T) {
 		},
 	}}, 0)
 
-	if len(got) != 0 {
-		t.Fatalf("expected no candidates, got %#v", got)
+	want := []TargetChatCandidate{
+		{
+			ChatID:     "1001",
+			ChatType:   "private",
+			Title:      "与 Bot 的私聊",
+			FromUserID: 42,
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("matchTargetChatCandidates() mismatch:\n got: %#v\nwant: %#v", got, want)
 	}
 }
 

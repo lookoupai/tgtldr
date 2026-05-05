@@ -171,16 +171,6 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			state.botID = self.ID
 			state.botUsername = strings.TrimSpace(self.Username)
-			updates, err := s.bot.GetCommandUpdates(ctx, token, 0, 1)
-			if err != nil {
-				s.markRuntimeError(ctx, state.botUsername, err)
-				if !sleep(ctx, commandErrorDelay) {
-					return nil
-				}
-				continue
-			}
-			s.markRuntimePoll(ctx, state.botUsername, len(updates) > 0)
-			state.offset = nextOffset(updates, state.offset)
 			state.initialized = true
 			continue
 		}
@@ -208,6 +198,10 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			s.recordTargetChatCandidate(ctx, state.botID, update)
 			target, ok := targets[update.ChatID]
+			if !ok && privateUpdateAllowed(settings, update) {
+				target = responseTarget{}
+				ok = true
+			}
 			if !ok {
 				if response, shouldReply := safeUtilityResponse(settings.Language, update); shouldReply {
 					if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, settings.Language, update.MessageID); err != nil {
@@ -292,6 +286,16 @@ func targetAllowsUpdate(target responseTarget, update bot.CommandUpdate) bool {
 		}
 	}
 	return false
+}
+
+func privateUpdateAllowed(settings model.AppSettings, update bot.CommandUpdate) bool {
+	if !strings.EqualFold(strings.TrimSpace(update.ChatType), "private") {
+		return false
+	}
+	if len(settings.BotPrivateAllowedUsers) == 0 {
+		return false
+	}
+	return targetAllowsUpdate(responseTarget{allowedUsers: settings.BotPrivateAllowedUsers}, update)
 }
 
 func normalizeAllowedUsername(value string) string {
@@ -772,11 +776,11 @@ func commandUnboundHelpText(language model.Language) string {
 	if language == model.LanguageEN {
 		return strings.TrimSpace(`TGTLDR Bot is reachable, but this chat is not bound for knowledge queries yet.
 
-Use /id to show this chat's Chat ID and your User ID, then add the Chat ID in TGTLDR's Bot page. Knowledge commands only work in configured target chats.`)
+Use /id to show this chat's Chat ID and your User ID. The admin can add your User ID to private chat access, or bind the Chat ID as the default target in TGTLDR's Bot page.`)
 	}
-	return strings.TrimSpace(`TGTLDR Bot 可以收到这条消息，但当前会话还没有绑定为知识查询目标。
+	return strings.TrimSpace(`TGTLDR Bot 可以收到这条消息，但当前会话还没有授权为知识查询目标。
 
-发送 /id 查看当前 Chat ID 和你的 User ID，然后到 TGTLDR 的 Bot 页面填写 Chat ID。知识库查询命令只会在已配置的目标会话中生效。`)
+发送 /id 查看当前 Chat ID 和你的 User ID。管理员可以在 TGTLDR 的 Bot 页面把 User ID 加到“允许私聊用户”，或把 Chat ID 设为默认目标。`)
 }
 
 func commandIDText(language model.Language, update bot.CommandUpdate) string {

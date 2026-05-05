@@ -26,10 +26,12 @@ func (e *APIError) Error() string {
 }
 
 type TargetChatCandidate struct {
-	ChatID   string `json:"chatId"`
-	ChatType string `json:"chatType"`
-	Title    string `json:"title,omitempty"`
-	Username string `json:"username,omitempty"`
+	ChatID       string `json:"chatId"`
+	ChatType     string `json:"chatType"`
+	Title        string `json:"title,omitempty"`
+	Username     string `json:"username,omitempty"`
+	FromUserID   int64  `json:"fromUserId,omitempty"`
+	FromUsername string `json:"fromUsername,omitempty"`
 }
 
 type CommandUpdate struct {
@@ -205,16 +207,12 @@ func (s *Service) getUpdatesWithOptions(ctx context.Context, token string, offse
 }
 
 func matchTargetChatCandidates(updates []botUpdate, telegramUserID int64) []TargetChatCandidate {
-	if telegramUserID == 0 {
-		return nil
-	}
-
 	byChatID := make(map[string]targetChatCandidateRecord)
 	for _, update := range updates {
 		if update.Message == nil || update.Message.From == nil {
 			continue
 		}
-		if update.Message.From.ID != telegramUserID {
+		if telegramUserID != 0 && update.Message.From.ID != telegramUserID {
 			continue
 		}
 		if update.Message.Chat.ID == 0 {
@@ -223,10 +221,12 @@ func matchTargetChatCandidates(updates []botUpdate, telegramUserID int64) []Targ
 
 		record := targetChatCandidateRecord{
 			TargetChatCandidate: TargetChatCandidate{
-				ChatID:   strconv.FormatInt(update.Message.Chat.ID, 10),
-				ChatType: strings.TrimSpace(update.Message.Chat.Type),
-				Title:    resolveChatTitle(update.Message.Chat),
-				Username: strings.TrimSpace(update.Message.Chat.Username),
+				ChatID:       strconv.FormatInt(update.Message.Chat.ID, 10),
+				ChatType:     strings.TrimSpace(update.Message.Chat.Type),
+				Title:        resolveChatTitle(update.Message.Chat),
+				Username:     strings.TrimSpace(update.Message.Chat.Username),
+				FromUserID:   update.Message.From.ID,
+				FromUsername: strings.TrimSpace(update.Message.From.Username),
 			},
 			messageDate: update.Message.Date,
 			updateID:    update.UpdateID,

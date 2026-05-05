@@ -24,4 +24,10 @@ func TestNormalizeAppSettingsLanguage(t *testing.T) {
 		So(normalizeAppSettings(model.AppSettings{SummaryOutputLanguage: model.SummaryLanguageAR}).SummaryOutputLanguage, ShouldEqual, model.SummaryLanguageAR)
 		So(normalizeAppSettings(model.AppSettings{SummaryOutputLanguage: "Japanese"}).SummaryOutputLanguage, ShouldEqual, model.SummaryOutputLanguage("Japanese"))
 	})
+
+	Convey("私聊 Bot 授权用户会去除空行和首尾空白", t, func() {
+		settings := normalizeAppSettings(model.AppSettings{BotPrivateAllowedUsers: []string{" 123 ", "", " @alice "}})
+
+		So(settings.BotPrivateAllowedUsers, ShouldResemble, []string{"123", "@alice"})
+	})
 }

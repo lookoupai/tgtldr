@@ -19,6 +19,7 @@ export type AppSettings = {
   botEnabled: boolean;
   botToken?: string;
   botTargetChatId: string;
+  botPrivateAllowedUsers: string[];
 };
 
 export type PendingAuth = {
@@ -59,6 +60,8 @@ export type BotTargetChatCandidate = {
   chatType: string;
   title?: string;
   username?: string;
+  fromUserId?: number;
+  fromUsername?: string;
 };
 
 export type BotTargetChatResolveResult = {

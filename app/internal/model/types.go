@@ -85,24 +85,25 @@ func NormalizeSummaryMode(mode SummaryMode) SummaryMode {
 }
 
 type AppSettings struct {
-	ID                    int64                 `json:"id"`
-	TelegramAPIID         int                   `json:"telegramApiId"`
-	TelegramAPIHash       string                `json:"telegramApiHash,omitempty"`
-	OpenAIBaseURL         string                `json:"openAIBaseUrl"`
-	OpenAIAPIKey          string                `json:"openAIApiKey,omitempty"`
-	OpenAIModel           string                `json:"openAIModel"`
-	OpenAITemperature     float64               `json:"openAITemperature"`
-	OpenAIOutputMode      OutputMode            `json:"openAIOutputMode"`
-	OpenAIMaxOutputToken  int                   `json:"openAIMaxOutputTokens"`
-	SummaryParallelism    int                   `json:"summaryParallelism"`
-	DefaultTimezone       string                `json:"defaultTimezone"`
-	Language              Language              `json:"language"`
-	SummaryOutputLanguage SummaryOutputLanguage `json:"summaryOutputLanguage"`
-	BotEnabled            bool                  `json:"botEnabled"`
-	BotToken              string                `json:"botToken,omitempty"`
-	BotTargetChatID       string                `json:"botTargetChatId"`
-	CreatedAt             time.Time             `json:"createdAt"`
-	UpdatedAt             time.Time             `json:"updatedAt"`
+	ID                     int64                 `json:"id"`
+	TelegramAPIID          int                   `json:"telegramApiId"`
+	TelegramAPIHash        string                `json:"telegramApiHash,omitempty"`
+	OpenAIBaseURL          string                `json:"openAIBaseUrl"`
+	OpenAIAPIKey           string                `json:"openAIApiKey,omitempty"`
+	OpenAIModel            string                `json:"openAIModel"`
+	OpenAITemperature      float64               `json:"openAITemperature"`
+	OpenAIOutputMode       OutputMode            `json:"openAIOutputMode"`
+	OpenAIMaxOutputToken   int                   `json:"openAIMaxOutputTokens"`
+	SummaryParallelism     int                   `json:"summaryParallelism"`
+	DefaultTimezone        string                `json:"defaultTimezone"`
+	Language               Language              `json:"language"`
+	SummaryOutputLanguage  SummaryOutputLanguage `json:"summaryOutputLanguage"`
+	BotEnabled             bool                  `json:"botEnabled"`
+	BotToken               string                `json:"botToken,omitempty"`
+	BotTargetChatID        string                `json:"botTargetChatId"`
+	BotPrivateAllowedUsers []string              `json:"botPrivateAllowedUsers"`
+	CreatedAt              time.Time             `json:"createdAt"`
+	UpdatedAt              time.Time             `json:"updatedAt"`
 }
 
 func (s AppSettings) Sanitized() AppSettings {
@@ -187,8 +188,8 @@ type BotTargetChatCandidate struct {
 	ChatType     string    `json:"chatType"`
 	Title        string    `json:"title,omitempty"`
 	Username     string    `json:"username,omitempty"`
-	FromUserID   int64     `json:"-"`
-	FromUsername string    `json:"-"`
+	FromUserID   int64     `json:"fromUserId,omitempty"`
+	FromUsername string    `json:"fromUsername,omitempty"`
 	MessageDate  time.Time `json:"-"`
 	UpdateID     int64     `json:"-"`
 	CreatedAt    time.Time `json:"-"`

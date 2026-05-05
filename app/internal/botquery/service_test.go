@@ -240,6 +240,24 @@ func TestTargetAllowsUpdate(t *testing.T) {
 	}
 }
 
+func TestPrivateUpdateAllowed(t *testing.T) {
+	t.Parallel()
+
+	settings := model.AppSettings{BotPrivateAllowedUsers: []string{"42", "@alice"}}
+	if !privateUpdateAllowed(settings, bot.CommandUpdate{ChatType: "private", FromID: 42}) {
+		t.Fatal("expected private user id to be allowed")
+	}
+	if !privateUpdateAllowed(settings, bot.CommandUpdate{ChatType: "private", FromID: 7, FromUsername: "Alice"}) {
+		t.Fatal("expected private username to be allowed")
+	}
+	if privateUpdateAllowed(settings, bot.CommandUpdate{ChatType: "private", FromID: 99, FromUsername: "bob"}) {
+		t.Fatal("expected unknown private user to be rejected")
+	}
+	if privateUpdateAllowed(settings, bot.CommandUpdate{ChatType: "supergroup", FromID: 42}) {
+		t.Fatal("expected group update to be rejected by private authorization")
+	}
+}
+
 func TestBotQueryReady(t *testing.T) {
 	t.Parallel()
 
@@ -427,7 +445,7 @@ func TestSafeUtilityResponseForUnboundChat(t *testing.T) {
 	}
 
 	helpText, ok := safeUtilityResponse(model.LanguageZhCN, bot.CommandUpdate{Text: "/help"})
-	if !ok || !strings.Contains(helpText, "还没有绑定") {
+	if !ok || !strings.Contains(helpText, "还没有授权") {
 		t.Fatalf("safeUtilityResponse(/help) = %q, %v", helpText, ok)
 	}
 

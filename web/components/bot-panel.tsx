@@ -5,7 +5,6 @@ import { api } from "@/lib/api";
 import { AppSelect } from "@/components/app-select";
 import {
   AppSettings,
-  Bootstrap,
   BotStatus,
   BotTargetChatCandidate,
   Chat,
@@ -25,7 +24,6 @@ type SecretPlaceholders = {
 
 export function BotPanel() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [secretPlaceholders, setSecretPlaceholders] =
     useState<SecretPlaceholders>({ botToken: "" });
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
@@ -45,20 +43,19 @@ export function BotPanel() {
 
   async function load() {
     try {
-      const [settingsData, bootstrapData, botStatusData, chatsData] = await Promise.all([
+      const [settingsData, botStatusData, chatsData] = await Promise.all([
         api.settings(),
-        api.bootstrap(),
         api.botStatus().catch(() => null),
         api.listChats(),
       ]);
       setSecretPlaceholders({ botToken: settingsData.botToken || "" });
       setSettings({
         ...settingsData,
+        botPrivateAllowedUsers: settingsData.botPrivateAllowedUsers ?? [],
         botToken: "",
         openAIApiKey: "",
         telegramApiHash: "",
       });
-      setBootstrap(bootstrapData);
       setBotStatus(botStatusData);
       setChats(chatsData.map(normalizeChat));
     } catch (err) {
@@ -78,6 +75,7 @@ export function BotPanel() {
               ...current,
               botEnabled: saved.botEnabled,
               botTargetChatId: saved.botTargetChatId,
+              botPrivateAllowedUsers: saved.botPrivateAllowedUsers,
               botToken: "",
             }
           : current,
@@ -127,10 +125,6 @@ export function BotPanel() {
     if (!settings) {
       return;
     }
-    if (!bootstrap?.telegramAuthorized) {
-      toast.showError("自动获取前请先完成 Telegram 登录。");
-      return;
-    }
     if (!hasAvailableBotToken(settings.botToken, secretPlaceholders.botToken)) {
       toast.showError("请先填写 Bot Token。");
       return;
@@ -141,15 +135,10 @@ export function BotPanel() {
       const result = await api.resolveBotTargetChat(settings.botToken);
       setBotTargetChatCandidates(result.candidates);
       if (result.candidates.length === 0) {
-        toast.showError("未找到最近消息，请先给 Bot 发一条消息后再重试。");
+        toast.showError("未找到最近互动。可以让用户发送 /id 后，直接把 User ID 填到私聊授权列表。");
         return;
       }
-      if (result.candidates.length === 1) {
-        const [candidate] = result.candidates;
-        await saveResolvedBotTargetChat(candidate.chatId);
-        return;
-      }
-      toast.showSuccess("找到了多个可能的会话，请选择一个。");
+      toast.showSuccess("已刷新最近互动，可选择设为默认目标或加入私聊授权。");
     } catch (err) {
       toast.showError(asMessage(err));
     } finally {
@@ -178,6 +167,7 @@ export function BotPanel() {
               ...current,
               botEnabled: saved.botEnabled,
               botTargetChatId: saved.botTargetChatId,
+              botPrivateAllowedUsers: saved.botPrivateAllowedUsers,
               botToken: "",
             }
           : current,
@@ -194,6 +184,26 @@ export function BotPanel() {
     } finally {
       setSavingBotTargetChat(false);
     }
+  }
+
+  function addPrivateAllowedUser(value?: string | number | null) {
+    if (!settings || value === undefined || value === null) {
+      return;
+    }
+    const normalized = String(value).trim();
+    if (normalized === "") {
+      return;
+    }
+    const existing = new Set(settings.botPrivateAllowedUsers.map((item) => item.trim()).filter(Boolean));
+    if (existing.has(normalized)) {
+      toast.showSuccess("该用户已在私聊授权列表中。");
+      return;
+    }
+    setSettings({
+      ...settings,
+      botPrivateAllowedUsers: [...settings.botPrivateAllowedUsers, normalized],
+    });
+    toast.showSuccess("已加入私聊授权列表，保存后生效。");
   }
 
   function patchChat(chatID: number, patch: Partial<Chat>) {
@@ -230,7 +240,7 @@ export function BotPanel() {
         <div className="settings-column">
           <Surface
             title="基础配置"
-            description="配置 Bot Token、默认推送会话，以及是否启用 Telegram Bot。"
+            description="配置 Bot Token、默认摘要推送目标，以及允许私聊查询知识库的用户。"
           >
             <div className="form-grid">
               <Field label="Bot 状态">
@@ -261,7 +271,7 @@ export function BotPanel() {
               </Field>
               <Field
                 label="默认目标 Chat ID"
-                hint="可直接填写 Chat ID；不知道 ID 时，先给 Bot 发消息再点击自动获取。"
+                hint="只用于默认摘要推送。多个私聊用户请填下面的私聊授权列表。"
               >
                 <Input
                   placeholder="例如 123456789 或 -1001234567890"
@@ -270,6 +280,22 @@ export function BotPanel() {
                     setSettings({
                       ...settings,
                       botTargetChatId: event.target.value,
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="允许私聊用户"
+                hint="每行一个 Telegram 数字用户 ID 或 @username；这些用户可以直接私聊 Bot 查询知识库。"
+              >
+                <Textarea
+                  placeholder={"123456789\n@alice"}
+                  rows={4}
+                  value={joinLines(settings.botPrivateAllowedUsers)}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      botPrivateAllowedUsers: splitLines(event.target.value),
                     })
                   }
                 />
@@ -283,24 +309,18 @@ export function BotPanel() {
           </Surface>
 
           <Surface
-            title="Chat ID 获取"
-            description="用于绑定默认推送会话。多个群的独立 Bot Chat ID 请到“群组”页面配置。"
+            title="最近互动"
+            description="这是辅助入口；已知数字 ID 时可以直接填写，不需要依赖自动获取。"
           >
             <div className="bot-target-chat-field">
               <p className="muted">
-                可以直接在 Bot 私聊或群里发送 /id 查看 Chat ID 和 User ID，再复制到这里；也可以先给 Bot 发一条消息，然后读取最近候选。
+                让用户在私聊里发送 /id，Bot 会回复 User ID；把 User ID 填到“允许私聊用户”即可。这里也会列出 Bot 最近收到的互动，方便一键填入。
               </p>
-              {!bootstrap?.telegramAuthorized ? (
-                <p className="field-hint">
-                  自动获取前需要先在系统配置中完成 Telegram 登录。
-                </p>
-              ) : null}
               <div className="button-row">
                 <Button
                   disabled={
                     resolvingBotTargetChat ||
                     savingBotTargetChat ||
-                    !bootstrap?.telegramAuthorized ||
                     !hasAvailableBotToken(
                       settings.botToken,
                       secretPlaceholders.botToken,
@@ -314,27 +334,49 @@ export function BotPanel() {
                     ? "正在获取..."
                     : savingBotTargetChat
                       ? "正在保存..."
-                      : "获取最近 Chat ID"}
+                      : "刷新最近互动"}
                 </Button>
               </div>
-              {botTargetChatCandidates.length > 1 ? (
+              {botTargetChatCandidates.length > 0 ? (
                 <div className="bot-chat-candidates">
-                  {botTargetChatCandidates.map((candidate) => (
-                    <Button
-                      className="bot-chat-candidate"
-                      key={candidate.chatId}
-                      disabled={savingBotTargetChat}
-                      onClick={() => void saveResolvedBotTargetChat(candidate.chatId)}
-                      type="button"
-                      variant={
-                        settings.botTargetChatId === candidate.chatId
-                          ? "primary"
-                          : "secondary"
-                      }
-                    >
-                      {describeBotChatCandidate(candidate)}
-                    </Button>
-                  ))}
+                  {botTargetChatCandidates.map((candidate) => {
+                    const privateUserID = candidatePrivateUserID(candidate);
+                    return (
+                      <div className="bot-chat-candidate-row" key={candidate.chatId}>
+                        <div>
+                          <strong>{describeBotChatCandidate(candidate)}</strong>
+                          <span>
+                            Chat ID：{candidate.chatId}
+                            {privateUserID ? ` · User ID：${privateUserID}` : ""}
+                          </span>
+                        </div>
+                        <div className="button-row">
+                          <Button
+                            disabled={savingBotTargetChat}
+                            onClick={() => void saveResolvedBotTargetChat(candidate.chatId)}
+                            type="button"
+                            variant={
+                              settings.botTargetChatId === candidate.chatId
+                                ? "primary"
+                                : "secondary"
+                            }
+                          >
+                            设为默认目标
+                          </Button>
+                          {privateUserID ? (
+                            <Button
+                              disabled={savingBotTargetChat}
+                              onClick={() => addPrivateAllowedUser(privateUserID)}
+                              type="button"
+                              variant="secondary"
+                            >
+                              加入私聊授权
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
               <div
@@ -538,6 +580,16 @@ function splitLines(value: string) {
     .split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function candidatePrivateUserID(candidate: BotTargetChatCandidate) {
+  if (candidate.chatType !== "private") {
+    return "";
+  }
+  if (candidate.fromUserId) {
+    return String(candidate.fromUserId);
+  }
+  return candidate.chatId;
 }
 
 function botChatStatus(

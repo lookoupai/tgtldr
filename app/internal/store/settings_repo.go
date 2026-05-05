@@ -19,6 +19,7 @@ func normalizeAppSettings(settings model.AppSettings) model.AppSettings {
 	}
 	settings.Language = model.NormalizeLanguage(settings.Language)
 	settings.SummaryOutputLanguage = model.NormalizeSummaryOutputLanguage(settings.SummaryOutputLanguage)
+	settings.BotPrivateAllowedUsers = compactStrings(settings.BotPrivateAllowedUsers)
 	return settings
 }
 
@@ -32,7 +33,7 @@ func (r *SettingsRepository) Get(ctx context.Context) (model.AppSettings, error)
 		select id, telegram_api_id, telegram_api_hash, openai_base_url, openai_api_key,
 		       openai_model, openai_temperature, openai_output_mode, openai_max_output_tokens,
 		       summary_parallelism, default_timezone, language, summary_output_language, bot_enabled, bot_token,
-		       bot_target_chat_id, created_at, updated_at
+		       bot_target_chat_id, bot_private_allowed_users, created_at, updated_at
 		from app_settings
 		order by id
 		limit 1
@@ -53,6 +54,7 @@ func (r *SettingsRepository) Get(ctx context.Context) (model.AppSettings, error)
 		&row.BotEnabled,
 		&encBotToken,
 		&row.BotTargetChatID,
+		&row.BotPrivateAllowedUsers,
 		&row.CreatedAt,
 		&row.UpdatedAt,
 	)
@@ -106,6 +108,7 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 		    bot_enabled = $13,
 		    bot_token = $14,
 		    bot_target_chat_id = $15,
+		    bot_private_allowed_users = $16,
 		    updated_at = now()
 		where id = (select id from app_settings order by id limit 1)
 		returning id, created_at, updated_at
@@ -125,6 +128,7 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 		settings.BotEnabled,
 		encBotToken,
 		settings.BotTargetChatID,
+		settings.BotPrivateAllowedUsers,
 	).Scan(&saved.ID, &saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		return model.AppSettings{}, fmt.Errorf("save settings: %w", err)
@@ -145,5 +149,6 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 	saved.BotEnabled = settings.BotEnabled
 	saved.BotToken = settings.BotToken
 	saved.BotTargetChatID = settings.BotTargetChatID
+	saved.BotPrivateAllowedUsers = settings.BotPrivateAllowedUsers
 	return saved, nil
 }

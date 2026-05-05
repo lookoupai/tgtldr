@@ -319,6 +319,30 @@ select {
   text-align: left;
 }
 
+.bot-chat-candidate-row {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.bot-chat-candidate-row > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.bot-chat-candidate-row strong {
+  font-size: 0.95rem;
+}
+
+.bot-chat-candidate-row span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
 .bot-target-chat-value {
   display: flex;
   align-items: center;

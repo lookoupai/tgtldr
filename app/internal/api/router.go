@@ -349,16 +349,6 @@ func (r *Router) handleResolveBotTargetChat(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	auth, err := r.telegram.BootstrapAuth(req.Context())
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if auth == nil || auth.Status != "authorized" {
-		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请先完成 Telegram 登录。", "Complete Telegram login first."))
-		return
-	}
-
 	botToken := strings.TrimSpace(payload.BotToken)
 	if botToken == "" {
 		settings, err := r.store.Settings.Get(req.Context())
@@ -386,7 +376,7 @@ func (r *Router) handleResolveBotTargetChat(w http.ResponseWriter, req *http.Req
 
 	candidates := make([]bot.TargetChatCandidate, 0)
 	if r.store.BotTargetChats != nil {
-		stored, err := r.store.BotTargetChats.ListByBotAndFromUser(req.Context(), self.ID, auth.TelegramUserID, 20)
+		stored, err := r.store.BotTargetChats.ListByBot(req.Context(), self.ID, 20)
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, err.Error())
 			return
@@ -394,7 +384,7 @@ func (r *Router) handleResolveBotTargetChat(w http.ResponseWriter, req *http.Req
 		candidates = modelBotTargetCandidates(stored)
 	}
 
-	liveCandidates, err := r.bot.ResolveTargetChats(req.Context(), botToken, auth.TelegramUserID)
+	liveCandidates, err := r.bot.ResolveTargetChats(req.Context(), botToken, 0)
 	if err != nil && len(candidates) == 0 {
 		status := http.StatusBadGateway
 		var botErr *bot.APIError
@@ -415,10 +405,12 @@ func modelBotTargetCandidates(items []model.BotTargetChatCandidate) []bot.Target
 	out := make([]bot.TargetChatCandidate, 0, len(items))
 	for _, item := range items {
 		out = append(out, bot.TargetChatCandidate{
-			ChatID:   strings.TrimSpace(item.ChatID),
-			ChatType: strings.TrimSpace(item.ChatType),
-			Title:    strings.TrimSpace(item.Title),
-			Username: strings.TrimSpace(item.Username),
+			ChatID:       strings.TrimSpace(item.ChatID),
+			ChatType:     strings.TrimSpace(item.ChatType),
+			Title:        strings.TrimSpace(item.Title),
+			Username:     strings.TrimSpace(item.Username),
+			FromUserID:   item.FromUserID,
+			FromUsername: strings.TrimSpace(item.FromUsername),
 		})
 	}
 	return out
