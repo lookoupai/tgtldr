@@ -2,6 +2,7 @@ import {
   AppSettings,
   AuthStatus,
   Bootstrap,
+  BotStatus,
   BotTargetChatResolveResult,
   Chat,
   HistoryBackfillTask,
@@ -135,6 +136,12 @@ export const api = {
     request<AppSettings>("/api/settings", {
       method: "PUT",
       body: JSON.stringify(payload),
+    }),
+  botStatus: () => request<BotStatus>("/api/bot/status"),
+  syncBotCommands: () =>
+    request<BotStatus>("/api/bot/status", {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
   resolveBotTargetChat: (botToken?: string) =>
     request<BotTargetChatResolveResult>("/api/bot/target-chat/resolve", {

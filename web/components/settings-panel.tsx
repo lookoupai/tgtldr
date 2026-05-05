@@ -8,6 +8,7 @@ import { SearchSelect } from "@/components/search-select";
 import {
   AppSettings,
   Bootstrap,
+  BotStatus,
   BotTargetChatCandidate,
   PendingAuth,
 } from "@/lib/types";
@@ -57,6 +58,9 @@ export function SettingsPanel() {
   const [botTargetChatCandidates, setBotTargetChatCandidates] = useState<
     BotTargetChatCandidate[]
   >([]);
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
+  const [loadingBotStatus, setLoadingBotStatus] = useState(false);
+  const [syncingBotCommands, setSyncingBotCommands] = useState(false);
   const [resolvingBotTargetChat, setResolvingBotTargetChat] = useState(false);
   const [savingBotTargetChat, setSavingBotTargetChat] = useState(false);
   const toast = useToast();
@@ -76,9 +80,10 @@ export function SettingsPanel() {
 
   async function load() {
     try {
-      const [settingsData, bootstrapData] = await Promise.all([
+      const [settingsData, bootstrapData, botStatusData] = await Promise.all([
         api.settings(),
         api.bootstrap(),
+        api.botStatus().catch(() => null),
       ]);
       setSecretPlaceholders({
         botToken: settingsData.botToken || "",
@@ -97,12 +102,41 @@ export function SettingsPanel() {
       });
       setLanguage(normalizeLanguage(settingsData.language));
       setBootstrap(bootstrapData);
+      setBotStatus(botStatusData);
       setPendingAuth(bootstrapData.pendingAuth ?? null);
       if (!bootstrapData.pendingAuth && bootstrapData.telegramAuthorized) {
         setAuthEditorOpen(false);
       }
     } catch (err) {
       toast.showError(asMessage(err));
+    }
+  }
+
+  async function refreshBotStatus(showToast = false) {
+    setLoadingBotStatus(true);
+    try {
+      const status = await api.botStatus();
+      setBotStatus(status);
+      if (showToast) {
+        toast.showSuccess("Bot 状态已刷新。");
+      }
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setLoadingBotStatus(false);
+    }
+  }
+
+  async function syncBotCommands() {
+    setSyncingBotCommands(true);
+    try {
+      const status = await api.syncBotCommands();
+      setBotStatus(status);
+      toast.showSuccess("Bot 命令菜单已同步。");
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setSyncingBotCommands(false);
     }
   }
 
@@ -321,6 +355,7 @@ export function SettingsPanel() {
       }));
       setBotTargetChatCandidates([]);
       notifyBootstrapRefresh();
+      await refreshBotStatus(false);
       toast.showSuccess("已自动绑定并保存 Chat ID。");
       return true;
     } catch (err) {
@@ -767,6 +802,78 @@ export function SettingsPanel() {
                   </span>
                 </div>
               </Field>
+              <div className="bot-status-panel">
+                <div className="bot-status-header">
+                  <div>
+                    <span className="field-label">Bot 状态</span>
+                    <p className="field-hint">
+                      状态基于已保存的 Bot 配置，修改 Token 后请先保存。
+                    </p>
+                  </div>
+                  <StatusPill tone={botStatusTone(botStatus, settings)}>
+                    {botStatusLabel(botStatus, settings)}
+                  </StatusPill>
+                </div>
+                <div className="bot-status-grid">
+                  <BotStatusItem
+                    label="Token"
+                    value={
+                      botStatus?.tokenConfigured ? "已配置" : "尚未配置"
+                    }
+                  />
+                  <BotStatusItem
+                    label="Bot"
+                    value={
+                      botStatus?.username
+                        ? `@${botStatus.username}`
+                        : botStatus?.botId
+                          ? String(botStatus.botId)
+                          : "未验证"
+                    }
+                  />
+                  <BotStatusItem
+                    label="命令菜单"
+                    value={
+                      botStatus?.commandsSynced
+                        ? "已同步"
+                        : botStatus?.tokenConfigured
+                          ? "未同步"
+                          : "等待 Token"
+                    }
+                  />
+                  <BotStatusItem
+                    label="目标会话"
+                    value={botStatus?.targetChatId || "未绑定"}
+                  />
+                </div>
+                {botStatus?.error ? (
+                  <p className="field-hint bot-status-error">
+                    {botStatus.error}
+                  </p>
+                ) : null}
+                <div className="button-row">
+                  <Button
+                    disabled={loadingBotStatus}
+                    onClick={() => void refreshBotStatus(true)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {loadingBotStatus ? "正在刷新..." : "刷新状态"}
+                  </Button>
+                  <Button
+                    disabled={
+                      syncingBotCommands ||
+                      !botStatus?.enabled ||
+                      !botStatus.tokenConfigured
+                    }
+                    onClick={() => void syncBotCommands()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {syncingBotCommands ? "正在同步..." : "同步命令菜单"}
+                  </Button>
+                </div>
+              </div>
             </div>
             <p className="muted">
               如果你只想在网页端查看摘要，可以把 Bot 推送保持关闭。
@@ -984,6 +1091,50 @@ function authRetryLabel(retryUntil: number | null, now: number) {
   const retryAt = retryUntil ?? now;
   const seconds = Math.ceil((retryAt - now) / 1000);
   return `Telegram 暂时限制了请求，请在 ${seconds} 秒后重试。`;
+}
+
+function BotStatusItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bot-status-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function botStatusTone(
+  status: BotStatus | null,
+  settings: AppSettings,
+): "neutral" | "good" | "warn" | "bad" {
+  if (!settings.botEnabled) {
+    return "neutral";
+  }
+  if (!status || !status.tokenConfigured || !status.targetChatId) {
+    return "warn";
+  }
+  if (status.error) {
+    return "bad";
+  }
+  return status.commandsSynced ? "good" : "warn";
+}
+
+function botStatusLabel(status: BotStatus | null, settings: AppSettings) {
+  if (!settings.botEnabled) {
+    return "未启用";
+  }
+  if (!status) {
+    return "未检查";
+  }
+  if (!status.tokenConfigured) {
+    return "缺少 Token";
+  }
+  if (status.error) {
+    return "验证失败";
+  }
+  if (!status.targetChatId) {
+    return "未绑定";
+  }
+  return status.commandsSynced ? "就绪" : "待同步";
 }
 
 function fullPhone(countryCode: string, phoneNumber: string) {

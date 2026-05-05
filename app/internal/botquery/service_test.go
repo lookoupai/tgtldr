@@ -3,6 +3,7 @@ package botquery
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/frederic/tgtldr/app/internal/bot"
@@ -109,9 +110,21 @@ func TestParseCommand(t *testing.T) {
 			ok:   false,
 		},
 		{
+			name: "start",
+			text: "/start",
+			want: parsedCommand{start: true},
+			ok:   true,
+		},
+		{
 			name: "help",
 			text: "/help",
 			want: parsedCommand{help: true},
+			ok:   true,
+		},
+		{
+			name: "settings",
+			text: "/settings",
+			want: parsedCommand{settings: true},
 			ok:   true,
 		},
 	}
@@ -129,6 +142,33 @@ func TestParseCommand(t *testing.T) {
 				t.Fatalf("parseCommand() = %#v, want %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBotCommands(t *testing.T) {
+	t.Parallel()
+
+	got := BotCommands(model.LanguageZhCN)
+	if len(got) == 0 {
+		t.Fatal("BotCommands() returned no commands")
+	}
+	if got[0] != (bot.Command{Command: "start", Description: "查看 Bot 说明"}) {
+		t.Fatalf("first command = %#v", got[0])
+	}
+	if got[len(got)-1].Command != "settings" {
+		t.Fatalf("last command = %#v, want settings", got[len(got)-1])
+	}
+}
+
+func TestCommandsEqual(t *testing.T) {
+	t.Parallel()
+
+	commands := []bot.Command{{Command: "help", Description: "查看命令帮助"}}
+	if !CommandsEqual(commands, []bot.Command{{Command: "help", Description: "查看命令帮助"}}) {
+		t.Fatal("CommandsEqual() should accept identical command lists")
+	}
+	if CommandsEqual(commands, []bot.Command{{Command: "start", Description: "查看 Bot 说明"}}) {
+		t.Fatal("CommandsEqual() should reject different command lists")
 	}
 }
 
@@ -170,6 +210,133 @@ func TestMaintenanceTargetStatus(t *testing.T) {
 	}
 	if got := maintenanceTargetStatus("restore"); got != model.KnowledgeFactStatusActive {
 		t.Fatalf("restore status = %q", got)
+	}
+}
+
+func TestStartCommandShowsIntroduction(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, nil)
+
+	got, ok, err := service.responseForCommand(context.Background(), model.LanguageZhCN, "/start")
+	if err != nil {
+		t.Fatalf("responseForCommand() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("responseForCommand() ok = false")
+	}
+	if got == commandHelpText(model.LanguageZhCN) {
+		t.Fatal("/start should show introduction instead of raw help text")
+	}
+	if !strings.Contains(got, "TGTLDR Bot 已就绪") {
+		t.Fatalf("responseForCommand() = %q", got)
+	}
+}
+
+func TestResponseForUpdateNaturalConversation(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{
+		answer: knowledge.KnowledgeAnswerResult{
+			Query:  "Rust",
+			Answer: "可以先看 @alice，依据 #42。",
+		},
+	})
+
+	tests := []struct {
+		name   string
+		update bot.CommandUpdate
+		wantOK bool
+	}{
+		{
+			name: "private plain text",
+			update: bot.CommandUpdate{
+				ChatType: "private",
+				Text:     "谁了解 Rust",
+			},
+			wantOK: true,
+		},
+		{
+			name: "group mention",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "@TgtldrBot 谁了解 Rust",
+			},
+			wantOK: true,
+		},
+		{
+			name: "group reply to bot",
+			update: bot.CommandUpdate{
+				ChatType:     "supergroup",
+				Text:         "谁了解 Rust",
+				ReplyToBotID: 777,
+			},
+			wantOK: true,
+		},
+		{
+			name: "plain group text ignored",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "谁了解 Rust",
+			},
+			wantOK: false,
+		},
+		{
+			name: "reply to other bot ignored",
+			update: bot.CommandUpdate{
+				ChatType:     "supergroup",
+				Text:         "谁了解 Rust",
+				ReplyToBotID: 778,
+			},
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok, err := service.responseForUpdate(context.Background(), model.LanguageZhCN, tt.update, 777, "TgtldrBot")
+			if err != nil {
+				t.Fatalf("responseForUpdate() error = %v", err)
+			}
+			if ok != tt.wantOK {
+				t.Fatalf("responseForUpdate() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if tt.wantOK && got != "可以先看 @alice，依据 #42。" {
+				t.Fatalf("responseForUpdate() = %q", got)
+			}
+		})
+	}
+}
+
+func TestExtractMentionQuery(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		text string
+		want string
+		ok   bool
+	}{
+		{name: "space", text: "@TgtldrBot 谁了解 Rust", want: "谁了解 Rust", ok: true},
+		{name: "newline", text: "@tgtldrbot\n谁了解 Rust", want: "谁了解 Rust", ok: true},
+		{name: "middle mention ignored", text: "问问 @TgtldrBot 谁了解 Rust", ok: false},
+		{name: "bare mention ignored", text: "@TgtldrBot", ok: false},
+		{name: "different mention ignored", text: "@OtherBot 谁了解 Rust", ok: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := extractMentionQuery(tt.text, "TgtldrBot")
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("extractMentionQuery() = %q, %v; want %q, %v", got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }
 

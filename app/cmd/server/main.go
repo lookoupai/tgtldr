@@ -56,6 +56,11 @@ func run() error {
 		return fmt.Errorf("ensure default knowledge space: %w", err)
 	}
 	botQueryService := botquery.NewService(st, botService, knowledgeService)
+	if settings, err := st.Settings.Get(ctx); err == nil {
+		if err := botquery.SyncBotCommands(ctx, botService, settings); err != nil {
+			fmt.Fprintf(os.Stderr, "sync bot commands: %v\n", err)
+		}
+	}
 	telegramService := telegramsvc.NewService(ctx, st, sysClock)
 	schedulerService := scheduler.NewService(st, sysClock, summaryService, botService, knowledgeService)
 	telegramService.SetHistoryBackfillCompletionHook(func(chat model.Chat, fromDate, toDate string) {

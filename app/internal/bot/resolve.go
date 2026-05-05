@@ -33,9 +33,12 @@ type TargetChatCandidate struct {
 }
 
 type CommandUpdate struct {
-	UpdateID int64
-	ChatID   string
-	Text     string
+	UpdateID     int64
+	MessageID    int64
+	ChatID       string
+	ChatType     string
+	Text         string
+	ReplyToBotID int64
 }
 
 type botAPIResponse[T any] struct {
@@ -50,14 +53,18 @@ type botUpdate struct {
 }
 
 type botMessage struct {
-	Date int64    `json:"date"`
-	From *botUser `json:"from"`
-	Chat botChat  `json:"chat"`
-	Text string   `json:"text,omitempty"`
+	MessageID      int64       `json:"message_id"`
+	Date           int64       `json:"date"`
+	From           *botUser    `json:"from"`
+	Chat           botChat     `json:"chat"`
+	Text           string      `json:"text,omitempty"`
+	ReplyToMessage *botMessage `json:"reply_to_message,omitempty"`
 }
 
 type botUser struct {
-	ID int64 `json:"id"`
+	ID       int64  `json:"id"`
+	Username string `json:"username,omitempty"`
+	IsBot    bool   `json:"is_bot,omitempty"`
 }
 
 type botChat struct {
@@ -101,10 +108,17 @@ func (s *Service) GetCommandUpdates(ctx context.Context, token string, offset in
 	for _, update := range updates {
 		item := CommandUpdate{UpdateID: update.UpdateID}
 		if update.Message != nil {
+			item.MessageID = update.Message.MessageID
 			if update.Message.Chat.ID != 0 {
 				item.ChatID = strconv.FormatInt(update.Message.Chat.ID, 10)
 			}
+			item.ChatType = strings.TrimSpace(update.Message.Chat.Type)
 			item.Text = strings.TrimSpace(update.Message.Text)
+			if update.Message.ReplyToMessage != nil &&
+				update.Message.ReplyToMessage.From != nil &&
+				update.Message.ReplyToMessage.From.IsBot {
+				item.ReplyToBotID = update.Message.ReplyToMessage.From.ID
+			}
 		}
 		out = append(out, item)
 	}

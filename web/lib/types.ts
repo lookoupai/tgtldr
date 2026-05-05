@@ -65,6 +65,23 @@ export type BotTargetChatResolveResult = {
   candidates: BotTargetChatCandidate[];
 };
 
+export type BotCommand = {
+  command: string;
+  description: string;
+};
+
+export type BotStatus = {
+  enabled: boolean;
+  tokenConfigured: boolean;
+  targetChatId: string;
+  botId?: number;
+  username?: string;
+  commandsSynced: boolean;
+  commands?: BotCommand[];
+  expectedCommands: BotCommand[];
+  error?: string;
+};
+
 export type DeliveryMode = "dashboard" | "bot";
 export type SummaryMode = "channel" | "chat_topic";
 

@@ -148,6 +148,7 @@ func TestGetCommandUpdates(t *testing.T) {
 				{
 					"update_id": 30,
 					"message": {
+						"message_id": 101,
 						"chat": {"id": -1001, "type": "supergroup"},
 						"text": "  /knowledge gpu  "
 					}
@@ -155,6 +156,7 @@ func TestGetCommandUpdates(t *testing.T) {
 				{
 					"update_id": 31,
 					"message": {
+						"message_id": 102,
 						"chat": {"id": -1002, "type": "supergroup"},
 						"text": "   "
 					}
@@ -163,8 +165,14 @@ func TestGetCommandUpdates(t *testing.T) {
 				{
 					"update_id": 33,
 					"message": {
+						"message_id": 103,
 						"chat": {"id": 0, "type": "private"},
-						"text": "/help"
+						"text": "/help",
+						"reply_to_message": {
+							"message_id": 99,
+							"from": {"id": 777, "is_bot": true, "username": "TgtldrBot"},
+							"chat": {"id": 0, "type": "private"}
+						}
 					}
 				}
 			]
@@ -181,10 +189,10 @@ func TestGetCommandUpdates(t *testing.T) {
 		t.Fatalf("GetCommandUpdates() error = %v", err)
 	}
 	want := []CommandUpdate{
-		{UpdateID: 30, ChatID: "-1001", Text: "/knowledge gpu"},
-		{UpdateID: 31, ChatID: "-1002"},
+		{UpdateID: 30, MessageID: 101, ChatID: "-1001", ChatType: "supergroup", Text: "/knowledge gpu"},
+		{UpdateID: 31, MessageID: 102, ChatID: "-1002", ChatType: "supergroup"},
 		{UpdateID: 32},
-		{UpdateID: 33, Text: "/help"},
+		{UpdateID: 33, MessageID: 103, ChatType: "private", Text: "/help", ReplyToBotID: 777},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("GetCommandUpdates() = %#v, want %#v", got, want)

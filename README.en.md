@@ -133,6 +133,8 @@ If Bot delivery is enabled and a target chat is configured, you can query the kn
 /cancel
 ```
 
+In a private target chat, plain natural-language messages are treated like `/ask`. In a group target chat, the Bot responds to explicit commands, `@BotName question`, and replies to Bot messages; ordinary group messages are ignored.
+
 Use `/type` for custom schema types, such as `/type hiring remote` or `/type skill rust`. `/fact` and `/facts` are aliases for the same query form.
 Query results include fact IDs. Use `/expire` to mark a fact expired, `/forget` to dismiss it, and `/restore` to reactivate it.
 `/ask who understands crypto trading` parses a natural-language question into query filters, searches the knowledge base, then generates an evidence-based answer with fact IDs. If there is not enough evidence, it says so directly. You can also use natural-language maintenance commands such as `/update Alice no longer needs Gmail`; the system previews matching facts and requires `/confirm <code>` before updating them. Web actions, Bot commands, natural-language updates, and automatic status updates are recorded as maintenance events so you can audit the previous status, next status, and source.

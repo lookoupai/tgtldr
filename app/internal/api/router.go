@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/frederic/tgtldr/app/internal/bot"
+	"github.com/frederic/tgtldr/app/internal/botquery"
 	"github.com/frederic/tgtldr/app/internal/httpx"
 	"github.com/frederic/tgtldr/app/internal/knowledge"
 	"github.com/frederic/tgtldr/app/internal/localauth"
@@ -61,6 +62,7 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/setup-password", r.handleSetupPassword)
 	mux.HandleFunc("/api/auth/change-password", r.handleChangePassword)
 	mux.HandleFunc("/api/settings", r.handleSettings)
+	mux.HandleFunc("/api/bot/status", r.handleBotStatus)
 	mux.HandleFunc("/api/bot/target-chat/resolve", r.handleResolveBotTargetChat)
 	mux.HandleFunc("/api/telegram/auth/start", r.handleStartAuth)
 	mux.HandleFunc("/api/telegram/auth/code", r.handleVerifyCode)
@@ -321,6 +323,9 @@ func (r *Router) handleSettings(w http.ResponseWriter, req *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := botquery.SyncBotCommands(req.Context(), r.bot, saved); err != nil {
+		fmt.Printf("sync bot commands: %v\n", err)
+	}
 	if !wasConfigured && settingsConfigured(saved) && r.knowledge != nil {
 		if _, _, err := r.knowledge.EnsureDefaultGeneralSpace(req.Context()); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, err.Error())
@@ -382,6 +387,60 @@ func (r *Router) handleResolveBotTargetChat(w http.ResponseWriter, req *http.Req
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"candidates": candidates,
 	})
+}
+
+func (r *Router) handleBotStatus(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet && req.Method != http.MethodPost {
+		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	settings, err := r.store.Settings.Get(req.Context())
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if r.bot == nil {
+		httpx.Error(w, http.StatusInternalServerError, "bot service is not configured")
+		return
+	}
+	if req.Method == http.MethodPost {
+		if err := botquery.SyncBotCommands(req.Context(), r.bot, settings); err != nil {
+			httpx.Error(w, http.StatusBadGateway, err.Error())
+			return
+		}
+	}
+
+	status := map[string]any{
+		"enabled":          settings.BotEnabled,
+		"tokenConfigured":  strings.TrimSpace(settings.BotToken) != "",
+		"targetChatId":     strings.TrimSpace(settings.BotTargetChatID),
+		"commandsSynced":   false,
+		"expectedCommands": botquery.BotCommands(settings.Language),
+	}
+	if !settings.BotEnabled || strings.TrimSpace(settings.BotToken) == "" {
+		httpx.JSON(w, http.StatusOK, status)
+		return
+	}
+
+	self, err := r.bot.GetMe(req.Context(), settings.BotToken)
+	if err != nil {
+		status["error"] = err.Error()
+		httpx.JSON(w, http.StatusOK, status)
+		return
+	}
+	status["botId"] = self.ID
+	status["username"] = strings.TrimSpace(self.Username)
+
+	commands, err := r.bot.GetMyCommands(req.Context(), settings.BotToken)
+	if err != nil {
+		status["error"] = err.Error()
+		httpx.JSON(w, http.StatusOK, status)
+		return
+	}
+	status["commands"] = commands
+	status["commandsSynced"] = botquery.CommandsEqual(commands, botquery.BotCommands(settings.Language))
+	httpx.JSON(w, http.StatusOK, status)
 }
 
 func (r *Router) handleStartAuth(w http.ResponseWriter, req *http.Request) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -53,6 +54,81 @@ func TestSendMessageWithLanguage(t *testing.T) {
 	})
 }
 
+func TestSetMyCommands(t *testing.T) {
+	Convey("会向 Telegram 注册 Bot 命令菜单", t, func() {
+		transport := &commandCaptureTransport{}
+		service := &Service{client: &http.Client{Transport: transport}}
+
+		err := service.SetMyCommands(context.Background(), "test-token", []Command{
+			{Command: "help", Description: "查看命令帮助"},
+			{Command: "knowledge", Description: "按关键词查询知识"},
+		})
+
+		So(err, ShouldBeNil)
+		So(transport.path, ShouldEqual, "/bottest-token/setMyCommands")
+		So(transport.commands, ShouldResemble, []Command{
+			{Command: "help", Description: "查看命令帮助"},
+			{Command: "knowledge", Description: "按关键词查询知识"},
+		})
+	})
+
+	Convey("注册失败时返回 Telegram 错误描述", t, func() {
+		transport := &commandCaptureTransport{statusCode: http.StatusBadRequest}
+		service := &Service{client: &http.Client{Transport: transport}}
+
+		err := service.SetMyCommands(context.Background(), "test-token", []Command{
+			{Command: "help", Description: "查看命令帮助"},
+		})
+
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldContainSubstring, "bad command list")
+	})
+}
+
+func TestGetMe(t *testing.T) {
+	service := &Service{client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/bottest-token/getMe" {
+			t.Fatalf("request path = %q, want /bottest-token/getMe", req.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"id":777,"username":"TgtldrBot"}}`)),
+		}, nil
+	})}}
+
+	got, err := service.GetMe(context.Background(), "test-token")
+	if err != nil {
+		t.Fatalf("GetMe() error = %v", err)
+	}
+	want := Self{ID: 777, Username: "TgtldrBot"}
+	if got != want {
+		t.Fatalf("GetMe() = %#v, want %#v", got, want)
+	}
+}
+
+func TestGetMyCommands(t *testing.T) {
+	service := &Service{client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/bottest-token/getMyCommands" {
+			t.Fatalf("request path = %q, want /bottest-token/getMyCommands", req.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":[{"command":"help","description":"查看命令帮助"}]}`)),
+		}, nil
+	})}}
+
+	got, err := service.GetMyCommands(context.Background(), "test-token")
+	if err != nil {
+		t.Fatalf("GetMyCommands() error = %v", err)
+	}
+	want := []Command{{Command: "help", Description: "查看命令帮助"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetMyCommands() = %#v, want %#v", got, want)
+	}
+}
+
 type capturedBotRequest struct {
 	ChatID                string `json:"chat_id"`
 	Text                  string `json:"text"`
@@ -85,6 +161,43 @@ func (t *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	responseBody := `{"ok":true}`
 	if status >= 300 {
 		responseBody = `{"ok":false,"description":"forced failure"}`
+	}
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(responseBody)),
+	}, nil
+}
+
+type capturedCommandRequest struct {
+	Commands []Command `json:"commands"`
+}
+
+type commandCaptureTransport struct {
+	statusCode int
+	path       string
+	commands   []Command
+}
+
+func (t *commandCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	var payload capturedCommandRequest
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	t.path = req.URL.Path
+	t.commands = payload.Commands
+
+	status := t.statusCode
+	if status == 0 {
+		status = http.StatusOK
+	}
+	responseBody := `{"ok":true,"result":true}`
+	if status >= 300 {
+		responseBody = `{"ok":false,"description":"bad command list"}`
 	}
 	return &http.Response{
 		StatusCode: status,
