@@ -45,6 +45,7 @@ export function DashboardShell({ children }: PropsWithChildren) {
           <NavLink href="/dashboard/chats">群组</NavLink>
           <NavLink href="/dashboard/summaries">摘要</NavLink>
           <NavLink href="/dashboard/knowledge">知识空间</NavLink>
+          <NavLink href="/dashboard/bot">Bot</NavLink>
           <NavLink href="/dashboard/settings">系统配置</NavLink>
         </nav>
 

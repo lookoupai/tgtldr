@@ -122,6 +122,12 @@ func TestParseCommand(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "id",
+			text: "/id@BotName",
+			want: parsedCommand{id: true},
+			ok:   true,
+		},
+		{
 			name: "settings",
 			text: "/settings",
 			want: parsedCommand{settings: true},
@@ -381,6 +387,52 @@ func TestResponseForUpdateNaturalConversation(t *testing.T) {
 				t.Fatalf("responseForUpdate() = %q", got)
 			}
 		})
+	}
+}
+
+func TestResponseForUpdateIDCommand(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, nil)
+	got, ok, err := service.responseForUpdate(context.Background(), model.LanguageZhCN, bot.CommandUpdate{
+		ChatID:       "-100123",
+		ChatType:     "supergroup",
+		Text:         "/id",
+		FromID:       456,
+		FromUsername: "alice",
+	}, 777, "TgtldrBot")
+	if err != nil {
+		t.Fatalf("responseForUpdate() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("responseForUpdate() ok = false")
+	}
+	for _, want := range []string{"当前 Chat ID：-100123", "你的 User ID：456", "用户名：@alice"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("responseForUpdate() = %q, want contains %q", got, want)
+		}
+	}
+}
+
+func TestSafeUtilityResponseForUnboundChat(t *testing.T) {
+	t.Parallel()
+
+	idText, ok := safeUtilityResponse(model.LanguageZhCN, bot.CommandUpdate{
+		ChatID: "-100123",
+		Text:   "/id",
+		FromID: 456,
+	})
+	if !ok || !strings.Contains(idText, "当前 Chat ID：-100123") {
+		t.Fatalf("safeUtilityResponse(/id) = %q, %v", idText, ok)
+	}
+
+	helpText, ok := safeUtilityResponse(model.LanguageZhCN, bot.CommandUpdate{Text: "/help"})
+	if !ok || !strings.Contains(helpText, "还没有绑定") {
+		t.Fatalf("safeUtilityResponse(/help) = %q, %v", helpText, ok)
+	}
+
+	if text, ok := safeUtilityResponse(model.LanguageZhCN, bot.CommandUpdate{Text: "/knowledge gpu"}); ok || text != "" {
+		t.Fatalf("safeUtilityResponse(/knowledge) = %q, %v; want no response", text, ok)
 	}
 }
 

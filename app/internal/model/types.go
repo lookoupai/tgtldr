@@ -181,6 +181,20 @@ type BotRuntimeState struct {
 	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
+type BotTargetChatCandidate struct {
+	BotID        int64     `json:"-"`
+	ChatID       string    `json:"chatId"`
+	ChatType     string    `json:"chatType"`
+	Title        string    `json:"title,omitempty"`
+	Username     string    `json:"username,omitempty"`
+	FromUserID   int64     `json:"-"`
+	FromUsername string    `json:"-"`
+	MessageDate  time.Time `json:"-"`
+	UpdateID     int64     `json:"-"`
+	CreatedAt    time.Time `json:"-"`
+	UpdatedAt    time.Time `json:"-"`
+}
+
 type TopicGroup struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`

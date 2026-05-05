@@ -34,6 +34,7 @@ type parsedCommand struct {
 	factType         string
 	start            bool
 	help             bool
+	id               bool
 	settings         bool
 	factID           int64
 	statusUpdate     model.KnowledgeFactStatus
@@ -83,6 +84,7 @@ type commandDefinition struct {
 var commandDefinitions = []commandDefinition{
 	{command: "start", descriptionZH: "查看 Bot 说明", descriptionEN: "Show bot introduction"},
 	{command: "help", descriptionZH: "查看命令帮助", descriptionEN: "Show command help"},
+	{command: "id", descriptionZH: "查看当前 Chat ID 和用户 ID", descriptionEN: "Show current chat and user IDs"},
 	{command: "knowledge", descriptionZH: "按关键词查询知识", descriptionEN: "Search knowledge by keyword"},
 	{command: "ask", descriptionZH: "用自然语言提问", descriptionEN: "Ask a natural-language question"},
 	{command: "demand", descriptionZH: "查询需求事实", descriptionEN: "Search demand facts"},
@@ -204,11 +206,27 @@ func (s *Service) Run(ctx context.Context) error {
 			if update.UpdateID >= state.offset {
 				state.offset = update.UpdateID + 1
 			}
+			s.recordTargetChatCandidate(ctx, state.botID, update)
 			target, ok := targets[update.ChatID]
 			if !ok {
+				if response, shouldReply := safeUtilityResponse(settings.Language, update); shouldReply {
+					if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, settings.Language, update.MessageID); err != nil {
+						s.markRuntimeError(ctx, state.botUsername, err)
+						continue
+					}
+					s.markRuntimeHandled(ctx, state.botUsername)
+				}
 				continue
 			}
 			if !targetAllowsUpdate(target, update) {
+				language := responseLanguage(settings, target)
+				if response, shouldReply := safeUtilityResponse(language, update); shouldReply {
+					if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, language, update.MessageID); err != nil {
+						s.markRuntimeError(ctx, state.botUsername, err)
+						continue
+					}
+					s.markRuntimeHandled(ctx, state.botUsername)
+				}
 				continue
 			}
 			language := responseLanguage(settings, target)
@@ -280,6 +298,20 @@ func normalizeAllowedUsername(value string) string {
 	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
 }
 
+func safeUtilityResponse(language model.Language, update bot.CommandUpdate) (string, bool) {
+	command, ok := parseCommand(update.Text)
+	if !ok {
+		return "", false
+	}
+	if command.id {
+		return commandIDText(language, update), true
+	}
+	if command.start || command.help {
+		return commandUnboundHelpText(language), true
+	}
+	return "", false
+}
+
 func (s *Service) markRuntimePoll(ctx context.Context, username string, hasUpdates bool) {
 	if s.store == nil || s.store.BotRuntime == nil {
 		return
@@ -301,6 +333,30 @@ func (s *Service) markRuntimeError(ctx context.Context, username string, err err
 	_ = s.store.BotRuntime.MarkError(ctx, username, err)
 }
 
+func (s *Service) recordTargetChatCandidate(ctx context.Context, botID int64, update bot.CommandUpdate) {
+	if s.store == nil || s.store.BotTargetChats == nil {
+		return
+	}
+	if botID == 0 || update.FromID == 0 || strings.TrimSpace(update.ChatID) == "" {
+		return
+	}
+	messageDate := time.Now()
+	if update.MessageDate > 0 {
+		messageDate = time.Unix(update.MessageDate, 0)
+	}
+	_ = s.store.BotTargetChats.Upsert(ctx, model.BotTargetChatCandidate{
+		BotID:        botID,
+		ChatID:       update.ChatID,
+		ChatType:     update.ChatType,
+		Title:        update.ChatTitle,
+		Username:     update.ChatUsername,
+		FromUserID:   update.FromID,
+		FromUsername: update.FromUsername,
+		MessageDate:  messageDate,
+		UpdateID:     update.UpdateID,
+	})
+}
+
 func responseLanguage(settings model.AppSettings, target responseTarget) model.Language {
 	if target.chatID == 0 {
 		return settings.Language
@@ -315,6 +371,9 @@ func (s *Service) responseForUpdate(ctx context.Context, language model.Language
 	text := strings.TrimSpace(update.Text)
 	if text == "" {
 		return "", false, nil
+	}
+	if command, ok := parseCommand(text); ok && command.id {
+		return commandIDText(language, update), true, nil
 	}
 	if strings.HasPrefix(text, "/") {
 		return s.responseForCommand(ctx, language, text)
@@ -342,6 +401,12 @@ func (s *Service) responseForCommand(ctx context.Context, language model.Languag
 	}
 	if command.help {
 		return commandHelpText(language), true, nil
+	}
+	if command.id {
+		if language == model.LanguageEN {
+			return "Send /id in Telegram to show the current Chat ID and your User ID.", true, nil
+		}
+		return "请在 Telegram 会话中发送 /id，以查看当前 Chat ID 和你的 User ID。", true, nil
 	}
 	if command.settings {
 		return s.commandSettingsText(ctx, language)
@@ -532,6 +597,8 @@ func parseCommand(text string) (parsedCommand, bool) {
 		return parsedCommand{start: true}, true
 	case "help":
 		return parsedCommand{help: true}, true
+	case "id":
+		return parsedCommand{id: true}, true
 	case "settings", "status":
 		return parsedCommand{settings: true}, true
 	case "confirm":
@@ -654,6 +721,7 @@ func commandHelpText(language model.Language) string {
 - /supply <keyword>: search supply facts
 - /who <keyword>: search people and their facts
 - /ask <question>: answer from knowledge-base evidence
+- /id: show the current Chat ID and your User ID
 - /update <natural language>: preview a fact maintenance update
 - /expire <fact_id>: mark a fact expired
 - /forget <fact_id>: dismiss a fact
@@ -674,6 +742,7 @@ Examples:
 - /supply <关键词>：查询供应事实
 - /who <关键词>：查询用户及相关事实
 - /ask <问题>：基于知识库证据回答问题
+- /id：查看当前 Chat ID 和你的 User ID
 - /update <自然语言说明>：预览知识事实维护
 - /expire <事实ID>：将事实标记为过期
 - /forget <事实ID>：忽略一条事实
@@ -697,6 +766,38 @@ Use /help to see commands. In groups, use explicit commands such as /ask <questi
 	return strings.TrimSpace(`TGTLDR Bot 已就绪。
 
 发送 /help 查看命令。在群里建议使用 /ask <问题> 或 /knowledge <关键词> 这类明确命令。为避免泄露本地知识库，Bot 只响应已配置的目标会话。`)
+}
+
+func commandUnboundHelpText(language model.Language) string {
+	if language == model.LanguageEN {
+		return strings.TrimSpace(`TGTLDR Bot is reachable, but this chat is not bound for knowledge queries yet.
+
+Use /id to show this chat's Chat ID and your User ID, then add the Chat ID in TGTLDR's Bot page. Knowledge commands only work in configured target chats.`)
+	}
+	return strings.TrimSpace(`TGTLDR Bot 可以收到这条消息，但当前会话还没有绑定为知识查询目标。
+
+发送 /id 查看当前 Chat ID 和你的 User ID，然后到 TGTLDR 的 Bot 页面填写 Chat ID。知识库查询命令只会在已配置的目标会话中生效。`)
+}
+
+func commandIDText(language model.Language, update bot.CommandUpdate) string {
+	chatID := strings.TrimSpace(update.ChatID)
+	if chatID == "" {
+		chatID = "unknown"
+	}
+	userID := "unknown"
+	if update.FromID != 0 {
+		userID = strconv.FormatInt(update.FromID, 10)
+	}
+	username := strings.TrimSpace(update.FromUsername)
+	if username == "" {
+		username = "-"
+	} else if !strings.HasPrefix(username, "@") {
+		username = "@" + username
+	}
+	if language == model.LanguageEN {
+		return fmt.Sprintf("Current Chat ID: %s\nYour User ID: %s\nUsername: %s", chatID, userID, username)
+	}
+	return fmt.Sprintf("当前 Chat ID：%s\n你的 User ID：%s\n用户名：%s", chatID, userID, username)
 }
 
 func (s *Service) commandSettingsText(ctx context.Context, language model.Language) (string, bool, error) {

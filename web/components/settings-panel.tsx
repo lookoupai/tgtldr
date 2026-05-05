@@ -8,14 +8,8 @@ import { SearchSelect } from "@/components/search-select";
 import {
   AppSettings,
   Bootstrap,
-  BotStatus,
-  BotTargetChatCandidate,
   PendingAuth,
 } from "@/lib/types";
-import {
-  describeBotChatCandidate,
-  hasAvailableBotToken,
-} from "@/lib/bot-target-chat";
 import { notifyBootstrapRefresh } from "@/lib/bootstrap-sync";
 import { DashboardPage, Surface } from "@/components/dashboard-page";
 import { useToast } from "@/components/toast";
@@ -25,7 +19,6 @@ import { normalizeLanguage, useI18n } from "@/lib/i18n";
 import { SummaryLanguageControl } from "@/components/summary-language-control";
 
 type SecretPlaceholders = {
-  botToken: string;
   openAIApiKey: string;
   telegramApiHash: string;
 };
@@ -40,7 +33,6 @@ export function SettingsPanel() {
   const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null);
   const [secretPlaceholders, setSecretPlaceholders] =
     useState<SecretPlaceholders>({
-      botToken: "",
       openAIApiKey: "",
       telegramApiHash: "",
     });
@@ -55,14 +47,6 @@ export function SettingsPanel() {
   const [authEditorOpen, setAuthEditorOpen] = useState(false);
   const [authRetryUntil, setAuthRetryUntil] = useState<number | null>(null);
   const [authRetryNow, setAuthRetryNow] = useState(Date.now());
-  const [botTargetChatCandidates, setBotTargetChatCandidates] = useState<
-    BotTargetChatCandidate[]
-  >([]);
-  const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
-  const [loadingBotStatus, setLoadingBotStatus] = useState(false);
-  const [syncingBotCommands, setSyncingBotCommands] = useState(false);
-  const [resolvingBotTargetChat, setResolvingBotTargetChat] = useState(false);
-  const [savingBotTargetChat, setSavingBotTargetChat] = useState(false);
   const toast = useToast();
   const timezoneOptions = useMemo(() => listTimezoneOptions(), []);
 
@@ -80,13 +64,11 @@ export function SettingsPanel() {
 
   async function load() {
     try {
-      const [settingsData, bootstrapData, botStatusData] = await Promise.all([
+      const [settingsData, bootstrapData] = await Promise.all([
         api.settings(),
         api.bootstrap(),
-        api.botStatus().catch(() => null),
       ]);
       setSecretPlaceholders({
-        botToken: settingsData.botToken || "",
         openAIApiKey: settingsData.openAIApiKey || "",
         telegramApiHash: settingsData.telegramApiHash || "",
       });
@@ -102,41 +84,12 @@ export function SettingsPanel() {
       });
       setLanguage(normalizeLanguage(settingsData.language));
       setBootstrap(bootstrapData);
-      setBotStatus(botStatusData);
       setPendingAuth(bootstrapData.pendingAuth ?? null);
       if (!bootstrapData.pendingAuth && bootstrapData.telegramAuthorized) {
         setAuthEditorOpen(false);
       }
     } catch (err) {
       toast.showError(asMessage(err));
-    }
-  }
-
-  async function refreshBotStatus(showToast = false) {
-    setLoadingBotStatus(true);
-    try {
-      const status = await api.botStatus();
-      setBotStatus(status);
-      if (showToast) {
-        toast.showSuccess("Bot 状态已刷新。");
-      }
-    } catch (err) {
-      toast.showError(asMessage(err));
-    } finally {
-      setLoadingBotStatus(false);
-    }
-  }
-
-  async function syncBotCommands() {
-    setSyncingBotCommands(true);
-    try {
-      const status = await api.syncBotCommands();
-      setBotStatus(status);
-      toast.showSuccess("Bot 命令菜单已同步。");
-    } catch (err) {
-      toast.showError(asMessage(err));
-    } finally {
-      setSyncingBotCommands(false);
     }
   }
 
@@ -275,94 +228,6 @@ export function SettingsPanel() {
       toast.showSuccess("已同步，但当前没有发现可管理的群组。");
     } catch (err) {
       handleAuthError(err);
-    }
-  }
-
-  async function resolveBotTargetChat() {
-    if (!settings) {
-      return;
-    }
-
-    const currentSettings = settings;
-    if (!bootstrap?.telegramAuthorized) {
-      toast.showError("自动获取前请先完成 Telegram 登录。");
-      return;
-    }
-    if (
-      !hasAvailableBotToken(
-        currentSettings.botToken,
-        secretPlaceholders.botToken,
-      )
-    ) {
-      toast.showError("请先填写 Bot Token。");
-      return;
-    }
-
-    setResolvingBotTargetChat(true);
-    try {
-      const result = await api.resolveBotTargetChat(currentSettings.botToken);
-      setBotTargetChatCandidates(result.candidates);
-      if (result.candidates.length === 0) {
-        toast.showError("未找到最近消息，请先给 Bot 发一条消息后再重试。");
-        return;
-      }
-      if (result.candidates.length === 1) {
-        const [candidate] = result.candidates;
-        await saveResolvedBotTargetChat(candidate.chatId);
-        return;
-      }
-      toast.showSuccess("找到了多个可能的会话，请选择一个。");
-    } catch (err) {
-      toast.showError(asMessage(err));
-    } finally {
-      setResolvingBotTargetChat(false);
-    }
-  }
-
-  async function selectBotTargetChat(candidate: BotTargetChatCandidate) {
-    await saveResolvedBotTargetChat(candidate.chatId);
-  }
-
-  async function saveResolvedBotTargetChat(chatId: string) {
-    if (!settings) {
-      return false;
-    }
-
-    setSavingBotTargetChat(true);
-    try {
-      const persistedSettings = await api.settings();
-      const nextSettings = {
-        ...persistedSettings,
-        botEnabled: settings.botEnabled,
-        botTargetChatId: chatId,
-        botToken: settings.botToken?.trim() || persistedSettings.botToken || "",
-      };
-      const saved = await api.saveSettings(nextSettings);
-      setSettings((current) => {
-        if (!current) {
-          return current;
-        }
-        return {
-          ...current,
-          botEnabled: saved.botEnabled,
-          botTargetChatId: saved.botTargetChatId,
-          botToken: "",
-        };
-      });
-      setSecretPlaceholders((current) => ({
-        ...current,
-        botToken: saved.botToken || current.botToken,
-      }));
-      setBotTargetChatCandidates([]);
-      notifyBootstrapRefresh();
-      await refreshBotStatus(false);
-      toast.showSuccess("已自动绑定并保存 Chat ID。");
-      return true;
-    } catch (err) {
-      toast.showError(asMessage(err));
-      return false;
-    } finally {
-      setSavingBotTargetChat(false);
     }
   }
 
@@ -701,198 +566,39 @@ export function SettingsPanel() {
           </Surface>
 
           <Surface
-            title="Telegram Bot 推送"
-            description="如果你只在网页端看摘要，这一块可以保持关闭。"
+            title="Telegram Bot"
+            description="Bot 推送、命令菜单、默认目标会话和运行状态已经拆到独立页面。"
           >
-            <div className="form-grid">
-              <Field label="投递方式">
-                <AppSelect
-                  onChange={(value) =>
-                    setSettings({ ...settings, botEnabled: value === "yes" })
-                  }
-                  options={[
-                    { value: "no", label: "仅网页端查看" },
-                    { value: "yes", label: "通过 Telegram Bot 推送" },
-                  ]}
-                  value={settings.botEnabled ? "yes" : "no"}
-                />
-              </Field>
-              <Field
-                label="Bot Token"
-                hint="已保存时会显示掩码。留空表示保持现有值。"
-              >
-                <Input
-                  placeholder={secretPlaceholder(secretPlaceholders.botToken)}
-                  type="password"
-                  value={settings.botToken || ""}
-                  onChange={(event) => {
-                    setBotTargetChatCandidates([]);
-                    setSettings({ ...settings, botToken: event.target.value });
-                  }}
-                />
-              </Field>
-              <Field
-                as="div"
-                label="目标 Chat ID"
-                hint="先给 Bot 发消息，再点击“获取 Chat ID”自动绑定并保存。"
-              >
-                <div className="bot-target-chat-field">
-                  <p className="muted">
-                    1. 先在目标私聊或群聊里给 Bot 发一条消息。
-                    <br />
-                    2. 回到这里点击“获取 Chat ID”。
-                  </p>
-                  {!bootstrap?.telegramAuthorized ? (
-                    <p className="field-hint">
-                      自动获取前需要先完成上面的 Telegram 登录。
-                    </p>
-                  ) : null}
-                  <div className="button-row">
-                    <Button
-                      disabled={
-                        resolvingBotTargetChat ||
-                        savingBotTargetChat ||
-                        !bootstrap?.telegramAuthorized ||
-                        !hasAvailableBotToken(
-                          settings.botToken,
-                          secretPlaceholders.botToken,
-                        )
-                      }
-                      onClick={() => void resolveBotTargetChat()}
-                      type="button"
-                      variant="secondary"
-                    >
-                      {resolvingBotTargetChat
-                        ? "正在获取..."
-                        : savingBotTargetChat
-                          ? "正在保存..."
-                          : "获取 Chat ID"}
-                    </Button>
-                  </div>
-                  {botTargetChatCandidates.length > 1 ? (
-                    <div className="bot-chat-candidates">
-                      {botTargetChatCandidates.map((candidate) => (
-                        <Button
-                          className="bot-chat-candidate"
-                          key={candidate.chatId}
-                          disabled={savingBotTargetChat}
-                          onClick={() => void selectBotTargetChat(candidate)}
-                          type="button"
-                          variant={
-                            settings.botTargetChatId === candidate.chatId
-                              ? "primary"
-                              : "secondary"
-                          }
-                        >
-                          {describeBotChatCandidate(candidate)}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div
-                    aria-live="polite"
-                    className={`bot-target-chat-value ${settings.botTargetChatId ? "" : "empty"}`}
-                  >
-                    {settings.botTargetChatId
-                      ? `当前已绑定：${settings.botTargetChatId}`
-                      : "尚未绑定 Chat ID"}
-                  </div>
-                  <span className="field-hint">
-                    获取成功后会自动保存并立即显示在这里。
-                  </span>
+            <div className="settings-account-stack">
+              <div className="settings-overview-grid">
+                <div className="settings-overview-item">
+                  <span>当前状态</span>
+                  <strong>{settings.botEnabled ? "已启用" : "未启用"}</strong>
                 </div>
-              </Field>
-              <div className="bot-status-panel">
-                <div className="bot-status-header">
-                  <div>
-                    <span className="field-label">Bot 状态</span>
-                    <p className="field-hint">
-                      状态基于已保存的 Bot 配置，修改 Token 后请先保存。
-                    </p>
-                  </div>
-                  <StatusPill tone={botStatusTone(botStatus, settings)}>
-                    {botStatusLabel(botStatus, settings)}
-                  </StatusPill>
-                </div>
-                <div className="bot-status-grid">
-                  <BotStatusItem
-                    label="Token"
-                    value={
-                      botStatus?.tokenConfigured ? "已配置" : "尚未配置"
-                    }
-                  />
-                  <BotStatusItem
-                    label="Bot"
-                    value={
-                      botStatus?.username
-                        ? `@${botStatus.username}`
-                        : botStatus?.botId
-                          ? String(botStatus.botId)
-                          : "未验证"
-                    }
-                  />
-                  <BotStatusItem
-                    label="命令菜单"
-                    value={
-                      botStatus?.commandsSynced
-                        ? "已同步"
-                        : botStatus?.tokenConfigured
-                          ? "未同步"
-                          : "等待 Token"
-                    }
-                  />
-                  <BotStatusItem
-                    label="目标会话"
-                    value={botStatus?.targetChatId || "未绑定"}
-                  />
-                  <BotStatusItem
-                    label="最近轮询"
-                    value={formatBotRuntimeTime(botStatus?.lastPollAt)}
-                  />
-                  <BotStatusItem
-                    label="最近响应"
-                    value={formatBotRuntimeTime(botStatus?.lastHandledAt)}
-                  />
-                </div>
-                {botStatus?.error || botStatus?.lastError ? (
-                  <p className="field-hint bot-status-error">
-                    {botStatus.error || botStatus.lastError}
-                  </p>
-                ) : null}
-                <div className="button-row">
-                  <Button
-                    disabled={loadingBotStatus}
-                    onClick={() => void refreshBotStatus(true)}
-                    type="button"
-                    variant="secondary"
-                  >
-                    {loadingBotStatus ? "正在刷新..." : "刷新状态"}
-                  </Button>
-                  <Button
-                    disabled={
-                      syncingBotCommands ||
-                      !botStatus?.enabled ||
-                      !botStatus.tokenConfigured
-                    }
-                    onClick={() => void syncBotCommands()}
-                    type="button"
-                    variant="secondary"
-                  >
-                    {syncingBotCommands ? "正在同步..." : "同步命令菜单"}
-                  </Button>
+                <div className="settings-overview-item">
+                  <span>默认目标</span>
+                  <strong>{settings.botTargetChatId || "未绑定"}</strong>
                 </div>
               </div>
+              <div className="button-row">
+                <Button
+                  onClick={() => {
+                    window.location.href = "/dashboard/bot";
+                  }}
+                  type="button"
+                  variant="secondary"
+                >
+                  打开 Bot 页面
+                </Button>
+              </div>
             </div>
-            <p className="muted">
-              如果你只想在网页端查看摘要，可以把 Bot 推送保持关闭。
-            </p>
           </Surface>
         </div>
       </div>
 
       <div className="page-savebar">
         <p className="muted">
-          获取 Chat ID 会自动保存；其它系统配置修改仍需在这里统一保存。
+          Bot 配置已迁移到独立页面；这里保存 Telegram App、摘要引擎和偏好设置。
         </p>
         <Button onClick={() => startTransition(() => void save(true))}>
           保存系统配置
@@ -1099,61 +805,6 @@ function authRetryLabel(retryUntil: number | null, now: number) {
   const retryAt = retryUntil ?? now;
   const seconds = Math.ceil((retryAt - now) / 1000);
   return `Telegram 暂时限制了请求，请在 ${seconds} 秒后重试。`;
-}
-
-function BotStatusItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bot-status-item">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function formatBotRuntimeTime(value?: string | null) {
-  if (!value) {
-    return "暂无";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "暂无";
-  }
-  return date.toLocaleString();
-}
-
-function botStatusTone(
-  status: BotStatus | null,
-  settings: AppSettings,
-): "neutral" | "good" | "warn" | "bad" {
-  if (!settings.botEnabled) {
-    return "neutral";
-  }
-  if (!status || !status.tokenConfigured || !status.targetChatId) {
-    return "warn";
-  }
-  if (status.error || status.lastError) {
-    return "bad";
-  }
-  return status.commandsSynced ? "good" : "warn";
-}
-
-function botStatusLabel(status: BotStatus | null, settings: AppSettings) {
-  if (!settings.botEnabled) {
-    return "未启用";
-  }
-  if (!status) {
-    return "未检查";
-  }
-  if (!status.tokenConfigured) {
-    return "缺少 Token";
-  }
-  if (status.error || status.lastError) {
-    return "验证失败";
-  }
-  if (!status.targetChatId) {
-    return "未绑定";
-  }
-  return status.commandsSynced ? "就绪" : "待同步";
 }
 
 function fullPhone(countryCode: string, phoneNumber: string) {

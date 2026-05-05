@@ -373,7 +373,7 @@ func (r *Router) handleResolveBotTargetChat(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	candidates, err := r.bot.ResolveTargetChats(req.Context(), botToken, auth.TelegramUserID)
+	self, err := r.bot.GetMe(req.Context(), botToken)
 	if err != nil {
 		status := http.StatusBadGateway
 		var botErr *bot.APIError
@@ -384,9 +384,59 @@ func (r *Router) handleResolveBotTargetChat(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	candidates := make([]bot.TargetChatCandidate, 0)
+	if r.store.BotTargetChats != nil {
+		stored, err := r.store.BotTargetChats.ListByBotAndFromUser(req.Context(), self.ID, auth.TelegramUserID, 20)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		candidates = modelBotTargetCandidates(stored)
+	}
+
+	liveCandidates, err := r.bot.ResolveTargetChats(req.Context(), botToken, auth.TelegramUserID)
+	if err != nil && len(candidates) == 0 {
+		status := http.StatusBadGateway
+		var botErr *bot.APIError
+		if errors.As(err, &botErr) && botErr.StatusCode >= 400 && botErr.StatusCode < 500 {
+			status = http.StatusBadRequest
+		}
+		httpx.Error(w, status, err.Error())
+		return
+	}
+	candidates = mergeBotTargetChatCandidates(candidates, liveCandidates)
+
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"candidates": candidates,
 	})
+}
+
+func modelBotTargetCandidates(items []model.BotTargetChatCandidate) []bot.TargetChatCandidate {
+	out := make([]bot.TargetChatCandidate, 0, len(items))
+	for _, item := range items {
+		out = append(out, bot.TargetChatCandidate{
+			ChatID:   strings.TrimSpace(item.ChatID),
+			ChatType: strings.TrimSpace(item.ChatType),
+			Title:    strings.TrimSpace(item.Title),
+			Username: strings.TrimSpace(item.Username),
+		})
+	}
+	return out
+}
+
+func mergeBotTargetChatCandidates(primary []bot.TargetChatCandidate, secondary []bot.TargetChatCandidate) []bot.TargetChatCandidate {
+	out := make([]bot.TargetChatCandidate, 0, len(primary)+len(secondary))
+	seen := make(map[string]bool)
+	for _, candidate := range append(primary, secondary...) {
+		chatID := strings.TrimSpace(candidate.ChatID)
+		if chatID == "" || seen[chatID] {
+			continue
+		}
+		seen[chatID] = true
+		candidate.ChatID = chatID
+		out = append(out, candidate)
+	}
+	return out
 }
 
 func (r *Router) handleBotStatus(w http.ResponseWriter, req *http.Request) {

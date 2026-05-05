@@ -385,6 +385,27 @@ select {
   color: var(--danger);
 }
 
+.bot-chat-settings-list {
+  display: grid;
+  gap: 14px;
+}
+
+.bot-chat-settings-item {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.bot-chat-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .button {
   appearance: none;
   border: 1px solid transparent;
