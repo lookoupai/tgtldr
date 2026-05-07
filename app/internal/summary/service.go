@@ -356,23 +356,3 @@ func normalizeFilterToken(value string) string {
 	}
 	return strings.ToLower(trimmed)
 }
-
-func uniqueInts(values []int) []int {
-	if len(values) == 0 {
-		return nil
-	}
-
-	seen := make(map[int]struct{}, len(values))
-	out := make([]int, 0, len(values))
-	for _, value := range values {
-		if value == 0 {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
-}

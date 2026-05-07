@@ -189,7 +189,6 @@ export function ChannelsPanel() {
                 <ChannelEditor
                   channel={editingChannel}
                   chats={summaryEnabledChats}
-                  settings={settings}
                   onPatch={(patch) => patchChannel(editingChannel.id, patch)}
                   onSave={() => void saveChannel(editingChannel)}
                   onDelete={() => void deleteChannel(editingChannel.id)}
@@ -206,14 +205,12 @@ export function ChannelsPanel() {
 function ChannelEditor({
   channel,
   chats,
-  settings,
   onPatch,
   onSave,
   onDelete,
 }: {
   channel: DeliveryChannel;
   chats: Chat[];
-  settings: AppSettings | null;
   onPatch: (patch: Partial<DeliveryChannel>) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -228,7 +225,7 @@ function ChannelEditor({
           <Button onClick={onSave} type="button">
             保存
           </Button>
-          <Button onClick={onDelete} tone="destructive" type="button">
+          <Button onClick={onDelete} variant="destructive" type="button">
             删除
           </Button>
         </div>
@@ -297,7 +294,6 @@ function ChannelEditor({
         <Field label="输出语言">
           <SummaryLanguageControl
             value={channel.targetLanguage as SummaryOutputLanguage}
-            defaultLanguage={settings?.summaryOutputLanguage as SummaryOutputLanguage}
             onChange={(value) => onPatch({ targetLanguage: value })}
           />
         </Field>

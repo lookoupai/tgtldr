@@ -51,6 +51,7 @@ func run() error {
 	sysClock := clock.System{}
 	botService := bot.New()
 	summaryService := summary.NewService(st, sysClock, cfg.OpenAITimeout)
+	summaryAggregator := summary.NewAggregator(st, sysClock, cfg.OpenAITimeout)
 	knowledgeService := knowledge.NewService(st, sysClock, cfg.OpenAITimeout)
 	if _, _, err := knowledgeService.EnsureDefaultGeneralSpace(ctx); err != nil {
 		return fmt.Errorf("ensure default knowledge space: %w", err)
@@ -62,7 +63,7 @@ func run() error {
 		}
 	}
 	telegramService := telegramsvc.NewService(ctx, st, sysClock)
-	schedulerService := scheduler.NewService(st, sysClock, summaryService, botService, knowledgeService)
+	schedulerService := scheduler.NewService(st, sysClock, summaryService, botService, knowledgeService, summaryAggregator)
 	telegramService.SetHistoryBackfillCompletionHook(func(chat model.Chat, fromDate, toDate string) {
 		_ = schedulerService.RepairEmptySummariesInRange(context.Background(), chat, fromDate, toDate)
 	})

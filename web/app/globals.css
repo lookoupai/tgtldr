@@ -487,6 +487,12 @@ select {
   border: 1px solid var(--line);
 }
 
+.button.destructive {
+  background: var(--danger);
+  color: white;
+  box-shadow: 0 14px 30px rgba(180, 35, 24, 0.16);
+}
+
 .button.ghost {
   background: transparent;
   border-color: var(--line);

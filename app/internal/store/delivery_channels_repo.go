@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/frederic/tgtldr/app/internal/model"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -180,18 +179,4 @@ func scanDeliveryChannel(scanner deliveryChannelScanner) (model.DeliveryChannel,
 	channel.SourceChatIDs = compactInt64s(channel.SourceChatIDs)
 	channel.ContentFilterTypes = compactStrings(channel.ContentFilterTypes)
 	return channel, nil
-}
-
-func compactInt64s(values []int64) []int64 {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]int64, 0, len(values))
-	for _, value := range values {
-		if value == 0 {
-			continue
-		}
-		out = append(out, value)
-	}
-	return out
 }

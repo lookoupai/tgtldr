@@ -170,8 +170,7 @@ func (r *Router) handleRunChannelSummary(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	channel, err := r.store.DeliveryChannels.GetByID(req.Context(), id)
-	if err != nil {
+	if _, err := r.store.DeliveryChannels.GetByID(req.Context(), id); err != nil {
 		httpx.Error(w, http.StatusNotFound, err.Error())
 		return
 	}

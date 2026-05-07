@@ -81,7 +81,7 @@ export function Button({
   ...props
 }: PropsWithChildren<
   ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: "primary" | "secondary" | "ghost" | "link";
+    variant?: "primary" | "secondary" | "ghost" | "link" | "destructive";
   }
 >) {
   return (
