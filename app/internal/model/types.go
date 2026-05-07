@@ -432,6 +432,30 @@ type AuthSessionState struct {
 	Deadline    time.Time `json:"deadline"`
 }
 
+type DeliveryChannel struct {
+	ID                 int64                `json:"id"`
+	Name               string               `json:"name"`
+	Enabled            bool                 `json:"enabled"`
+	SourceChatIDs      []int64              `json:"sourceChatIds"`
+	TargetChatID       string               `json:"targetChatId"`
+	TargetLanguage     SummaryOutputLanguage `json:"targetLanguage"`
+	ContentFilter      string               `json:"contentFilter"`
+	ContentFilterTypes []string             `json:"contentFilterTypes"`
+	SummaryTimeLocal   string               `json:"summaryTimeLocal"`
+	SummaryTimezone    string               `json:"summaryTimezone"`
+	SummaryPrompt      string               `json:"summaryPrompt"`
+	CreatedAt          time.Time            `json:"createdAt"`
+	UpdatedAt          time.Time            `json:"updatedAt"`
+}
+
+type DeliveryChannelSummary struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Enabled     bool   `json:"enabled"`
+	SourceCount int    `json:"sourceCount"`
+	TargetChatID string `json:"targetChatId"`
+}
+
 func redactSecret(secret string) string {
 	if len(secret) <= 4 {
 		return ""

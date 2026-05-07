@@ -5,6 +5,7 @@ import {
   BotStatus,
   BotTargetChatResolveResult,
   Chat,
+  DeliveryChannel,
   HistoryBackfillTask,
   KnowledgeFact,
   KnowledgeFactSources,
@@ -386,5 +387,26 @@ export const api = {
     request("/api/summaries/run", {
       method: "POST",
       body: JSON.stringify({ chatId, date }),
+    }),
+  listDeliveryChannels: async () =>
+    normalizeList(await request<DeliveryChannel[] | null>("/api/channels")),
+  createDeliveryChannel: (payload: DeliveryChannel) =>
+    request<DeliveryChannel>("/api/channels/create", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  saveDeliveryChannel: (payload: DeliveryChannel) =>
+    request<DeliveryChannel>(`/api/channels/${payload.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteDeliveryChannel: (id: number) =>
+    request(`/api/channels/${id}`, {
+      method: "DELETE",
+    }),
+  runChannelSummary: (channelId: number, date: string) =>
+    request(`/api/channels/${channelId}/run`, {
+      method: "POST",
+      body: JSON.stringify({ date }),
     }),
 };

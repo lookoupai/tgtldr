@@ -25,6 +25,7 @@ type Store struct {
 	KnowledgeMaintenanceEvents *KnowledgeMaintenanceEventRepository
 	BotRuntime                 *BotRuntimeRepository
 	BotTargetChats             *BotTargetChatRepository
+	DeliveryChannels           *DeliveryChannelRepository
 }
 
 func Open(ctx context.Context, cfg config.Config) (*Store, error) {
@@ -58,6 +59,7 @@ func Open(ctx context.Context, cfg config.Config) (*Store, error) {
 		KnowledgeMaintenanceEvents: &KnowledgeMaintenanceEventRepository{pool: pool},
 		BotRuntime:                 &BotRuntimeRepository{pool: pool},
 		BotTargetChats:             &BotTargetChatRepository{pool: pool},
+		DeliveryChannels:           &DeliveryChannelRepository{pool: pool},
 	}
 	return st, nil
 }

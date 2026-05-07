@@ -335,3 +335,19 @@ export type KnowledgeMaintenanceEvent = {
   nextStatus: KnowledgeFact["status"] | "";
   createdAt: string;
 };
+
+export type DeliveryChannel = {
+  id: number;
+  name: string;
+  enabled: boolean;
+  sourceChatIds: number[];
+  targetChatId: string;
+  targetLanguage: SummaryOutputLanguage;
+  contentFilter: string;
+  contentFilterTypes: string[];
+  summaryTimeLocal: string;
+  summaryTimezone: string;
+  summaryPrompt: string;
+  createdAt: string;
+  updatedAt: string;
+};

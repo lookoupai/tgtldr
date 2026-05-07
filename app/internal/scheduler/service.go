@@ -21,12 +21,17 @@ type knowledgeExtractor interface {
 	RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error)
 }
 
+type aggregator interface {
+	RunAggregatedSummary(ctx context.Context, channel model.DeliveryChannel, date string) (summary.AggregatedSummaryResult, error)
+}
+
 type Service struct {
 	store              *store.Store
 	clock              clock.Clock
 	summaries          *summary.Service
 	botService         *bot.Service
 	knowledgeExtractor knowledgeExtractor
+	aggregator         aggregator
 	mu                 sync.Mutex
 	inflight           map[string]struct{}
 }
@@ -39,13 +44,14 @@ const (
 	scheduledActionDeliver
 )
 
-func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botService *bot.Service, extractor knowledgeExtractor) *Service {
+func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botService *bot.Service, extractor knowledgeExtractor, agg aggregator) *Service {
 	return &Service{
 		store:              st,
 		clock:              c,
 		summaries:          summaries,
 		botService:         botService,
 		knowledgeExtractor: extractor,
+		aggregator:         agg,
 		inflight:           make(map[string]struct{}),
 	}
 }
@@ -241,7 +247,117 @@ func (s *Service) runOnce(ctx context.Context) error {
 			}
 		})
 	}
-	return group.Wait()
+
+	if err := group.Wait(); err != nil {
+		return err
+	}
+
+	return s.runChannelDeliveryOnce(ctx, settings)
+}
+
+func (s *Service) runChannelDeliveryOnce(ctx context.Context, settings model.AppSettings) error {
+	if s.aggregator == nil {
+		return nil
+	}
+
+	channels, err := s.store.DeliveryChannels.ListEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	if len(channels) == 0 {
+		return nil
+	}
+
+	for _, channel := range channels {
+		timezone := resolveChannelTimezone(channel, settings.DefaultTimezone)
+		if !isChannelDue(s.clock.Now(), channel, timezone) {
+			continue
+		}
+
+		date := targetDate(s.clock.Now(), timezone)
+		key := channelTaskKey(channel.ID, date)
+		if !s.beginTask(key) {
+			continue
+		}
+
+		go func(ch model.DeliveryChannel, d string, k string) {
+			defer s.finishTask(k)
+			runCtx := context.Background()
+			if err := s.executeChannelSummary(runCtx, ch, d); err != nil {
+				fmt.Printf("channel %d summary failed: %v\n", ch.ID, err)
+			}
+		}(channel, date, key)
+	}
+	return nil
+}
+
+func (s *Service) executeChannelSummary(ctx context.Context, channel model.DeliveryChannel, date string) error {
+	result, err := s.aggregator.RunAggregatedSummary(ctx, channel, date)
+	if err != nil {
+		return err
+	}
+	if result.Status != model.SummaryStatusSucceeded {
+		return fmt.Errorf("aggregated summary failed: %s", result.ErrorMessage)
+	}
+
+	if strings.TrimSpace(channel.TargetChatID) == "" {
+		return nil
+	}
+
+	settings, err := s.store.Settings.Get(ctx)
+	if err != nil {
+		return err
+	}
+	if !settings.BotEnabled || strings.TrimSpace(settings.BotToken) == "" {
+		return fmt.Errorf("bot is not enabled or token is not configured")
+	}
+
+	message := buildChannelDeliveryMessage(channel, result, date)
+	return s.botService.SendMessageWithSummaryLanguage(ctx, settings.BotToken, channel.TargetChatID, message, channel.TargetLanguage)
+}
+
+func isChannelDue(now time.Time, channel model.DeliveryChannel, timezone string) bool {
+	location, err := loadSummaryLocation(timezone)
+	if err != nil {
+		return false
+	}
+	localNow := now.In(location)
+	scheduled, err := time.ParseInLocation("15:04", channel.SummaryTimeLocal, location)
+	if err != nil {
+		return false
+	}
+
+	scheduledTime := time.Date(
+		localNow.Year(),
+		localNow.Month(),
+		localNow.Day(),
+		scheduled.Hour(),
+		scheduled.Minute(),
+		0,
+		0,
+		location,
+	)
+	return !localNow.Before(scheduledTime)
+}
+
+func resolveChannelTimezone(channel model.DeliveryChannel, fallback string) string {
+	if timezone := strings.TrimSpace(channel.SummaryTimezone); timezone != "" {
+		return timezone
+	}
+	return fallback
+}
+
+func channelTaskKey(channelID int64, date string) string {
+	return fmt.Sprintf("channel:%d:%s", channelID, date)
+}
+
+func buildChannelDeliveryMessage(channel model.DeliveryChannel, result summary.AggregatedSummaryResult, date string) string {
+	header := fmt.Sprintf("**%s · %s**", channel.Name, date)
+	content := strings.TrimSpace(result.Content)
+	if content == "" {
+		return header
+	}
+	return header + "\n\n" + content
 }
 
 func (s *Service) deliverExistingSummary(ctx context.Context, chat model.Chat, result model.Summary) {

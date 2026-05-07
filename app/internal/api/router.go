@@ -89,6 +89,9 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/summaries/", r.handleSummaryByID)
 	mux.HandleFunc("/api/summaries/context-preview", r.handleSummaryContextPreview)
 	mux.HandleFunc("/api/summaries/run", r.handleRunSummary)
+	mux.HandleFunc("/api/channels", r.handleDeliveryChannels)
+	mux.HandleFunc("/api/channels/create", r.handleCreateDeliveryChannel)
+	mux.HandleFunc("/api/channels/", r.handleDeliveryChannelByID)
 
 	return r.withMiddleware(mux)
 }
