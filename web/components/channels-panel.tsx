@@ -53,17 +53,31 @@ export function ChannelsPanel() {
   }
 
   async function saveChannel(channel: DeliveryChannel) {
+    const validationError = validateChannel(channel);
+    if (validationError) {
+      toast.showError(validationError);
+      return;
+    }
+
+    const payload = normalizeChannel(channel);
+    const creating = channel.id <= 0;
     try {
-      await api.saveDeliveryChannel(channel);
-      toast.showSuccess(`已保存「${channel.name}」的配置。`);
+      const saved = creating
+        ? await api.createDeliveryChannel(payload)
+        : await api.saveDeliveryChannel(payload);
+      toast.showSuccess(
+        creating ? `已创建通道「${saved.name}」。` : `已保存「${saved.name}」的配置。`
+      );
       await load();
+      setEditingId(saved.id);
     } catch (err) {
       toast.showError(asMessage(err));
     }
   }
 
-  async function createChannel() {
-    const newChannel: Partial<DeliveryChannel> = {
+  function createChannel() {
+    const draft: DeliveryChannel = {
+      id: nextDraftChannelID(items),
       name: "新通道",
       enabled: true,
       sourceChatIds: [],
@@ -74,18 +88,22 @@ export function ChannelsPanel() {
       summaryTimeLocal: "09:00",
       summaryTimezone: settings?.defaultTimezone || "Asia/Shanghai",
       summaryPrompt: "",
+      createdAt: "",
+      updatedAt: "",
     };
-    try {
-      const saved = await api.createDeliveryChannel(newChannel as DeliveryChannel);
-      toast.showSuccess(`已创建通道「${saved.name}」。`);
-      await load();
-      setEditingId(saved.id);
-    } catch (err) {
-      toast.showError(asMessage(err));
-    }
+    setQuery("");
+    setItems((current) => [draft, ...current]);
+    setEditingId(draft.id);
   }
 
   async function deleteChannel(id: number) {
+    if (id <= 0) {
+      setItems((current) => current.filter((item) => item.id !== id));
+      setEditingId((current) => (current === id ? null : current));
+      toast.showSuccess("未保存的通道草稿已移除。");
+      return;
+    }
+
     try {
       await api.deleteDeliveryChannel(id);
       toast.showSuccess("通道已删除。");
@@ -111,7 +129,9 @@ export function ChannelsPanel() {
   const enabledCount = savedItems.filter((ch) => ch.enabled).length;
 
   const editingChannel = editingId ? items.find((ch) => ch.id === editingId) : null;
-  const summaryEnabledChats = chats.filter((ch) => ch.summaryEnabled);
+  const sourceChats = chats.filter(
+    (ch) => ch.enabled || Boolean(editingChannel?.sourceChatIds.includes(ch.id))
+  );
 
   return (
     <DashboardPage
@@ -142,7 +162,7 @@ export function ChannelsPanel() {
               placeholder="搜索通道..."
               value={query}
             />
-            <Button onClick={() => startTransition(() => void createChannel())} type="button">
+            <Button onClick={() => startTransition(() => createChannel())} type="button">
               新建通道
             </Button>
           </div>
@@ -188,7 +208,7 @@ export function ChannelsPanel() {
               {editingChannel ? (
                 <ChannelEditor
                   channel={editingChannel}
-                  chats={summaryEnabledChats}
+                  chats={sourceChats}
                   onPatch={(patch) => patchChannel(editingChannel.id, patch)}
                   onSave={() => void saveChannel(editingChannel)}
                   onDelete={() => void deleteChannel(editingChannel.id)}
@@ -252,28 +272,32 @@ function ChannelEditor({
 
         <Field
           label="源群组"
-          hint="选择要监听的群组，这些群组的消息将被聚合生成摘要。"
+          hint="选择要监听的群组，这些群组的消息将被聚合生成摘要。候选项来自群组页面中已启用“消息保存”的群组。"
           required
         >
-          <div className="multi-select">
-            {chats.map((chat) => (
-              <label key={chat.id} className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={channel.sourceChatIds.includes(chat.id)}
-                  onChange={(event) => {
-                    const currentIds = channel.sourceChatIds;
-                    if (event.target.checked) {
-                      onPatch({ sourceChatIds: [...currentIds, chat.id] });
-                    } else {
-                      onPatch({ sourceChatIds: currentIds.filter((id) => id !== chat.id) });
-                    }
-                  }}
-                />
-                {chat.title}
-              </label>
-            ))}
-          </div>
+          {chats.length === 0 ? (
+            <p className="muted">暂无可选源群组，请先到群组页面启用需要监听的“消息保存”。</p>
+          ) : (
+            <div className="multi-select">
+              {chats.map((chat) => (
+                <label key={chat.id} className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={channel.sourceChatIds.includes(chat.id)}
+                    onChange={(event) => {
+                      const currentIds = channel.sourceChatIds;
+                      if (event.target.checked) {
+                        onPatch({ sourceChatIds: [...currentIds, chat.id] });
+                      } else {
+                        onPatch({ sourceChatIds: currentIds.filter((id) => id !== chat.id) });
+                      }
+                    }}
+                  />
+                  {chat.title}
+                </label>
+              ))}
+            </div>
+          )}
           {selectedChats.length > 0 && (
             <p className="field-hint">已选择 {selectedChats.length} 个群组</p>
           )}
@@ -339,4 +363,32 @@ function asMessage(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+function validateChannel(channel: DeliveryChannel): string {
+  if (!channel.name.trim()) {
+    return "请填写通道名称。";
+  }
+  if (channel.sourceChatIds.length === 0) {
+    return "请选择至少一个源群组。";
+  }
+  if (!channel.targetChatId.trim()) {
+    return "请填写目标 Chat ID。";
+  }
+  return "";
+}
+
+function normalizeChannel(channel: DeliveryChannel): DeliveryChannel {
+  return {
+    ...channel,
+    name: channel.name.trim(),
+    targetChatId: channel.targetChatId.trim(),
+    sourceChatIds: Array.from(new Set(channel.sourceChatIds)),
+  };
+}
+
+function nextDraftChannelID(channels: DeliveryChannel[]): number {
+  const draftIDs = channels.filter((channel) => channel.id <= 0).map((channel) => channel.id);
+  const minDraftID = draftIDs.length > 0 ? Math.min(...draftIDs) : 0;
+  return minDraftID - 1;
 }
