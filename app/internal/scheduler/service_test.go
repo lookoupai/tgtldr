@@ -111,6 +111,17 @@ func TestSummaryReadyForDelivery(t *testing.T) {
 	})
 }
 
+func TestChannelRunDelivered(t *testing.T) {
+	Convey("只有成功且已经记录发送时间的投递频道任务才跳过", t, func() {
+		deliveredAt := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
+
+		So(channelRunDelivered(model.DeliveryChannelRun{}, false), ShouldBeFalse)
+		So(channelRunDelivered(model.DeliveryChannelRun{Status: model.SummaryStatusSucceeded}, true), ShouldBeFalse)
+		So(channelRunDelivered(model.DeliveryChannelRun{Status: model.SummaryStatusFailed, DeliveredAt: &deliveredAt}, true), ShouldBeFalse)
+		So(channelRunDelivered(model.DeliveryChannelRun{Status: model.SummaryStatusSucceeded, DeliveredAt: &deliveredAt}, true), ShouldBeTrue)
+	})
+}
+
 func TestResolveBotDeliveryTarget(t *testing.T) {
 	Convey("群组 Bot Chat ID 优先于全局默认目标", t, func() {
 		settings := model.AppSettings{BotTargetChatID: "global-target"}

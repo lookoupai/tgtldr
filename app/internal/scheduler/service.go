@@ -275,8 +275,25 @@ func (s *Service) runChannelDeliveryOnce(ctx context.Context, settings model.App
 		}
 
 		date := targetDate(s.clock.Now(), timezone)
+		run, found, err := s.lookupChannelRun(ctx, channel.ID, date)
+		if err != nil {
+			return err
+		}
+		if channelRunDelivered(run, found) {
+			continue
+		}
+
 		key := channelTaskKey(channel.ID, date)
 		if !s.beginTask(key) {
+			continue
+		}
+		started, err := s.store.DeliveryChannelRuns.TrySetRunning(ctx, channel.ID, date)
+		if err != nil {
+			s.finishTask(key)
+			return err
+		}
+		if !started {
+			s.finishTask(key)
 			continue
 		}
 
@@ -284,6 +301,7 @@ func (s *Service) runChannelDeliveryOnce(ctx context.Context, settings model.App
 			defer s.finishTask(k)
 			runCtx := context.Background()
 			if err := s.executeChannelSummary(runCtx, ch, d); err != nil {
+				_ = s.store.DeliveryChannelRuns.MarkFailed(context.Background(), ch.ID, d, err.Error())
 				fmt.Printf("channel %d summary failed: %v\n", ch.ID, err)
 			}
 		}(channel, date, key)
@@ -301,7 +319,7 @@ func (s *Service) executeChannelSummary(ctx context.Context, channel model.Deliv
 	}
 
 	if strings.TrimSpace(channel.TargetChatID) == "" {
-		return nil
+		return fmt.Errorf("delivery channel target is not configured")
 	}
 
 	settings, err := s.store.Settings.Get(ctx)
@@ -313,7 +331,25 @@ func (s *Service) executeChannelSummary(ctx context.Context, channel model.Deliv
 	}
 
 	message := buildChannelDeliveryMessage(channel, result, date)
-	return s.botService.SendMessageWithSummaryLanguage(ctx, settings.BotToken, channel.TargetChatID, message, channel.TargetLanguage)
+	if err := s.botService.SendMessageWithSummaryLanguage(ctx, settings.BotToken, channel.TargetChatID, message, channel.TargetLanguage); err != nil {
+		return err
+	}
+	return s.store.DeliveryChannelRuns.MarkDelivered(ctx, channel.ID, date, result.Content, result.Model, result.GeneratedAt, s.clock.Now())
+}
+
+func channelRunDelivered(run model.DeliveryChannelRun, found bool) bool {
+	return found && run.Status == model.SummaryStatusSucceeded && run.DeliveredAt != nil
+}
+
+func (s *Service) lookupChannelRun(ctx context.Context, channelID int64, date string) (model.DeliveryChannelRun, bool, error) {
+	run, err := s.store.DeliveryChannelRuns.GetByChannelAndDate(ctx, channelID, date)
+	if err == nil {
+		return run, true, nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.DeliveryChannelRun{}, false, nil
+	}
+	return model.DeliveryChannelRun{}, false, err
 }
 
 func isChannelDue(now time.Time, channel model.DeliveryChannel, timezone string) bool {

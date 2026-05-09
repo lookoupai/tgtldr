@@ -433,26 +433,41 @@ type AuthSessionState struct {
 }
 
 type DeliveryChannel struct {
-	ID                 int64                `json:"id"`
-	Name               string               `json:"name"`
-	Enabled            bool                 `json:"enabled"`
-	SourceChatIDs      []int64              `json:"sourceChatIds"`
-	TargetChatID       string               `json:"targetChatId"`
+	ID                 int64                 `json:"id"`
+	Name               string                `json:"name"`
+	Enabled            bool                  `json:"enabled"`
+	SourceChatIDs      []int64               `json:"sourceChatIds"`
+	TargetChatID       string                `json:"targetChatId"`
 	TargetLanguage     SummaryOutputLanguage `json:"targetLanguage"`
-	ContentFilter      string               `json:"contentFilter"`
-	ContentFilterTypes []string             `json:"contentFilterTypes"`
-	SummaryTimeLocal   string               `json:"summaryTimeLocal"`
-	SummaryTimezone    string               `json:"summaryTimezone"`
-	SummaryPrompt      string               `json:"summaryPrompt"`
-	CreatedAt          time.Time            `json:"createdAt"`
-	UpdatedAt          time.Time            `json:"updatedAt"`
+	ContentFilter      string                `json:"contentFilter"`
+	ContentFilterTypes []string              `json:"contentFilterTypes"`
+	SummaryTimeLocal   string                `json:"summaryTimeLocal"`
+	SummaryTimezone    string                `json:"summaryTimezone"`
+	SummaryPrompt      string                `json:"summaryPrompt"`
+	CreatedAt          time.Time             `json:"createdAt"`
+	UpdatedAt          time.Time             `json:"updatedAt"`
+}
+
+type DeliveryChannelRun struct {
+	ID            int64         `json:"id"`
+	ChannelID     int64         `json:"channelId"`
+	SummaryDate   string        `json:"summaryDate"`
+	Status        SummaryStatus `json:"status"`
+	Content       string        `json:"content"`
+	Model         string        `json:"model"`
+	GeneratedAt   *time.Time    `json:"generatedAt,omitempty"`
+	DeliveredAt   *time.Time    `json:"deliveredAt,omitempty"`
+	DeliveryError string        `json:"deliveryError"`
+	ErrorMessage  string        `json:"errorMessage"`
+	CreatedAt     time.Time     `json:"createdAt"`
+	UpdatedAt     time.Time     `json:"updatedAt"`
 }
 
 type DeliveryChannelSummary struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Enabled     bool   `json:"enabled"`
-	SourceCount int    `json:"sourceCount"`
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Enabled      bool   `json:"enabled"`
+	SourceCount  int    `json:"sourceCount"`
 	TargetChatID string `json:"targetChatId"`
 }
 

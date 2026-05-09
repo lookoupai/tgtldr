@@ -26,6 +26,7 @@ type Store struct {
 	BotRuntime                 *BotRuntimeRepository
 	BotTargetChats             *BotTargetChatRepository
 	DeliveryChannels           *DeliveryChannelRepository
+	DeliveryChannelRuns        *DeliveryChannelRunRepository
 }
 
 func Open(ctx context.Context, cfg config.Config) (*Store, error) {
@@ -60,6 +61,7 @@ func Open(ctx context.Context, cfg config.Config) (*Store, error) {
 		BotRuntime:                 &BotRuntimeRepository{pool: pool},
 		BotTargetChats:             &BotTargetChatRepository{pool: pool},
 		DeliveryChannels:           &DeliveryChannelRepository{pool: pool},
+		DeliveryChannelRuns:        &DeliveryChannelRunRepository{pool: pool},
 	}
 	return st, nil
 }
