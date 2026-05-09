@@ -234,6 +234,39 @@ func TestMaintenanceInstruction(t *testing.T) {
 			Status:          model.KnowledgeFactStatusExpired,
 		}, model.KnowledgeFactStatusActive), ShouldBeFalse)
 	})
+
+	Convey("用户级忽略支持匹配该用户下所有可维护事实", t, func() {
+		match := statusUpdateMatch{
+			query:           "*",
+			subjectAliases:  compactNormalizedStrings([]string{"@KinhRoBot"}),
+			explicitSubject: true,
+		}
+
+		So(maintenanceMatchesCandidate(match, model.KnowledgeFact{
+			ID:              40,
+			FactType:        "supply",
+			Title:           "供应 Telegram API",
+			DataJSON:        `{"item":"Telegram API"}`,
+			SubjectUsername: "KinhRoBot",
+			Status:          model.KnowledgeFactStatusActive,
+		}, model.KnowledgeFactStatusActive), ShouldBeTrue)
+		So(maintenanceMatchesCandidate(match, model.KnowledgeFact{
+			ID:              41,
+			FactType:        "resource",
+			Title:           "Telegram API 购买地址",
+			DataJSON:        `{"url":"https://example.test"}`,
+			SubjectUsername: "KinhRoBot",
+			Status:          model.KnowledgeFactStatusActive,
+		}, model.KnowledgeFactStatusActive), ShouldBeTrue)
+		So(maintenanceMatchesCandidate(match, model.KnowledgeFact{
+			ID:              42,
+			FactType:        "supply",
+			Title:           "供应 Gmail",
+			DataJSON:        `{"item":"Gmail"}`,
+			SubjectUsername: "alice",
+			Status:          model.KnowledgeFactStatusActive,
+		}, model.KnowledgeFactStatusActive), ShouldBeFalse)
+	})
 }
 
 func TestKnowledgeQueryInstruction(t *testing.T) {
@@ -259,5 +292,58 @@ func TestKnowledgeQueryInstruction(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(instruction.Query, ShouldEqual, "alice")
 		So(instruction.FactType, ShouldEqual, "risk_account")
+	})
+}
+
+func TestParseExtractionFacts(t *testing.T) {
+	Convey("抽取结果可用正文联系人覆盖频道发送者作为事实主体", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 100,
+			TelegramSenderID:  10,
+			SenderName:        "合集网 - 接码供应需求信息发布",
+			SenderUsername:    "hejiwang",
+			TextContent:       "投稿人：@real_seller 出售美国 API",
+			MessageTime:       now,
+		}
+
+		facts, err := parseExtractionFacts(
+			`{"facts":[{"type":"supply","title":"美国 API 供应","data":{"item":"美国 API"},"subjectMessageRef":"m001","subjectUsername":"@real_seller","sourceMessageRefs":["m001"],"confidence":0.9}]}`,
+			model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30},
+			model.Chat{ID: 2},
+			map[string]model.Message{"m001": message},
+			now,
+		)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 1)
+		So(facts[0].SubjectSenderID, ShouldEqual, 10)
+		So(facts[0].SubjectSenderName, ShouldEqual, "合集网 - 接码供应需求信息发布")
+		So(facts[0].SubjectUsername, ShouldEqual, "real_seller")
+	})
+
+	Convey("抽取结果未覆盖联系人时保留消息发送者 username", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 101,
+			TelegramSenderID:  11,
+			SenderName:        "Alice",
+			SenderUsername:    "alice_api",
+			TextContent:       "出售美国 API",
+			MessageTime:       now,
+		}
+
+		facts, err := parseExtractionFacts(
+			`{"facts":[{"type":"supply","title":"美国 API 供应","data":{"item":"美国 API"},"subjectMessageRef":"m001","sourceMessageRefs":["m001"],"confidence":0.9}]}`,
+			model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30},
+			model.Chat{ID: 2},
+			map[string]model.Message{"m001": message},
+			now,
+		)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 1)
+		So(facts[0].SubjectSenderName, ShouldEqual, "Alice")
+		So(facts[0].SubjectUsername, ShouldEqual, "alice_api")
 	})
 }

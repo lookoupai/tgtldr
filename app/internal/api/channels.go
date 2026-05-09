@@ -9,6 +9,38 @@ import (
 	"github.com/frederic/tgtldr/app/internal/model"
 )
 
+type deliveryChannelPayload struct {
+	ID                 int64                       `json:"id"`
+	Name               string                      `json:"name"`
+	Enabled            bool                        `json:"enabled"`
+	SourceChatIDs      []int64                     `json:"sourceChatIds"`
+	TargetChatID       string                      `json:"targetChatId"`
+	TargetLanguage     model.SummaryOutputLanguage `json:"targetLanguage"`
+	ContentFilter      string                      `json:"contentFilter"`
+	ContentFilterTypes []string                    `json:"contentFilterTypes"`
+	SummaryTimeLocal   string                      `json:"summaryTimeLocal"`
+	SummaryTimezone    string                      `json:"summaryTimezone"`
+	SummaryPrompt      string                      `json:"summaryPrompt"`
+	CreatedAt          string                      `json:"createdAt,omitempty"`
+	UpdatedAt          string                      `json:"updatedAt,omitempty"`
+}
+
+func (p deliveryChannelPayload) toModel(id int64) model.DeliveryChannel {
+	return model.DeliveryChannel{
+		ID:                 id,
+		Name:               p.Name,
+		Enabled:            p.Enabled,
+		SourceChatIDs:      p.SourceChatIDs,
+		TargetChatID:       p.TargetChatID,
+		TargetLanguage:     p.TargetLanguage,
+		ContentFilter:      p.ContentFilter,
+		ContentFilterTypes: p.ContentFilterTypes,
+		SummaryTimeLocal:   p.SummaryTimeLocal,
+		SummaryTimezone:    p.SummaryTimezone,
+		SummaryPrompt:      p.SummaryPrompt,
+	}
+}
+
 func (r *Router) handleDeliveryChannels(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		httpx.Error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -63,30 +95,30 @@ func (r *Router) getChannel(w http.ResponseWriter, req *http.Request, id int64) 
 }
 
 func (r *Router) updateChannel(w http.ResponseWriter, req *http.Request, id int64) {
-	var payload model.DeliveryChannel
+	var payload deliveryChannelPayload
 	if err := httpx.DecodeJSON(req, &payload); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	payload.ID = id
-	payload.Name = strings.TrimSpace(payload.Name)
-	if payload.Name == "" {
+	channel := payload.toModel(id)
+	channel.Name = strings.TrimSpace(channel.Name)
+	if channel.Name == "" {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写通道名称。", "Channel name is required."))
 		return
 	}
 
-	if len(payload.SourceChatIDs) == 0 {
+	if len(channel.SourceChatIDs) == 0 {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请选择至少一个源群组。", "Select at least one source group."))
 		return
 	}
 
-	if strings.TrimSpace(payload.TargetChatID) == "" {
+	if strings.TrimSpace(channel.TargetChatID) == "" {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写目标 Chat ID。", "Target Chat ID is required."))
 		return
 	}
 
-	saved, err := r.store.DeliveryChannels.Upsert(req.Context(), payload)
+	saved, err := r.store.DeliveryChannels.Upsert(req.Context(), channel)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -108,36 +140,37 @@ func (r *Router) handleCreateDeliveryChannel(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	var payload model.DeliveryChannel
+	var payload deliveryChannelPayload
 	if err := httpx.DecodeJSON(req, &payload); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	payload.Name = strings.TrimSpace(payload.Name)
-	if payload.Name == "" {
+	channel := payload.toModel(0)
+	channel.Name = strings.TrimSpace(channel.Name)
+	if channel.Name == "" {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写通道名称。", "Channel name is required."))
 		return
 	}
 
-	if len(payload.SourceChatIDs) == 0 {
+	if len(channel.SourceChatIDs) == 0 {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请选择至少一个源群组。", "Select at least one source group."))
 		return
 	}
 
-	if strings.TrimSpace(payload.TargetChatID) == "" {
+	if strings.TrimSpace(channel.TargetChatID) == "" {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写目标 Chat ID。", "Target Chat ID is required."))
 		return
 	}
 
-	if payload.TargetLanguage == "" {
-		payload.TargetLanguage = model.SummaryLanguageZhCN
+	if channel.TargetLanguage == "" {
+		channel.TargetLanguage = model.SummaryLanguageZhCN
 	}
-	if payload.SummaryTimeLocal == "" {
-		payload.SummaryTimeLocal = "09:00"
+	if channel.SummaryTimeLocal == "" {
+		channel.SummaryTimeLocal = "09:00"
 	}
 
-	saved, err := r.store.DeliveryChannels.Create(req.Context(), payload)
+	saved, err := r.store.DeliveryChannels.Create(req.Context(), channel)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return

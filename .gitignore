@@ -16,3 +16,4 @@ web/node_modules/
 .env
 .env.local
 .ace-tool/
+.spec-workflow/
