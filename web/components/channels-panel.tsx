@@ -10,10 +10,10 @@ import { Button, Field, Input, StatusPill, Textarea } from "@/components/ui";
 import { SummaryLanguageControl } from "@/components/summary-language-control";
 
 const contentFilterOptions = [
-  { value: "", label: "全部内容" },
-  { value: "supply_demand", label: "供需信息" },
-  { value: "knowledge", label: "知识事实" },
-  { value: "technical", label: "技术讨论" },
+  { value: "", label: "全部内容（不限制主题）" },
+  { value: "supply_demand", label: "仅保留供需信息" },
+  { value: "knowledge", label: "仅保留知识事实" },
+  { value: "technical", label: "仅保留技术讨论" },
 ];
 
 export function ChannelsPanel() {
@@ -323,7 +323,10 @@ function ChannelEditor({
           />
         </Field>
 
-        <Field label="内容过滤" hint="选择要过滤的内容类型。">
+        <Field
+          label="内容范围"
+          hint="控制聚合摘要重点保留哪些内容；选择“仅保留供需信息”表示摘要只关注供需相关消息，不是把供需信息过滤掉。"
+        >
           <AppSelect
             value={channel.contentFilter}
             onChange={(value) => onPatch({ contentFilter: value })}

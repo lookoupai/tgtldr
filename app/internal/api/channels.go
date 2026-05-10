@@ -120,7 +120,7 @@ func (r *Router) updateChannel(w http.ResponseWriter, req *http.Request, id int6
 		return
 	}
 
-	saved, err := r.store.DeliveryChannels.Upsert(req.Context(), channel)
+	saved, err := r.store.DeliveryChannels.Save(req.Context(), channel)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return

@@ -184,6 +184,7 @@ export const api = {
         summaryLanguage: chat.summaryLanguage,
         topicGroups: chat.topicGroups,
         summaryTimeLocal: chat.summaryTimeLocal,
+        summaryKnowledgeDays: chat.summaryKnowledgeDays,
         deliveryMode: chat.deliveryMode,
         modelOverride: chat.modelOverride,
         keepBotMessages: chat.keepBotMessages,

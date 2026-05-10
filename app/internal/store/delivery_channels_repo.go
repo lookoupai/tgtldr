@@ -76,29 +76,26 @@ func (r *DeliveryChannelRepository) GetByID(ctx context.Context, id int64) (mode
 	return channel, nil
 }
 
-func (r *DeliveryChannelRepository) Upsert(ctx context.Context, channel model.DeliveryChannel) (model.DeliveryChannel, error) {
+func (r *DeliveryChannelRepository) Save(ctx context.Context, channel model.DeliveryChannel) (model.DeliveryChannel, error) {
 	saved, err := scanDeliveryChannel(rowScanner{row: r.pool.QueryRow(ctx, `
-		insert into delivery_channels (id, name, enabled, source_chat_ids, target_chat_id, target_language,
-		                               content_filter, content_filter_types, summary_time_local, summary_timezone, summary_prompt, summary_knowledge_days)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		on conflict (id) do update
-		set name = excluded.name,
-		    enabled = excluded.enabled,
-		    source_chat_ids = excluded.source_chat_ids,
-		    target_chat_id = excluded.target_chat_id,
-		    target_language = excluded.target_language,
-		    content_filter = excluded.content_filter,
-		    content_filter_types = excluded.content_filter_types,
-		    summary_time_local = excluded.summary_time_local,
-		    summary_timezone = excluded.summary_timezone,
-		    summary_prompt = excluded.summary_prompt,
-		    summary_knowledge_days = excluded.summary_knowledge_days,
+		update delivery_channels
+		set name = $1,
+		    enabled = $2,
+		    source_chat_ids = $3,
+		    target_chat_id = $4,
+		    target_language = $5,
+		    content_filter = $6,
+		    content_filter_types = $7,
+		    summary_time_local = $8,
+		    summary_timezone = $9,
+		    summary_prompt = $10,
+		    summary_knowledge_days = $11,
 		    updated_at = now()
+		where id = $12
 		returning id, name, enabled, source_chat_ids, target_chat_id, target_language,
 		          content_filter, content_filter_types, summary_time_local, summary_timezone,
 		          summary_prompt, summary_knowledge_days, created_at, updated_at
 	`,
-		channel.ID,
 		strings.TrimSpace(channel.Name),
 		channel.Enabled,
 		compactInt64s(channel.SourceChatIDs),
@@ -110,9 +107,10 @@ func (r *DeliveryChannelRepository) Upsert(ctx context.Context, channel model.De
 		channel.SummaryTimezone,
 		channel.SummaryPrompt,
 		normalizeKnowledgeDays(channel.SummaryKnowledgeDays),
+		channel.ID,
 	)})
 	if err != nil {
-		return model.DeliveryChannel{}, fmt.Errorf("upsert delivery channel: %w", err)
+		return model.DeliveryChannel{}, fmt.Errorf("save delivery channel %d: %w", channel.ID, err)
 	}
 	return saved, nil
 }
