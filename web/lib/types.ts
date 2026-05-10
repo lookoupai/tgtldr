@@ -123,6 +123,7 @@ export type Chat = {
   summaryLanguage: SummaryOutputLanguage;
   topicGroups: TopicGroup[];
   summaryTimeLocal: string;
+  summaryKnowledgeDays: number;
   deliveryMode: DeliveryMode;
   modelOverride: string;
   keepBotMessages: boolean;
@@ -348,6 +349,7 @@ export type DeliveryChannel = {
   summaryTimeLocal: string;
   summaryTimezone: string;
   summaryPrompt: string;
+  summaryKnowledgeDays: number;
   createdAt: string;
   updatedAt: string;
 };

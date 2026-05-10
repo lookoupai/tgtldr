@@ -643,22 +643,23 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var payload struct {
-		Enabled          bool                        `json:"enabled"`
-		SummaryEnabled   bool                        `json:"summaryEnabled"`
-		SummaryContext   string                      `json:"summaryContext"`
-		SummaryPrompt    string                      `json:"summaryPrompt"`
-		SummaryMode      model.SummaryMode           `json:"summaryMode"`
-		SummaryLanguage  model.SummaryOutputLanguage `json:"summaryLanguage"`
-		TopicGroups      []model.TopicGroup          `json:"topicGroups"`
-		SummaryTimeLocal string                      `json:"summaryTimeLocal"`
-		DeliveryMode     model.DeliveryMode          `json:"deliveryMode"`
-		ModelOverride    string                      `json:"modelOverride"`
-		KeepBotMessages  bool                        `json:"keepBotMessages"`
-		FilteredSenders  []string                    `json:"filteredSenders"`
-		FilteredKeywords []string                    `json:"filteredKeywords"`
-		BotChatID        string                      `json:"botChatId"`
-		BotInteraction   bool                        `json:"botInteractionEnabled"`
-		BotAllowedUsers  []string                    `json:"botAllowedUsers"`
+		Enabled              bool                        `json:"enabled"`
+		SummaryEnabled       bool                        `json:"summaryEnabled"`
+		SummaryContext       string                      `json:"summaryContext"`
+		SummaryPrompt        string                      `json:"summaryPrompt"`
+		SummaryMode          model.SummaryMode           `json:"summaryMode"`
+		SummaryLanguage      model.SummaryOutputLanguage `json:"summaryLanguage"`
+		TopicGroups          []model.TopicGroup          `json:"topicGroups"`
+		SummaryTimeLocal     string                      `json:"summaryTimeLocal"`
+		SummaryKnowledgeDays int                         `json:"summaryKnowledgeDays"`
+		DeliveryMode         model.DeliveryMode          `json:"deliveryMode"`
+		ModelOverride        string                      `json:"modelOverride"`
+		KeepBotMessages      bool                        `json:"keepBotMessages"`
+		FilteredSenders      []string                    `json:"filteredSenders"`
+		FilteredKeywords     []string                    `json:"filteredKeywords"`
+		BotChatID            string                      `json:"botChatId"`
+		BotInteraction       bool                        `json:"botInteractionEnabled"`
+		BotAllowedUsers      []string                    `json:"botAllowedUsers"`
 	}
 	if err := httpx.DecodeJSON(req, &payload); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
@@ -673,6 +674,7 @@ func (r *Router) handleChatByID(w http.ResponseWriter, req *http.Request) {
 	current.SummaryLanguage = model.NormalizeOptionalSummaryOutputLanguage(payload.SummaryLanguage)
 	current.TopicGroups = compactTopicGroups(payload.TopicGroups)
 	current.SummaryTimeLocal = payload.SummaryTimeLocal
+	current.SummaryKnowledgeDays = payload.SummaryKnowledgeDays
 	current.DeliveryMode = payload.DeliveryMode
 	current.ModelOverride = payload.ModelOverride
 	current.KeepBotMessages = payload.KeepBotMessages

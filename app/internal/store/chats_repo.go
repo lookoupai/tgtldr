@@ -132,6 +132,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		    bot_chat_id = $14,
 		    bot_interaction_enabled = $15,
 		    bot_allowed_users = $16,
+		    summary_knowledge_days = $18,
 		    updated_at = now()
 		where id = $17
 		returning `+chatColumns()+`
@@ -153,6 +154,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		chat.BotInteraction,
 		compactStrings(chat.BotAllowedUsers),
 		chat.ID,
+		normalizeKnowledgeDays(chat.SummaryKnowledgeDays),
 	)})
 	if err != nil {
 		return model.Chat{}, fmt.Errorf("save chat %d: %w", chat.ID, err)
@@ -237,7 +239,7 @@ func chatSelectColumns() string {
 func chatColumns() string {
 	return `id, telegram_chat_id, telegram_access_hash, title, username, chat_type,
 		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
-		       summary_time_local, summary_timezone,
+		       summary_time_local, summary_timezone, summary_knowledge_days,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
 		       bot_chat_id, bot_interaction_enabled, bot_allowed_users,
 		       created_at, updated_at`
@@ -262,6 +264,7 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 		&topicGroupsJSON,
 		&chat.SummaryTimeLocal,
 		&chat.SummaryTimezone,
+		&chat.SummaryKnowledgeDays,
 		&chat.DeliveryMode,
 		&chat.ModelOverride,
 		&chat.KeepBotMessages,
@@ -278,6 +281,7 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 	}
 	chat.SummaryMode = model.NormalizeSummaryMode(chat.SummaryMode)
 	chat.SummaryLanguage = normalizeChatSummaryLanguage(chat.SummaryLanguage)
+	chat.SummaryKnowledgeDays = normalizeKnowledgeDays(chat.SummaryKnowledgeDays)
 	chat.TopicGroups = unmarshalTopicGroups(topicGroupsJSON)
 	chat.BotAllowedUsers = compactStrings(chat.BotAllowedUsers)
 	return chat, nil

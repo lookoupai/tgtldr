@@ -58,14 +58,18 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 	}
 
 	if len(allMessages) == 0 {
-		return AggregatedSummaryResult{
+		result := AggregatedSummaryResult{
 			ChannelID:     channel.ID,
 			SummaryDate:   date,
 			Content:       emptySummaryContent(channel.TargetLanguage),
 			Status:        model.SummaryStatusSucceeded,
 			GeneratedAt:   a.clock.Now(),
 			SourceChatIDs: channel.SourceChatIDs,
-		}, nil
+		}
+		if err := a.appendKnowledgeFacts(ctx, &result, channel, end); err != nil {
+			return AggregatedSummaryResult{}, err
+		}
+		return result, nil
 	}
 
 	filteredMessages := allMessages
@@ -137,7 +141,22 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 
 	result.Content = strings.TrimSpace(finalResp.Content)
 	result.Model = finalResp.Model
+	if err := a.appendKnowledgeFacts(ctx, &result, channel, end); err != nil {
+		return AggregatedSummaryResult{}, err
+	}
 	return result, nil
+}
+
+func (a *Aggregator) appendKnowledgeFacts(ctx context.Context, result *AggregatedSummaryResult, channel model.DeliveryChannel, before time.Time) error {
+	if a.store == nil || a.store.KnowledgeFacts == nil || result == nil || result.Status != model.SummaryStatusSucceeded {
+		return nil
+	}
+	content, err := appendKnowledgeFactsForChats(ctx, a.store, a.clock.Now(), result.Content, result.SourceChatIDs, channel.TargetLanguage, channel.SummaryKnowledgeDays, before, nil)
+	if err != nil {
+		return err
+	}
+	result.Content = content
+	return nil
 }
 
 func (a *Aggregator) aggregateMessages(ctx context.Context, chatIDs []int64, start, end time.Time) ([]model.Message, map[int]model.Message, error) {
@@ -352,6 +371,26 @@ func uniqueInts(values []int) []int {
 
 	seen := make(map[int]struct{}, len(values))
 	out := make([]int, 0, len(values))
+	for _, value := range values {
+		if value == 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func uniqueInt64s(values []int64) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+
+	seen := make(map[int64]struct{}, len(values))
+	out := make([]int64, 0, len(values))
 	for _, value := range values {
 		if value == 0 {
 			continue

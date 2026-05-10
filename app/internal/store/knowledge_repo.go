@@ -140,6 +140,14 @@ type KnowledgeFactFilter struct {
 	Limit    int
 }
 
+type KnowledgeSummaryFilter struct {
+	ChatID    int64
+	Now       time.Time
+	Since     *time.Time
+	Before    *time.Time
+	FactTypes []string
+}
+
 type KnowledgeSubjectFilter struct {
 	SpaceID  int64
 	ChatID   int64
@@ -447,6 +455,14 @@ func (r *KnowledgeFactRepository) ExpireDue(ctx context.Context, now time.Time) 
 }
 
 func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int64, now time.Time) ([]model.KnowledgeFact, error) {
+	return r.ListForSummaryWithFilter(ctx, KnowledgeSummaryFilter{ChatID: chatID, Now: now})
+}
+
+func (r *KnowledgeFactRepository) ListForSummaryWithFilter(ctx context.Context, filter KnowledgeSummaryFilter) ([]model.KnowledgeFact, error) {
+	now := filter.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
 	rows, err := r.pool.Query(ctx, `
 		select f.id, f.space_id, s.name, f.chat_id, coalesce(c.title, ''), f.fact_type, f.title,
 		       f.data_json::text, f.subject_sender_id, f.subject_sender_name,
@@ -461,8 +477,20 @@ func (r *KnowledgeFactRepository) ListForSummary(ctx context.Context, chatID int
 		  and s.enabled = true
 		  and s.include_in_summary = true
 		  and (cardinality(s.chat_ids) = 0 or $1 = any(s.chat_ids))
+		  and (
+		    $4::timestamptz is null
+		    or exists (
+		      select 1
+		      from messages m
+		      where m.chat_id = f.chat_id
+		        and m.telegram_message_id = any(f.source_message_ids)
+		        and m.message_time >= $4
+		        and ($5::timestamptz is null or m.message_time < $5)
+		    )
+		  )
+		  and (cardinality($6::text[]) = 0 or f.fact_type = any($6))
 		order by lower(s.name) asc, lower(f.fact_type) asc, f.confidence desc, f.last_seen_at desc, f.id desc
-	`, chatID, model.KnowledgeFactStatusActive, now)
+	`, filter.ChatID, model.KnowledgeFactStatusActive, now, filter.Since, filter.Before, compactStrings(filter.FactTypes))
 	if err != nil {
 		return nil, fmt.Errorf("query summary knowledge facts: %w", err)
 	}

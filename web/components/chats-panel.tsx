@@ -716,6 +716,20 @@ function ChatTableRow({
                           />
                         </Field>
 
+                        <Field
+                          label="当前有效情报范围"
+                          hint="0 表示展示所有未过期 active 事实；1 表示只展示摘要日期当天来源消息对应的事实，30 表示截至摘要日期最近 30 天。"
+                        >
+                          <Input
+                            min={0}
+                            type="number"
+                            value={chat.summaryKnowledgeDays}
+                            onChange={(event) =>
+                              onPatch({ summaryKnowledgeDays: Number(event.target.value) })
+                            }
+                          />
+                        </Field>
+
                         <Field label="模型 override">
                           <Input
                             placeholder="例如 gpt-4.1-mini"

@@ -88,6 +88,7 @@ export function ChannelsPanel() {
       summaryTimeLocal: "09:00",
       summaryTimezone: settings?.defaultTimezone || "Asia/Shanghai",
       summaryPrompt: "",
+      summaryKnowledgeDays: 0,
       createdAt: "",
       updatedAt: "",
     };
@@ -346,6 +347,15 @@ function ChannelEditor({
             onChange={(event) => onPatch({ summaryPrompt: event.target.value })}
           />
         </Field>
+
+        <Field label="当前有效情报范围" hint="0 表示展示所有未过期 active 事实；1 表示只展示摘要日期当天来源消息对应的事实，30 表示截至摘要日期最近 30 天。">
+          <Input
+            min={0}
+            type="number"
+            value={channel.summaryKnowledgeDays}
+            onChange={(event) => onPatch({ summaryKnowledgeDays: Number(event.target.value) })}
+          />
+        </Field>
       </div>
 
       <div className="editor-footer">
@@ -384,6 +394,7 @@ function normalizeChannel(channel: DeliveryChannel): DeliveryChannel {
     name: channel.name.trim(),
     targetChatId: channel.targetChatId.trim(),
     sourceChatIds: Array.from(new Set(channel.sourceChatIds)),
+    summaryKnowledgeDays: Math.max(0, Number(channel.summaryKnowledgeDays) || 0),
   };
 }
 

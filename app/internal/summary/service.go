@@ -121,7 +121,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 	}
 	if len(filteredMessages) == 0 {
 		summary.Content = emptySummaryContent(summaryLanguage)
-		if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage); err != nil {
+		if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage, chat.SummaryKnowledgeDays, end); err != nil {
 			return model.Summary{}, err
 		}
 		return summary, nil
@@ -183,25 +183,21 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 
 	summary.Content = strings.TrimSpace(finalResp.Content)
 	summary.Model = finalResp.Model
-	if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage); err != nil {
+	if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage, chat.SummaryKnowledgeDays, end); err != nil {
 		return model.Summary{}, err
 	}
 	return summary, nil
 }
 
-func (s *Service) appendKnowledgeFacts(ctx context.Context, summary *model.Summary, language model.SummaryOutputLanguage) error {
+func (s *Service) appendKnowledgeFacts(ctx context.Context, summary *model.Summary, language model.SummaryOutputLanguage, days int, before time.Time) error {
 	if s.store == nil || s.store.KnowledgeFacts == nil || summary == nil || summary.Status != model.SummaryStatusSucceeded {
 		return nil
 	}
-	now := s.clock.Now()
-	if err := s.store.KnowledgeFacts.ExpireDue(ctx, now); err != nil {
-		return err
-	}
-	facts, err := s.store.KnowledgeFacts.ListForSummary(ctx, summary.ChatID, now)
+	content, err := appendKnowledgeFactsForChats(ctx, s.store, s.clock.Now(), summary.Content, []int64{summary.ChatID}, language, days, before, nil)
 	if err != nil {
 		return err
 	}
-	summary.Content = appendKnowledgeFacts(summary.Content, facts, language)
+	summary.Content = content
 	return nil
 }
 

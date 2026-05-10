@@ -13,6 +13,13 @@ type SettingsRepository struct {
 	cipher Cipher
 }
 
+func normalizeKnowledgeDays(days int) int {
+	if days < 0 {
+		return 0
+	}
+	return days
+}
+
 func normalizeAppSettings(settings model.AppSettings) model.AppSettings {
 	if settings.OpenAIBaseURL == "" {
 		settings.OpenAIBaseURL = model.DefaultOpenAIBaseURL

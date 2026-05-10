@@ -79,6 +79,7 @@ var codeFencePattern = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
 const extractionChunkTokenBudget = 12000
 const maintenanceMaxOutput = 800
 const knowledgeQueryMaxOutput = 500
+const extractionMaxOutput = 1200
 
 const (
 	MaintenanceSourceAutoStatusUpdate = "auto_status_update"
@@ -161,7 +162,7 @@ func (s *Service) RunDailyExtraction(ctx context.Context, req RunRequest) (model
 				SystemPrompt: systemPrompt,
 				UserPrompt:   transcript,
 				Temperature:  0.1,
-				MaxOutput:    settings.OpenAIMaxOutputToken,
+				MaxOutput:    extractionMaxOutputTokens(settings),
 			})
 			if err != nil {
 				return err
@@ -188,6 +189,13 @@ func (s *Service) RunDailyExtraction(ctx context.Context, req RunRequest) (model
 		return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusFailed, len(filtered), 0, err.Error())
 	}
 	return s.finishRun(ctx, run.ID, model.KnowledgeRunStatusSucceeded, len(filtered), len(persistedFacts)+expiredCount, "")
+}
+
+func extractionMaxOutputTokens(settings model.AppSettings) int {
+	if settings.OpenAIOutputMode == model.OutputModeManual && settings.OpenAIMaxOutputToken > 0 && settings.OpenAIMaxOutputToken < extractionMaxOutput {
+		return settings.OpenAIMaxOutputToken
+	}
+	return extractionMaxOutput
 }
 
 func (s *Service) RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error) {

@@ -10,34 +10,36 @@ import (
 )
 
 type deliveryChannelPayload struct {
-	ID                 int64                       `json:"id"`
-	Name               string                      `json:"name"`
-	Enabled            bool                        `json:"enabled"`
-	SourceChatIDs      []int64                     `json:"sourceChatIds"`
-	TargetChatID       string                      `json:"targetChatId"`
-	TargetLanguage     model.SummaryOutputLanguage `json:"targetLanguage"`
-	ContentFilter      string                      `json:"contentFilter"`
-	ContentFilterTypes []string                    `json:"contentFilterTypes"`
-	SummaryTimeLocal   string                      `json:"summaryTimeLocal"`
-	SummaryTimezone    string                      `json:"summaryTimezone"`
-	SummaryPrompt      string                      `json:"summaryPrompt"`
-	CreatedAt          string                      `json:"createdAt,omitempty"`
-	UpdatedAt          string                      `json:"updatedAt,omitempty"`
+	ID                   int64                       `json:"id"`
+	Name                 string                      `json:"name"`
+	Enabled              bool                        `json:"enabled"`
+	SourceChatIDs        []int64                     `json:"sourceChatIds"`
+	TargetChatID         string                      `json:"targetChatId"`
+	TargetLanguage       model.SummaryOutputLanguage `json:"targetLanguage"`
+	ContentFilter        string                      `json:"contentFilter"`
+	ContentFilterTypes   []string                    `json:"contentFilterTypes"`
+	SummaryTimeLocal     string                      `json:"summaryTimeLocal"`
+	SummaryTimezone      string                      `json:"summaryTimezone"`
+	SummaryPrompt        string                      `json:"summaryPrompt"`
+	SummaryKnowledgeDays int                         `json:"summaryKnowledgeDays"`
+	CreatedAt            string                      `json:"createdAt,omitempty"`
+	UpdatedAt            string                      `json:"updatedAt,omitempty"`
 }
 
 func (p deliveryChannelPayload) toModel(id int64) model.DeliveryChannel {
 	return model.DeliveryChannel{
-		ID:                 id,
-		Name:               p.Name,
-		Enabled:            p.Enabled,
-		SourceChatIDs:      p.SourceChatIDs,
-		TargetChatID:       p.TargetChatID,
-		TargetLanguage:     p.TargetLanguage,
-		ContentFilter:      p.ContentFilter,
-		ContentFilterTypes: p.ContentFilterTypes,
-		SummaryTimeLocal:   p.SummaryTimeLocal,
-		SummaryTimezone:    p.SummaryTimezone,
-		SummaryPrompt:      p.SummaryPrompt,
+		ID:                   id,
+		Name:                 p.Name,
+		Enabled:              p.Enabled,
+		SourceChatIDs:        p.SourceChatIDs,
+		TargetChatID:         p.TargetChatID,
+		TargetLanguage:       p.TargetLanguage,
+		ContentFilter:        p.ContentFilter,
+		ContentFilterTypes:   p.ContentFilterTypes,
+		SummaryTimeLocal:     p.SummaryTimeLocal,
+		SummaryTimezone:      p.SummaryTimezone,
+		SummaryPrompt:        p.SummaryPrompt,
+		SummaryKnowledgeDays: p.SummaryKnowledgeDays,
 	}
 }
 
