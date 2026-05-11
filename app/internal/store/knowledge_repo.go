@@ -517,6 +517,13 @@ type KnowledgeRunFilter struct {
 	Limit   int
 }
 
+type KnowledgeRunRangeFilter struct {
+	SpaceID    int64
+	ChatID     int64
+	RangeStart time.Time
+	RangeEnd   time.Time
+}
+
 func (r *KnowledgeFactRepository) UpsertMany(ctx context.Context, facts []model.KnowledgeFact) error {
 	if len(facts) == 0 {
 		return nil
@@ -770,6 +777,34 @@ func (r *KnowledgeRunRepository) Create(ctx context.Context, run model.Knowledge
 		return model.KnowledgeRun{}, fmt.Errorf("create knowledge run: %w", err)
 	}
 	return saved, nil
+}
+
+func (r *KnowledgeRunRepository) ListForRange(ctx context.Context, filter KnowledgeRunRangeFilter) ([]model.KnowledgeRun, error) {
+	rows, err := r.pool.Query(ctx, `
+		select id, space_id, chat_id, range_start, range_end, status,
+		       input_message_count, extracted_count, error_message,
+		       started_at, finished_at, created_at, updated_at
+		from knowledge_runs
+		where space_id = $1
+		  and chat_id = $2
+		  and range_start = $3
+		  and range_end = $4
+		order by created_at desc, id desc
+	`, filter.SpaceID, filter.ChatID, filter.RangeStart, filter.RangeEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query knowledge runs for range: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.KnowledgeRun, 0)
+	for rows.Next() {
+		run, err := scanKnowledgeRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan knowledge run for range: %w", err)
+		}
+		items = append(items, run)
+	}
+	return items, rows.Err()
 }
 
 func (r *KnowledgeRunRepository) List(ctx context.Context, filter KnowledgeRunFilter) ([]model.KnowledgeRun, error) {

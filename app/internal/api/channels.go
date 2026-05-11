@@ -205,7 +205,8 @@ func (r *Router) handleRunChannelSummary(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	if _, err := r.store.DeliveryChannels.GetByID(req.Context(), id); err != nil {
+	channel, err := r.store.DeliveryChannels.GetByID(req.Context(), id)
+	if err != nil {
 		httpx.Error(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -221,9 +222,15 @@ func (r *Router) handleRunChannelSummary(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	go func() {
-		// Background execution
-	}()
+	started, err := r.scheduler.RunChannelNowAsync(req.Context(), channel, payload.Date)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !started {
+		httpx.Error(w, http.StatusConflict, r.localized(req.Context(), "通道摘要任务已在运行或已发送。", "Channel summary is already running or delivered."))
+		return
+	}
 
 	httpx.JSON(w, http.StatusAccepted, map[string]string{
 		"message": "channel summary queued",

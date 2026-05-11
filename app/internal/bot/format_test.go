@@ -38,6 +38,13 @@ func TestFormatTelegramHTML(t *testing.T) {
 		So(output, ShouldContainSubstring, `<a href="tg://user?id=42">Alice</a>`)
 	})
 
+	Convey("当前有效情报中的用户链接会在推送中保持可点击", t, func() {
+		output := formatTelegramHTML("## 当前有效情报\n\n### 供应\n- [Bob](tg://user?id=9)：出售二手显示器")
+
+		So(output, ShouldContainSubstring, "<b>【当前有效情报】</b>")
+		So(output, ShouldContainSubstring, `<a href="tg://user?id=9">Bob</a>：出售二手显示器`)
+	})
+
 	Convey("三级标题保持简洁粗体", t, func() {
 		output := formatTelegramHTML("### 分话题总结")
 		So(output, ShouldEqual, "<b>分话题总结</b>")

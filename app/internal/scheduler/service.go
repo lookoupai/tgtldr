@@ -19,6 +19,7 @@ import (
 
 type knowledgeExtractor interface {
 	RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error)
+	EnsureDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error)
 }
 
 type aggregator interface {
@@ -43,6 +44,14 @@ const (
 	scheduledActionGenerate
 	scheduledActionDeliver
 )
+
+const channelExtractionParallelism = 2
+
+type extractionRunReport struct {
+	ChatTitle string
+	SpaceName string
+	Run       model.KnowledgeRun
+}
 
 func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botService *bot.Service, extractor knowledgeExtractor, agg aggregator) *Service {
 	return &Service{
@@ -109,6 +118,32 @@ func (s *Service) RunNowAsync(ctx context.Context, chat model.Chat, date string)
 		runCtx := context.Background()
 		if err := s.executeSummary(runCtx, chat, date); err != nil {
 			_ = s.store.Summaries.SetFailed(context.Background(), chat.ID, date, err.Error())
+		}
+	}()
+	return true, nil
+}
+
+func (s *Service) RunChannelNowAsync(ctx context.Context, channel model.DeliveryChannel, date string) (bool, error) {
+	key := channelTaskKey(channel.ID, date)
+	if !s.beginTask(key) {
+		return false, nil
+	}
+
+	started, err := s.store.DeliveryChannelRuns.TrySetRunning(ctx, channel.ID, date)
+	if err != nil {
+		s.finishTask(key)
+		return false, err
+	}
+	if !started {
+		s.finishTask(key)
+		return false, nil
+	}
+
+	go func() {
+		defer s.finishTask(key)
+		runCtx := context.Background()
+		if err := s.executeChannelSummary(runCtx, channel, date); err != nil {
+			_ = s.store.DeliveryChannelRuns.MarkFailed(context.Background(), channel.ID, date, err.Error())
 		}
 	}()
 	return true, nil
@@ -204,11 +239,77 @@ func (s *Service) executeSummary(ctx context.Context, chat model.Chat, date stri
 	return nil
 }
 
-func (s *Service) extractKnowledgeForSummary(ctx context.Context, chat model.Chat, date string) {
+func (s *Service) extractKnowledgeForSummary(ctx context.Context, chat model.Chat, date string) []model.KnowledgeRun {
 	if s.knowledgeExtractor == nil {
-		return
+		return nil
 	}
-	_, _ = s.knowledgeExtractor.RunDailyExtractionsForSummary(ctx, chat, date)
+	runs, _ := s.knowledgeExtractor.EnsureDailyExtractionsForSummary(ctx, chat, date)
+	return runs
+}
+
+func (s *Service) extractKnowledgeForChannel(ctx context.Context, channel model.DeliveryChannel, date string) []extractionRunReport {
+	if s.knowledgeExtractor == nil || s.store == nil || s.store.Chats == nil {
+		return nil
+	}
+	spaceNames := s.knowledgeSpaceNames(ctx)
+	reports := make([]extractionRunReport, 0)
+	var mu sync.Mutex
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(channelExtractionParallelism)
+	for _, chatID := range uniqueChannelSourceChatIDs(channel.SourceChatIDs) {
+		chatID := chatID
+		group.Go(func() error {
+			chat, err := s.store.Chats.GetByID(groupCtx, chatID)
+			if err != nil {
+				return nil
+			}
+			chatReports := make([]extractionRunReport, 0)
+			for _, run := range s.extractKnowledgeForSummary(groupCtx, chat, date) {
+				chatReports = append(chatReports, extractionRunReport{
+					ChatTitle: chat.Title,
+					SpaceName: spaceNames[run.SpaceID],
+					Run:       run,
+				})
+			}
+			mu.Lock()
+			reports = append(reports, chatReports...)
+			mu.Unlock()
+			return nil
+		})
+	}
+	_ = group.Wait()
+	return reports
+}
+
+func (s *Service) knowledgeSpaceNames(ctx context.Context) map[int64]string {
+	if s.store == nil || s.store.KnowledgeSpaces == nil {
+		return nil
+	}
+	spaces, err := s.store.KnowledgeSpaces.List(ctx)
+	if err != nil {
+		return nil
+	}
+	names := make(map[int64]string, len(spaces))
+	for _, space := range spaces {
+		names[space.ID] = space.Name
+	}
+	return names
+}
+
+func uniqueChannelSourceChatIDs(chatIDs []int64) []int64 {
+	seen := make(map[int64]struct{}, len(chatIDs))
+	out := make([]int64, 0, len(chatIDs))
+	for _, chatID := range chatIDs {
+		if chatID <= 0 {
+			continue
+		}
+		if _, ok := seen[chatID]; ok {
+			continue
+		}
+		seen[chatID] = struct{}{}
+		out = append(out, chatID)
+	}
+	return out
 }
 
 func (s *Service) runOnce(ctx context.Context) error {
@@ -310,6 +411,7 @@ func (s *Service) runChannelDeliveryOnce(ctx context.Context, settings model.App
 }
 
 func (s *Service) executeChannelSummary(ctx context.Context, channel model.DeliveryChannel, date string) error {
+	extractionReports := s.extractKnowledgeForChannel(ctx, channel, date)
 	result, err := s.aggregator.RunAggregatedSummary(ctx, channel, date)
 	if err != nil {
 		return err
@@ -317,6 +419,7 @@ func (s *Service) executeChannelSummary(ctx context.Context, channel model.Deliv
 	if result.Status != model.SummaryStatusSucceeded {
 		return fmt.Errorf("aggregated summary failed: %s", result.ErrorMessage)
 	}
+	result.Content = appendChannelExtractionWarnings(result.Content, extractionReports, channel.TargetLanguage)
 
 	if strings.TrimSpace(channel.TargetChatID) == "" {
 		return fmt.Errorf("delivery channel target is not configured")
@@ -335,6 +438,86 @@ func (s *Service) executeChannelSummary(ctx context.Context, channel model.Deliv
 		return err
 	}
 	return s.store.DeliveryChannelRuns.MarkDelivered(ctx, channel.ID, date, result.Content, result.Model, result.GeneratedAt, s.clock.Now())
+}
+
+func appendChannelExtractionWarnings(content string, reports []extractionRunReport, language model.SummaryOutputLanguage) string {
+	warning := formatChannelExtractionWarnings(reports, language)
+	if warning == "" {
+		return content
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return warning
+	}
+	return content + "\n\n" + warning
+}
+
+func formatChannelExtractionWarnings(reports []extractionRunReport, language model.SummaryOutputLanguage) string {
+	lines := make([]string, 0)
+	for _, report := range reports {
+		line := formatChannelExtractionWarning(report, language)
+		if line == "" {
+			continue
+		}
+		lines = append(lines, "- "+line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	title := "## 抽取状态提示"
+	if model.NormalizeSummaryOutputLanguage(language) == model.SummaryLanguageEN {
+		title = "## Extraction Status"
+	}
+	return title + "\n" + strings.Join(lines, "\n")
+}
+
+func formatChannelExtractionWarning(report extractionRunReport, language model.SummaryOutputLanguage) string {
+	if report.Run.Status != model.KnowledgeRunStatusFailed && report.Run.Status != model.KnowledgeRunStatusRunning {
+		return ""
+	}
+	subject := extractionWarningSubject(report)
+	if model.NormalizeSummaryOutputLanguage(language) == model.SummaryLanguageEN {
+		if report.Run.Status == model.KnowledgeRunStatusRunning {
+			return subject + ": extraction is still running; this summary may not include the latest knowledge."
+		}
+		return subject + ": extraction failed; existing knowledge was used." + extractionWarningErrorSuffix(report.Run.ErrorMessage, model.SummaryLanguageEN)
+	}
+	if report.Run.Status == model.KnowledgeRunStatusRunning {
+		return subject + "：抽取仍在运行，本次汇总可能未包含最新情报。"
+	}
+	return subject + "：抽取失败，本次汇总已使用已有情报。" + extractionWarningErrorSuffix(report.Run.ErrorMessage, model.SummaryLanguageZhCN)
+}
+
+func extractionWarningSubject(report extractionRunReport) string {
+	chatTitle := strings.TrimSpace(report.ChatTitle)
+	if chatTitle == "" {
+		chatTitle = fmt.Sprintf("chat:%d", report.Run.ChatID)
+	}
+	spaceName := strings.TrimSpace(report.SpaceName)
+	if spaceName == "" {
+		spaceName = fmt.Sprintf("space:%d", report.Run.SpaceID)
+	}
+	return chatTitle + " / " + spaceName
+}
+
+func extractionWarningErrorSuffix(message string, language model.SummaryOutputLanguage) string {
+	message = compactWarningText(message, 120)
+	if message == "" {
+		return ""
+	}
+	if model.NormalizeSummaryOutputLanguage(language) == model.SummaryLanguageEN {
+		return " Error: " + message
+	}
+	return "错误：" + message
+}
+
+func compactWarningText(value string, limit int) string {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if limit <= 0 || len([]rune(value)) <= limit {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:limit]) + "…"
 }
 
 func channelRunDelivered(run model.DeliveryChannelRun, found bool) bool {

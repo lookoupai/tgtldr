@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -80,6 +81,10 @@ const extractionChunkTokenBudget = 12000
 const maintenanceMaxOutput = 800
 const knowledgeQueryMaxOutput = 500
 const extractionMaxOutput = 1200
+const extractionRetryAttempts = 3
+const extractionFailureCooldown = 15 * time.Minute
+const extractionRunningTTL = 30 * time.Minute
+const extractionMaxFailuresPerRange = 3
 
 const (
 	MaintenanceSourceAutoStatusUpdate = "auto_status_update"
@@ -158,12 +163,12 @@ func (s *Service) RunDailyExtraction(ctx context.Context, req RunRequest) (model
 		chunk := chunk
 		group.Go(func() error {
 			transcript, refs := buildExtractionTranscript(chunk.Messages, timezone)
-			response, err := client.Chat(groupCtx, openai.ChatRequest{
+			response, err := chatWithRetry(groupCtx, client, openai.ChatRequest{
 				SystemPrompt: systemPrompt,
 				UserPrompt:   transcript,
 				Temperature:  0.1,
 				MaxOutput:    extractionMaxOutputTokens(settings),
-			})
+			}, extractionRetryAttempts)
 			if err != nil {
 				return err
 			}
@@ -198,6 +203,46 @@ func extractionMaxOutputTokens(settings model.AppSettings) int {
 	return extractionMaxOutput
 }
 
+func chatWithRetry(ctx context.Context, client *openai.Client, req openai.ChatRequest, attempts int) (openai.ChatResponse, error) {
+	if attempts <= 0 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		resp, err := client.Chat(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if attempt == attempts || !isTransientOpenAIError(err) {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt) * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return openai.ChatResponse{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return openai.ChatResponse{}, lastErr
+}
+
+func isTransientOpenAIError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	if strings.Contains(message, "openai status 429:") ||
+		strings.Contains(message, "openai status 500:") ||
+		strings.Contains(message, "openai status 502:") ||
+		strings.Contains(message, "openai status 503:") ||
+		strings.Contains(message, "openai status 504:") {
+		return true
+	}
+	return strings.Contains(message, "request chat completion:") && errors.Is(err, context.DeadlineExceeded)
+}
+
 func (s *Service) RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error) {
 	spaces, err := s.store.KnowledgeSpaces.List(ctx)
 	if err != nil {
@@ -217,6 +262,91 @@ func (s *Service) RunDailyExtractionsForSummary(ctx context.Context, chat model.
 		runs = append(runs, run)
 	}
 	return runs, nil
+}
+
+func (s *Service) EnsureDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error) {
+	spaces, err := s.store.KnowledgeSpaces.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	settings, err := s.store.Settings.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	timezone := chat.SummaryTimezone
+	if strings.TrimSpace(timezone) == "" {
+		timezone = settings.DefaultTimezone
+	}
+	start, end, err := dayRange(date, timezone)
+	if err != nil {
+		return nil, err
+	}
+
+	now := s.clock.Now()
+	runs := make([]model.KnowledgeRun, 0)
+	for _, space := range summaryExtractionSpaces(spaces, chat.ID) {
+		existing, err := s.store.KnowledgeRuns.ListForRange(ctx, store.KnowledgeRunRangeFilter{
+			SpaceID:    space.ID,
+			ChatID:     chat.ID,
+			RangeStart: start,
+			RangeEnd:   end,
+		})
+		if err != nil {
+			return runs, err
+		}
+		if run, ok := reusableExtractionRun(existing, now); ok {
+			runs = append(runs, run)
+			continue
+		}
+		if !extractionRetryAllowed(existing, now) {
+			if len(existing) > 0 {
+				runs = append(runs, existing[0])
+			}
+			continue
+		}
+		run, err := s.RunDailyExtraction(ctx, RunRequest{
+			SpaceID: space.ID,
+			ChatID:  chat.ID,
+			Date:    date,
+		})
+		if err != nil {
+			return runs, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, nil
+}
+
+func reusableExtractionRun(runs []model.KnowledgeRun, now time.Time) (model.KnowledgeRun, bool) {
+	for _, run := range runs {
+		if run.Status == model.KnowledgeRunStatusSucceeded {
+			return run, true
+		}
+		if run.Status == model.KnowledgeRunStatusRunning && now.Sub(run.StartedAt) < extractionRunningTTL {
+			return run, true
+		}
+	}
+	return model.KnowledgeRun{}, false
+}
+
+func extractionRetryAllowed(runs []model.KnowledgeRun, now time.Time) bool {
+	failedCount := 0
+	var latest model.KnowledgeRun
+	for index, run := range runs {
+		if index == 0 || run.StartedAt.After(latest.StartedAt) {
+			latest = run
+		}
+		if run.Status == model.KnowledgeRunStatusFailed {
+			failedCount++
+		}
+	}
+	if failedCount >= extractionMaxFailuresPerRange {
+		return false
+	}
+	if latest.Status == model.KnowledgeRunStatusFailed && now.Sub(latest.StartedAt) < extractionFailureCooldown {
+		return false
+	}
+	return true
 }
 
 func (s *Service) finishRun(ctx context.Context, runID int64, status model.KnowledgeRunStatus, inputCount int, extractedCount int, errorMessage string) (model.KnowledgeRun, error) {

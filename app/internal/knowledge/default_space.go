@@ -120,8 +120,10 @@ func (s *Service) EnsureDefaultGeneralSpace(ctx context.Context) (model.Knowledg
 	if err != nil {
 		return model.KnowledgeSpace{}, false, err
 	}
-	if len(spaces) > 0 {
-		return model.KnowledgeSpace{}, false, nil
+	for _, space := range spaces {
+		if strings.TrimSpace(space.Name) == defaultGeneralKnowledgeSpaceName {
+			return space, false, nil
+		}
 	}
 	space, err := s.store.KnowledgeSpaces.Create(ctx, DefaultGeneralKnowledgeSpace())
 	if err != nil {

@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,60 @@ func TestFlattenKnowledgeFacts(t *testing.T) {
 		So(facts[0].ID, ShouldEqual, 1)
 		So(facts[1].ID, ShouldEqual, 2)
 		So(facts[2].ID, ShouldEqual, 3)
+	})
+}
+
+func TestIsTransientOpenAIError(t *testing.T) {
+	Convey("临时网关和限流错误会触发抽取重试", t, func() {
+		So(isTransientOpenAIError(errors.New("openai status 429: rate limit")), ShouldBeTrue)
+		So(isTransientOpenAIError(errors.New("openai status 502: error code: 502")), ShouldBeTrue)
+		So(isTransientOpenAIError(errors.New("openai status 503: system cpu overloaded")), ShouldBeTrue)
+		So(isTransientOpenAIError(errors.New("openai status 504: error code: 504")), ShouldBeTrue)
+	})
+
+	Convey("解析错误和认证错误不会盲目重试", t, func() {
+		So(isTransientOpenAIError(errors.New("parse extraction response: unexpected end of JSON input")), ShouldBeFalse)
+		So(isTransientOpenAIError(errors.New("openai status 401: unauthorized")), ShouldBeFalse)
+	})
+}
+
+func TestExtractionRunReuse(t *testing.T) {
+	Convey("已有成功抽取时直接复用", t, func() {
+		now := time.Date(2026, 5, 11, 9, 0, 0, 0, time.UTC)
+		run, ok := reusableExtractionRun([]model.KnowledgeRun{
+			{ID: 7, Status: model.KnowledgeRunStatusSucceeded, StartedAt: now.Add(-time.Hour)},
+		}, now)
+
+		So(ok, ShouldBeTrue)
+		So(run.ID, ShouldEqual, 7)
+	})
+
+	Convey("未超时的运行中抽取直接复用", t, func() {
+		now := time.Date(2026, 5, 11, 9, 0, 0, 0, time.UTC)
+		run, ok := reusableExtractionRun([]model.KnowledgeRun{
+			{ID: 8, Status: model.KnowledgeRunStatusRunning, StartedAt: now.Add(-5 * time.Minute)},
+		}, now)
+
+		So(ok, ShouldBeTrue)
+		So(run.ID, ShouldEqual, 8)
+	})
+
+	Convey("失败冷却和失败上限会阻止自动重跑", t, func() {
+		now := time.Date(2026, 5, 11, 9, 0, 0, 0, time.UTC)
+
+		So(extractionRetryAllowed([]model.KnowledgeRun{
+			{Status: model.KnowledgeRunStatusFailed, StartedAt: now.Add(-time.Minute)},
+		}, now), ShouldBeFalse)
+
+		So(extractionRetryAllowed([]model.KnowledgeRun{
+			{Status: model.KnowledgeRunStatusFailed, StartedAt: now.Add(-time.Hour)},
+			{Status: model.KnowledgeRunStatusFailed, StartedAt: now.Add(-2 * time.Hour)},
+			{Status: model.KnowledgeRunStatusFailed, StartedAt: now.Add(-3 * time.Hour)},
+		}, now), ShouldBeFalse)
+
+		So(extractionRetryAllowed([]model.KnowledgeRun{
+			{Status: model.KnowledgeRunStatusFailed, StartedAt: now.Add(-time.Hour)},
+		}, now), ShouldBeTrue)
 	})
 }
 

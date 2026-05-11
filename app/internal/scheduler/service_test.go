@@ -122,6 +122,60 @@ func TestChannelRunDelivered(t *testing.T) {
 	})
 }
 
+func TestChannelTaskKey(t *testing.T) {
+	Convey("通道手动任务和定时任务使用同一个并发键", t, func() {
+		So(channelTaskKey(7, "2026-05-10"), ShouldEqual, "channel:7:2026-05-10")
+	})
+}
+
+func TestUniqueChannelSourceChatIDs(t *testing.T) {
+	Convey("推送通道知识抽取会忽略无效和重复群组", t, func() {
+		So(uniqueChannelSourceChatIDs([]int64{3, 0, 2, 3, -1, 2, 5}), ShouldResemble, []int64{3, 2, 5})
+	})
+}
+
+func TestAppendChannelExtractionWarnings(t *testing.T) {
+	Convey("失败和运行中的通道抽取会追加状态提示", t, func() {
+		content := appendChannelExtractionWarnings("## 今日主要结论\n- 正常", []extractionRunReport{
+			{
+				ChatTitle: "SmsKoc",
+				SpaceName: "通用群聊知识库",
+				Run: model.KnowledgeRun{
+					Status:       model.KnowledgeRunStatusFailed,
+					ErrorMessage: "openai status 504: error code: 504",
+				},
+			},
+			{
+				ChatTitle: "合集网群",
+				SpaceName: "风险账号库",
+				Run: model.KnowledgeRun{
+					Status: model.KnowledgeRunStatusRunning,
+				},
+			},
+			{
+				ChatTitle: "合集网群",
+				SpaceName: "供需频道",
+				Run: model.KnowledgeRun{
+					Status: model.KnowledgeRunStatusSucceeded,
+				},
+			},
+		}, model.SummaryLanguageZhCN)
+
+		So(content, ShouldContainSubstring, "## 抽取状态提示")
+		So(content, ShouldContainSubstring, "- SmsKoc / 通用群聊知识库：抽取失败，本次汇总已使用已有情报。错误：openai status 504: error code: 504")
+		So(content, ShouldContainSubstring, "- 合集网群 / 风险账号库：抽取仍在运行，本次汇总可能未包含最新情报。")
+		So(content, ShouldNotContainSubstring, "供需频道")
+	})
+
+	Convey("抽取全部成功时不追加提示", t, func() {
+		content := appendChannelExtractionWarnings("正文", []extractionRunReport{
+			{Run: model.KnowledgeRun{Status: model.KnowledgeRunStatusSucceeded}},
+		}, model.SummaryLanguageZhCN)
+
+		So(content, ShouldEqual, "正文")
+	})
+}
+
 func TestResolveBotDeliveryTarget(t *testing.T) {
 	Convey("群组 Bot Chat ID 优先于全局默认目标", t, func() {
 		settings := model.AppSettings{BotTargetChatID: "global-target"}

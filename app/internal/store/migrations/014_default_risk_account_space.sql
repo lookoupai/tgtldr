@@ -38,9 +38,8 @@ select
     0.8,
     180,
     true
-where exists (select 1 from knowledge_spaces)
-  and not exists (
-      select 1
-      from knowledge_spaces
-      where name = '风险账号库'
-  );
+where not exists (
+    select 1
+    from knowledge_spaces
+    where name = '风险账号库'
+);
