@@ -7,6 +7,7 @@ import (
 
 	"github.com/frederic/tgtldr/app/internal/model"
 	"github.com/frederic/tgtldr/app/internal/msgchunk"
+	"github.com/frederic/tgtldr/app/internal/telegramfmt"
 )
 
 type Chunk = msgchunk.Chunk
@@ -40,7 +41,7 @@ func BuildTranscript(messages []model.Message, lookup map[int]model.Message, loc
 		}
 
 		blockLines := []string{
-			fmt.Sprintf("[%s] %s %s", localRefs[message.TelegramMessageID], formatTranscriptTime(message.MessageTime, location), fallback(message.SenderName, "Unknown")),
+			fmt.Sprintf("[%s] %s %s", localRefs[message.TelegramMessageID], formatTranscriptTime(message.MessageTime, location), transcriptSenderReference(message, language)),
 		}
 
 		if message.ReplyToMessageID > 0 {
@@ -66,7 +67,7 @@ func BuildTranscript(messages []model.Message, lookup map[int]model.Message, loc
 			label := externalRefs[messageID]
 			referenced = append(
 				referenced,
-				fmt.Sprintf("[%s] %s %s", label, formatTranscriptTime(reference.MessageTime, location), fallback(reference.SenderName, "Unknown")),
+				fmt.Sprintf("[%s] %s %s", label, formatTranscriptTime(reference.MessageTime, location), transcriptSenderReference(reference, language)),
 				referenceSummaryText(reference, language),
 			)
 		}
@@ -75,6 +76,13 @@ func BuildTranscript(messages []model.Message, lookup map[int]model.Message, loc
 
 	sections = append(sections, "[Messages]\n"+strings.Join(blocks, "\n\n"))
 	return strings.Join(sections, "\n\n")
+}
+
+func transcriptSenderReference(message model.Message, language model.SummaryOutputLanguage) string {
+	if ref := telegramfmt.UserReference(summaryReferenceLanguage(language), message.TelegramSenderID, message.SenderName, message.SenderUsername); ref != "" {
+		return ref
+	}
+	return telegramfmt.UnknownUserLabel(summaryReferenceLanguage(language))
 }
 
 func formatTranscriptTime(messageTime time.Time, location *time.Location) string {

@@ -355,7 +355,7 @@ Rules:
 }
 
 func buildAggregatedSystemPrompt(language model.SummaryOutputLanguage, base string, extraPrompt string, filter string, factTypes []string) string {
-	sections := []string{strings.TrimSpace(base)}
+	sections := []string{strings.TrimSpace(base), preserveUserLinkInstruction(language)}
 
 	if extraPrompt != "" {
 		sections = append(sections, sectionLabel(language, extraPromptLabel(language))+"\n"+strings.TrimSpace(extraPrompt))

@@ -39,6 +39,58 @@ func TestSplitMessages(t *testing.T) {
 }
 
 func TestBuildTranscriptReferenceFallback(t *testing.T) {
+	Convey("消息发送者带用户 ID 时应该输出可点击用户引用", t, func() {
+		base := time.Date(2026, 4, 16, 9, 0, 0, 0, time.Local)
+		message := model.Message{
+			TelegramMessageID: 101,
+			TelegramSenderID:  42,
+			SenderName:        "Alice",
+			MessageTime:       base,
+			TextContent:       "我可以供应二手显示器",
+		}
+
+		transcript := BuildTranscript(
+			[]model.Message{message},
+			map[int]model.Message{101: message},
+			time.Local,
+			model.SummaryLanguageZhCN,
+		)
+
+		So(transcript, ShouldContainSubstring, "[m001] 09:00 [Alice](tg://user?id=42)")
+	})
+
+	Convey("引用消息发送者也应该保留可点击用户引用", t, func() {
+		base := time.Date(2026, 4, 16, 9, 0, 0, 0, time.Local)
+		reference := model.Message{
+			TelegramMessageID: 100,
+			TelegramSenderID:  42,
+			SenderName:        "Alice",
+			MessageTime:       base,
+			TextContent:       "我可以供应二手显示器",
+		}
+		reply := model.Message{
+			TelegramMessageID: 101,
+			TelegramSenderID:  9,
+			SenderName:        "Bob",
+			MessageTime:       base.Add(time.Minute),
+			TextContent:       "这个还在吗？",
+			ReplyToMessageID:  100,
+		}
+
+		transcript := BuildTranscript(
+			[]model.Message{reply},
+			map[int]model.Message{
+				100: reference,
+				101: reply,
+			},
+			time.Local,
+			model.SummaryLanguageZhCN,
+		)
+
+		So(transcript, ShouldContainSubstring, "[ref001] 09:00 [Alice](tg://user?id=42)")
+		So(transcript, ShouldContainSubstring, "[m001] 09:01 [Bob](tg://user?id=9)")
+	})
+
 	Convey("引用无文本媒体消息时应该输出明确占位", t, func() {
 		base := time.Date(2026, 4, 16, 9, 0, 0, 0, time.Local)
 		reference := model.Message{

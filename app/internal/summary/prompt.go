@@ -347,7 +347,7 @@ Writing requirements:
 }
 
 func buildSystemPrompt(language model.SummaryOutputLanguage, base string, summaryContext string, prompt string) string {
-	sections := []string{strings.TrimSpace(base)}
+	sections := []string{strings.TrimSpace(base), preserveUserLinkInstruction(language)}
 
 	if contextText := strings.TrimSpace(summaryContext); contextText != "" {
 		sections = append(sections, sectionLabel(language, contextLabel(language))+"\n"+contextText)
@@ -358,6 +358,13 @@ func buildSystemPrompt(language model.SummaryOutputLanguage, base string, summar
 	}
 
 	return strings.Join(sections, "\n\n")
+}
+
+func preserveUserLinkInstruction(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
+		return "User link preservation:\n- If the input contains a Markdown user reference such as `[Name](tg://user?id=123)`, keep that exact Markdown link when mentioning the same user in the output. Do not rewrite it as plain text."
+	}
+	return "用户链接保留规则：\n- 如果输入中出现 `[姓名](tg://user?id=123)` 这类 Markdown 用户引用，输出中提到同一用户时保留完整 Markdown 链接，不要改写成纯文本。"
 }
 
 func outputLanguageInstruction(language model.SummaryOutputLanguage) string {
