@@ -737,7 +737,8 @@ func commandHelpText(language model.Language) string {
 Examples:
 /knowledge gpu
 /type skill rust
-/ask Who knows Rust?`)
+/ask Who knows Rust?
+/update @alice is not a scammer`)
 	}
 	return strings.TrimSpace(`## 知识 Bot 命令
 - /knowledge <关键词>：查询有效事实
@@ -758,7 +759,8 @@ Examples:
 示例：
 /knowledge 显卡
 /type skill rust
-/ask 谁了解 Rust？`)
+/ask 谁了解 Rust？
+/update zhang lin 不是风险账号`)
 }
 
 func commandStartText(language model.Language) string {
@@ -845,15 +847,15 @@ func commandStatusUpdatedText(language model.Language, fact model.KnowledgeFact,
 func commandMaintenanceResultText(language model.Language, result knowledge.MaintenanceResult) string {
 	if result.Action == "" || result.Action == "none" {
 		if language == model.LanguageEN {
-			return "No safe knowledge update was detected. Please include an affected user and item/topic, or use /expire <fact_id>."
+			return "I did not find a safe update to preview. Try a natural sentence like `/update @alice is not a scammer`, or search first with `/ask is @alice risky?` and then use `/forget <fact_id>`."
 		}
-		return "没有识别到可安全执行的知识维护。请同时说明受影响用户和物品/主题，或使用 /expire <事实ID>。"
+		return "我没找到可安全维护的记录。你可以直接说：`/update zhang lin 不是风险账号`；如果还是找不到，先用 `/ask zhang lin 是风险账号吗` 查到记录，再点 `/forget <事实ID>`。"
 	}
 	if len(result.UpdatedFacts) == 0 {
 		if language == model.LanguageEN {
-			return "No matching knowledge facts were found. Try a fact ID command such as /expire <fact_id>."
+			return "I understood the update, but no matching fact was found. Try the exact @username/display name, or search first with `/ask <name> risk account`."
 		}
-		return "没有找到匹配的知识事实。可以先查询并使用 /expire <事实ID> 这类命令。"
+		return "我理解这次维护，但没找到匹配记录。请试试更准确的 @username 或显示名；也可以先发 `/ask 名字 是风险账号吗` 查到记录后再 `/forget <事实ID>`。"
 	}
 	lines := make([]string, 0, len(result.UpdatedFacts)+1)
 	if language == model.LanguageEN {

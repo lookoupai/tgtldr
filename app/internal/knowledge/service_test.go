@@ -322,6 +322,34 @@ func TestMaintenanceInstruction(t *testing.T) {
 			Status:          model.KnowledgeFactStatusActive,
 		}, model.KnowledgeFactStatusActive), ShouldBeFalse)
 	})
+
+	Convey("口语化澄清风险账号会解析成忽略风险账号事实", t, func() {
+		instruction, ok := parseDirectMaintenanceText("zhang lin 不是风险账号")
+
+		So(ok, ShouldBeTrue)
+		So(instruction.Action, ShouldEqual, "dismiss")
+		So(instruction.TargetType, ShouldEqual, "risk_account")
+		So(instruction.TargetQuery, ShouldEqual, "*")
+		So(instruction.TargetUser, ShouldEqual, "zhang lin")
+	})
+
+	Convey("风险账号维护支持按用户名匹配", t, func() {
+		match := statusUpdateMatch{
+			factType:        "risk_account",
+			query:           "*",
+			subjectAliases:  compactNormalizedStrings([]string{"zhang lin"}),
+			explicitSubject: true,
+		}
+
+		So(maintenanceMatchesCandidate(match, model.KnowledgeFact{
+			ID:                50,
+			FactType:          "risk_account",
+			Title:             "zhang lin 被误判为风险账号",
+			DataJSON:          `{"reported_account_name":"zhang lin"}`,
+			SubjectSenderName: "zhang lin",
+			Status:            model.KnowledgeFactStatusActive,
+		}, model.KnowledgeFactStatusActive), ShouldBeTrue)
+	})
 }
 
 func TestKnowledgeQueryInstruction(t *testing.T) {
@@ -400,5 +428,53 @@ func TestParseExtractionFacts(t *testing.T) {
 		So(facts, ShouldHaveLength, 1)
 		So(facts[0].SubjectSenderName, ShouldEqual, "Alice")
 		So(facts[0].SubjectUsername, ShouldEqual, "alice_api")
+	})
+
+	Convey("普通敏感发言不会被兜底保存为风险账号", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 102,
+			TelegramSenderID:  12,
+			SenderName:        "Alice",
+			SenderUsername:    "alice",
+			TextContent:       "出售成人博彩广告资源，价格私聊",
+			MessageTime:       now,
+		}
+
+		facts, err := parseExtractionFacts(
+			`{"facts":[{"type":"risk_account","title":"Alice 敏感业务","data":{"reported_account_username":"alice","risk_type":"敏感交易","allegation":"发布成人博彩广告资源","evidence":"出售成人博彩广告资源，价格私聊","status":"reported"},"subjectMessageRef":"m001","sourceMessageRefs":["m001"],"confidence":0.95}]}`,
+			model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30},
+			model.Chat{ID: 2},
+			map[string]model.Message{"m001": message},
+			now,
+		)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 0)
+	})
+
+	Convey("明确曝光诈骗账号会保存为风险账号", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 103,
+			TelegramSenderID:  13,
+			SenderName:        "Bob",
+			SenderUsername:    "bob",
+			TextContent:       "曝光 @alice 是骗子，收款不发货后拉黑我",
+			MessageTime:       now,
+		}
+
+		facts, err := parseExtractionFacts(
+			`{"facts":[{"type":"risk_account","title":"@alice 被曝光收款不发货","data":{"reported_account_username":"alice","reporter":"Bob","risk_type":"诈骗","allegation":"收款不发货后拉黑","evidence":"曝光 @alice 是骗子，收款不发货后拉黑我","status":"reported"},"subjectMessageRef":"m001","sourceMessageRefs":["m001"],"confidence":0.95}]}`,
+			model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30},
+			model.Chat{ID: 2},
+			map[string]model.Message{"m001": message},
+			now,
+		)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 1)
+		So(facts[0].FactType, ShouldEqual, "risk_account")
+		So(facts[0].SubjectSenderName, ShouldEqual, "Bob")
 	})
 }

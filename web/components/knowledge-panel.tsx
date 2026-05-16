@@ -75,6 +75,28 @@ const defaultTemplateKey: KnowledgeTemplateKey = "general";
 
 const defaultManualFactType = "skill";
 
+type ManualFactMode = "skill" | "demand" | "supply" | "risk_account" | "custom";
+
+type ManualFactDraft = {
+  mode: ManualFactMode;
+  person: string;
+  username: string;
+  title: string;
+  detail: string;
+};
+
+const manualFactModeOptions: Array<{
+  mode: ManualFactMode;
+  label: string;
+  hint: string;
+}> = [
+  { mode: "skill", label: "记录技能", hint: "例如：Alice 会 Rust" },
+  { mode: "demand", label: "记录需求", hint: "例如：Bob 需要 Gmail 账号" },
+  { mode: "supply", label: "记录供应", hint: "例如：Carol 出售 API" },
+  { mode: "risk_account", label: "记录风险账号", hint: "只用于明确曝光或举报" },
+  { mode: "custom", label: "高级自定义", hint: "手动填写类型和 JSON" },
+];
+
 const knowledgeSpaceTemplates: KnowledgeSpaceTemplate[] = [
   {
     key: "general",
@@ -172,7 +194,7 @@ const knowledgeSpaceTemplates: KnowledgeSpaceTemplate[] = [
       },
     }),
     extractPrompt:
-      "只记录未来可能复用的信息。覆盖需求、供应、技能、教程方法、工具资源、风险避坑、风险账号、活动机会。技能画像必须基于用户自述、作品、持续高质量回答或明确承诺，不能凭一句闲聊推断。风险账号请用 risk_account：reported_account_username 记录被举报的 @username；reported_account_id 只有在消息中明确出现稳定数字 ID 或可从被举报账号本人消息确认时才填写；reporter 记录举报/曝光来源；status 默认 reported，只有多方证据或明确结论时才用 confirmed，出现澄清或争议时用 disputed/cleared；subjectMessageRef 指向举报/曝光消息，不要把可变 @username 当成稳定身份。状态变更请用 status_update，target_type 填 demand/supply/skill/help_offer 等旧事实类型，target_query 填要失效的物品或主题，action 使用 resolved、expired、sold_out、paused、no_longer_needed 等英文短语。不要记录玩笑、猜测、纯闲聊、临时情绪或无证据结论。",
+      "只记录未来可能复用的信息。覆盖需求、供应、技能、教程方法、工具资源、风险避坑、风险账号、活动机会。技能画像必须基于用户自述、作品、持续高质量回答或明确承诺，不能凭一句闲聊推断。风险账号请用 risk_account，但只记录明确账号身份风险：某账号被点名曝光、举报、拉黑、指控诈骗/冒充/跑路/收款不发货，或围绕这类曝光的澄清和争议。不要因为账号本人发布敏感、不正规、灰产、博彩、成人、交易、广告或争议话题内容，就把发言者记为风险账号；这类内容如果有可复用避坑价值，只能用 risk，不能用 risk_account。risk_account 的 reported_account_username 记录被举报的 @username；reported_account_id 只有在消息中明确出现稳定数字 ID 或可从被举报账号本人消息确认时才填写；reporter 记录举报/曝光来源；evidence 必须写明举报/曝光/澄清依据；status 默认 reported，只有多方证据或明确结论时才用 confirmed，出现澄清或争议时用 disputed/cleared；subjectMessageRef 指向举报/曝光/澄清消息，不要指向被举报账号的普通聊天消息；不要把可变 @username 当成稳定身份。状态变更请用 status_update，target_type 填 demand/supply/skill/help_offer 等旧事实类型，target_query 填要失效的物品或主题，action 使用 resolved、expired、sold_out、paused、no_longer_needed 等英文短语。不要记录玩笑、猜测、纯闲聊、临时情绪或无证据结论。",
     summaryPrompt: "摘要附加时按需求、供应、技能、教程、资源、风险、风险账号、活动分组；风险账号只写“有人举报/已确认/存在争议”等证据状态，保留可联系用户、置信度和事实 ID，不展示 status_update。",
     confidenceThreshold: 0.75,
     retentionDays: 60,
@@ -331,7 +353,7 @@ const knowledgeSpaceTemplates: KnowledgeSpaceTemplate[] = [
     key: "risk_accounts",
     label: "风险账号",
     name: "风险账号库",
-    description: "记录群内曝光、举报、澄清和争议账号，区分可变用户名与稳定身份 ID。",
+    description: "记录群内明确曝光、举报、澄清和争议的账号身份风险，区分可变用户名与稳定身份 ID。",
     schemaJson: schemaString({
       types: {
         risk_account: {
@@ -351,7 +373,7 @@ const knowledgeSpaceTemplates: KnowledgeSpaceTemplate[] = [
       },
     }),
     extractPrompt:
-      "只抽取明确曝光、举报、澄清或争议账号的信息，不记录玩笑、辱骂、猜测或没有对象的泛泛提醒。reported_account_username 记录被举报的 @username；reported_account_id 只有在消息中明确出现稳定数字 ID，或可从被举报账号本人消息确认时才填写；reported_account_name 记录被举报账号显示名；reporter 记录举报/曝光来源。subjectMessageRef 指向举报、曝光或澄清消息，让事实主体代表信息来源。status 默认 reported；多方证据或明确结论才用 confirmed；出现反驳或未证实时用 disputed；明确澄清时用 cleared。回答时必须说明证据状态，不要把可变 @username 当成稳定身份。",
+      "只抽取明确账号身份风险：某账号被点名曝光、举报、拉黑、指控诈骗/冒充/跑路/收款不发货，或围绕这类曝光的澄清和争议。不记录玩笑、辱骂、猜测或没有对象的泛泛提醒。不要因为账号本人发布敏感、不正规、灰产、博彩、成人、交易、广告或争议话题内容，就把发言者记为风险账号；当前空间只有 risk_account，遇到这类普通发言必须跳过。reported_account_username 记录被举报的 @username；reported_account_id 只有在消息中明确出现稳定数字 ID，或可从被举报账号本人消息确认时才填写；reported_account_name 记录被举报账号显示名；reporter 记录举报/曝光来源；evidence 必须写明举报/曝光/澄清依据。subjectMessageRef 指向举报、曝光或澄清消息，让事实主体代表信息来源，不要指向被举报账号的普通聊天消息。status 默认 reported；多方证据或明确结论才用 confirmed；出现反驳或未证实时用 disputed；明确澄清时用 cleared。回答时必须说明证据状态，不要把可变 @username 当成稳定身份。",
     summaryPrompt:
       "摘要附加时只列出风险账号、证据状态、风险类型、举报来源和规避建议；除非 status 为 confirmed，否则使用“有人举报/群内曾曝光/存在争议”的措辞，并保留置信度和事实 ID。",
     confidenceThreshold: 0.8,
@@ -411,6 +433,9 @@ export function KnowledgePanel() {
   const [naturalQuery, setNaturalQuery] = useState("");
   const [maintenanceText, setMaintenanceText] = useState("");
   const [manualFact, setManualFact] = useState<KnowledgeFact>(() => newManualFact());
+  const [manualFactDraft, setManualFactDraft] = useState<ManualFactDraft>(() =>
+    newManualFactDraft(),
+  );
   const [creatingManualFact, setCreatingManualFact] = useState(false);
   const [savingFactEdit, setSavingFactEdit] = useState(false);
   const [runChatId, setRunChatId] = useState<number | "">("");
@@ -628,7 +653,13 @@ export function KnowledgePanel() {
   }
 
   async function createManualFact() {
-    const error = validateManualFact(manualFact);
+    const draftError = validateManualFactDraft(manualFactDraft);
+    if (draftError) {
+      toast.showError(draftError);
+      return;
+    }
+    const prepared = prepareManualFact(manualFact, manualFactDraft);
+    const error = validateManualFact(prepared);
     if (error) {
       toast.showError(error);
       return;
@@ -636,16 +667,17 @@ export function KnowledgePanel() {
     setCreatingManualFact(true);
     try {
       const saved = await api.createKnowledgeFact({
-        ...manualFact,
-        factType: manualFact.factType.trim(),
-        title: manualFact.title.trim(),
-        dataJson: manualFact.dataJson.trim() || "{}",
-        subjectSenderName: manualFact.subjectSenderName.trim(),
-        subjectUsername: manualFact.subjectUsername.trim().replace(/^@/, ""),
+        ...prepared,
+        factType: prepared.factType.trim(),
+        title: prepared.title.trim(),
+        dataJson: prepared.dataJson.trim() || "{}",
+        subjectSenderName: prepared.subjectSenderName.trim(),
+        subjectUsername: prepared.subjectUsername.trim().replace(/^@/, ""),
       });
       toast.showSuccess(`已新增知识事实「${saved.title}」。`);
       setSelectedSpaceId(saved.spaceId);
       setManualFact(newManualFact({ spaceId: saved.spaceId, chatId: saved.chatId }));
+      setManualFactDraft(newManualFactDraft({ mode: manualFactDraft.mode }));
       await Promise.all([loadFacts(saved.spaceId), loadSubjects(saved.spaceId)]);
     } catch (err) {
       toast.showError(asMessage(err));
@@ -1444,7 +1476,7 @@ export function KnowledgePanel() {
 
       <Surface
         title="人工新增事实"
-        description="用于补录 AI 没抽到、但长期有价值的知识。"
+        description="给小白使用的快捷录入。优先填人话字段；只有高级自定义才需要写 JSON。"
       >
         <div className="form-stack">
           <div className="form-grid">
@@ -1485,18 +1517,6 @@ export function KnowledgePanel() {
                 value={manualFact.chatId ? String(manualFact.chatId) : ""}
               />
             </Field>
-            <Field label="类型" required>
-              <Input
-                onChange={(event) =>
-                  setManualFact((current) => ({
-                    ...current,
-                    factType: event.target.value,
-                  }))
-                }
-                placeholder="skill / demand / supply"
-                value={manualFact.factType}
-              />
-            </Field>
             <Field label="置信度">
               <Input
                 max={1}
@@ -1514,61 +1534,165 @@ export function KnowledgePanel() {
             </Field>
           </div>
 
-          <Field label="标题" required>
-            <Input
-              onChange={(event) =>
-                setManualFact((current) => ({
+          <Field label="要记录什么" required>
+            <AppSelect
+              onChange={(value) =>
+                setManualFactDraft((current) => ({
                   ...current,
-                  title: event.target.value,
+                  mode: (value as ManualFactMode) || "skill",
                 }))
               }
-              placeholder="Alice 了解炒币"
-              value={manualFact.title}
+              options={manualFactModeOptions.map((option) => ({
+                value: option.mode,
+                label: `${option.label} · ${option.hint}`,
+              }))}
+              value={manualFactDraft.mode}
             />
           </Field>
 
-          <div className="form-grid">
-            <Field label="用户名">
-              <Input
-                onChange={(event) =>
-                  setManualFact((current) => ({
-                    ...current,
-                    subjectUsername: event.target.value,
-                  }))
-                }
-                placeholder="@alice"
-                value={manualFact.subjectUsername}
-              />
-            </Field>
-            <Field label="显示名">
-              <Input
-                onChange={(event) =>
-                  setManualFact((current) => ({
-                    ...current,
-                    subjectSenderName: event.target.value,
-                  }))
-                }
-                placeholder="Alice"
-                value={manualFact.subjectSenderName}
-              />
-            </Field>
-          </div>
+          {manualFactDraft.mode === "custom" ? (
+            <>
+              <div className="form-grid">
+                <Field label="类型" required>
+                  <Input
+                    onChange={(event) =>
+                      setManualFact((current) => ({
+                        ...current,
+                        factType: event.target.value,
+                      }))
+                    }
+                    placeholder="skill / demand / supply / risk_account"
+                    value={manualFact.factType}
+                  />
+                </Field>
+                <Field label="标题" required>
+                  <Input
+                    onChange={(event) =>
+                      setManualFact((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                    placeholder="Alice 了解炒币"
+                    value={manualFact.title}
+                  />
+                </Field>
+              </div>
+              <div className="form-grid">
+                <Field label="用户名">
+                  <Input
+                    onChange={(event) =>
+                      setManualFact((current) => ({
+                        ...current,
+                        subjectUsername: event.target.value,
+                      }))
+                    }
+                    placeholder="@alice"
+                    value={manualFact.subjectUsername}
+                  />
+                </Field>
+                <Field label="显示名">
+                  <Input
+                    onChange={(event) =>
+                      setManualFact((current) => ({
+                        ...current,
+                        subjectSenderName: event.target.value,
+                      }))
+                    }
+                    placeholder="Alice"
+                    value={manualFact.subjectSenderName}
+                  />
+                </Field>
+              </div>
+              <Field label="数据 JSON">
+                <Textarea
+                  onChange={(event) =>
+                    setManualFact((current) => ({
+                      ...current,
+                      dataJson: event.target.value,
+                    }))
+                  }
+                  rows={5}
+                  value={manualFact.dataJson}
+                />
+              </Field>
+            </>
+          ) : (
+            <>
+              <div className="form-grid">
+                <Field label="相关人 / 账号" required={manualFactDraft.mode !== "demand"}>
+                  <Input
+                    onChange={(event) =>
+                      setManualFactDraft((current) => ({
+                        ...current,
+                        person: event.target.value,
+                      }))
+                    }
+                    placeholder={manualFactDraft.mode === "risk_account" ? "@alice 或 Alice" : "Alice"}
+                    value={manualFactDraft.person}
+                  />
+                </Field>
+                <Field label="用户名">
+                  <Input
+                    onChange={(event) =>
+                      setManualFactDraft((current) => ({
+                        ...current,
+                        username: event.target.value,
+                      }))
+                    }
+                    placeholder="@alice，可不填"
+                    value={manualFactDraft.username}
+                  />
+                </Field>
+              </div>
+              <Field label={manualFactDraft.mode === "risk_account" ? "曝光原因" : "主题 / 物品"} required>
+                <Input
+                  onChange={(event) =>
+                    setManualFactDraft((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                  placeholder={manualFactPlaceholder(manualFactDraft.mode)}
+                  value={manualFactDraft.title}
+                />
+              </Field>
+              <Field label="补充说明 / 证据">
+                <Textarea
+                  onChange={(event) =>
+                    setManualFactDraft((current) => ({
+                      ...current,
+                      detail: event.target.value,
+                    }))
+                  }
+                  placeholder="例如：谁说的、为什么可信、规避建议。没有就留空。"
+                  rows={4}
+                  value={manualFactDraft.detail}
+                />
+              </Field>
+            </>
+          )}
 
-          <Field label="数据 JSON">
-            <Textarea
-              onChange={(event) =>
-                setManualFact((current) => ({
-                  ...current,
-                  dataJson: event.target.value,
-                }))
-              }
-              rows={5}
-              value={manualFact.dataJson}
-            />
-          </Field>
+          {manualFactDraft.mode !== "custom" ? (
+            <div className="knowledge-fact-card">
+              <div className="knowledge-card-head">
+                <div className="data-row-title">
+                  <strong>将保存为</strong>
+                  <span>{manualFactPreviewText(manualFact, manualFactDraft)}</span>
+                </div>
+                <StatusPill tone="neutral">{manualFactDraft.mode}</StatusPill>
+              </div>
+              <pre className="knowledge-fact-json">
+                {prepareManualFact(manualFact, manualFactDraft).dataJson}
+              </pre>
+            </div>
+          ) : null}
 
           <div className="editor-footer">
-            <p className="muted">人工新增的事实会立即进入 active 状态，并参与后续查询和摘要附加。</p>
+            <p className="muted">
+              人工新增的事实会立即进入 active 状态，并参与后续查询和摘要附加。
+              风险账号只建议录入明确曝光或举报，不要把敏感聊天内容当成账号风险。
+            </p>
             <Button
               disabled={creatingManualFact}
               onClick={() => startTransition(() => void createManualFact())}
@@ -1585,18 +1709,17 @@ export function KnowledgePanel() {
         description="记录事实被恢复、过期或忽略的来源，便于排查知识库状态变化。"
       >
         {maintenanceEvents.length === 0 ? (
-          <EmptyState title="暂无维护记录" description="事实状态发生变化后会在这里记录来源。" />
+          <EmptyState title="还没有维护记录" description="通过 Bot 或页面维护知识事实后会显示在这里。" />
         ) : (
           <div className="data-table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
                   <th>时间</th>
-                  <th>来源</th>
-                  <th>操作</th>
+                  <th>动作</th>
                   <th>事实</th>
+                  <th>来源</th>
                   <th>状态</th>
-                  <th>匹配</th>
                   <th>原因</th>
                 </tr>
               </thead>
@@ -1604,23 +1727,15 @@ export function KnowledgePanel() {
                 {maintenanceEvents.map((event) => (
                   <tr className="data-row" key={event.id}>
                     <td>{formatDateTime(event.createdAt)}</td>
-                    <td>{formatMaintenanceSource(event.source)}</td>
                     <td>{formatMaintenanceAction(event.action)}</td>
-                    <td>
-                      <div className="data-row-title">
-                        <strong>{event.factTitle || `#${event.factId}`}</strong>
-                        <span>{event.spaceName || event.spaceId} / {event.chatTitle || event.chatId}</span>
-                      </div>
-                    </td>
+                    <td>{event.factTitle || `#${event.factId}`}</td>
+                    <td>{formatMaintenanceSource(event.source)}</td>
                     <td>
                       <StatusPill tone={maintenanceEventStatusTone(event.nextStatus)}>
-                        {event.previousStatus || "unknown"} -&gt; {event.nextStatus || "unknown"}
+                        {event.previousStatus || "-"} → {event.nextStatus || "-"}
                       </StatusPill>
                     </td>
-                    <td>{event.matchedQuery || "未记录"}</td>
-                    <td>
-                      <span className="muted">{event.reason || event.operatorText || "无"}</span>
-                    </td>
+                    <td>{event.reason || event.operatorText || "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2112,6 +2227,126 @@ function newManualFact(overrides: Partial<KnowledgeFact> = {}): KnowledgeFact {
     updatedAt: "",
     ...overrides,
   };
+}
+
+function newManualFactDraft(overrides: Partial<ManualFactDraft> = {}): ManualFactDraft {
+  return {
+    mode: "skill",
+    person: "",
+    username: "",
+    title: "",
+    detail: "",
+    ...overrides,
+  };
+}
+
+function prepareManualFact(fact: KnowledgeFact, draft: ManualFactDraft): KnowledgeFact {
+  if (draft.mode === "custom") {
+    return fact;
+  }
+  const person = compactText(draft.person);
+  const username = compactText(draft.username).replace(/^@/, "");
+  const title = compactText(draft.title);
+  const detail = compactText(draft.detail);
+  const prepared = newManualFact({
+    ...fact,
+    subjectSenderName: person,
+    subjectUsername: username,
+  });
+
+  switch (draft.mode) {
+    case "skill":
+      return {
+        ...prepared,
+        factType: "skill",
+        title: title || `${person || username || "未知用户"} 的技能`,
+        dataJson: schemaString({
+          area: title || detail || "未填写",
+          evidence: detail || title || person || username || "",
+          level: "unknown",
+        }),
+      };
+    case "demand":
+      return {
+        ...prepared,
+        factType: "demand",
+        title: title || `${person || username || "未知用户"} 的需求`,
+        dataJson: schemaString({
+          item: title || detail || "未填写",
+          quantity: "",
+          budget: "",
+          location: "",
+          deadline: "",
+        }),
+      };
+    case "supply":
+      return {
+        ...prepared,
+        factType: "supply",
+        title: title || `${person || username || "未知用户"} 的供应`,
+        dataJson: schemaString({
+          item: title || detail || "未填写",
+          quantity: "",
+          price: "",
+          location: "",
+        }),
+      };
+    case "risk_account":
+      return {
+        ...prepared,
+        factType: "risk_account",
+        title: title || `${person || username || "未知账号"} 风险账号`,
+        dataJson: schemaString({
+          reported_account_username: username,
+          reported_account_name: person,
+          reporter: "",
+          risk_type: "风险账号",
+          allegation: title || detail || "未填写",
+          evidence: detail || title || "",
+          status: "reported",
+          mitigation: "",
+        }),
+      };
+    default:
+      return prepared;
+  }
+}
+
+function validateManualFactDraft(draft: ManualFactDraft) {
+  if (draft.mode === "custom") {
+    return "";
+  }
+  if (!compactText(draft.person) && draft.mode !== "demand") {
+    return "请填写相关人或账号。";
+  }
+  if (!compactText(draft.title)) {
+    return draft.mode === "risk_account" ? "请填写曝光原因。" : "请填写主题或物品。";
+  }
+  return "";
+}
+
+function manualFactPlaceholder(mode: ManualFactMode) {
+  switch (mode) {
+    case "skill":
+      return "例如：Rust、剪辑、翻译";
+    case "demand":
+      return "例如：Gmail 账号、显卡、素材";
+    case "supply":
+      return "例如：API、教程、资源";
+    case "risk_account":
+      return "例如：被曝光为骗子、收款不发货、已澄清";
+    default:
+      return "例如：任何长期有价值的信息";
+  }
+}
+
+function manualFactPreviewText(fact: KnowledgeFact, draft: ManualFactDraft) {
+  const prepared = prepareManualFact(fact, draft);
+  return `${prepared.factType} / ${prepared.title}`;
+}
+
+function compactText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function applyKnowledgeTemplate(

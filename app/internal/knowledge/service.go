@@ -418,6 +418,9 @@ func (s *Service) PreviewMaintenanceText(ctx context.Context, text string) (Main
 }
 
 func (s *Service) parseMaintenanceText(ctx context.Context, text string) (maintenanceInstruction, error) {
+	if instruction, ok := parseDirectMaintenanceText(text); ok {
+		return instruction, nil
+	}
 	settings, err := s.store.Settings.Get(ctx)
 	if err != nil {
 		return maintenanceInstruction{}, err
@@ -472,10 +475,11 @@ func buildMaintenanceSystemPrompt(language model.Language) string {
 		return strings.TrimSpace(`
 You parse one user message into a knowledge maintenance instruction.
 Output ONLY valid JSON in this exact shape:
-{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|","targetQuery":"item or topic to match","targetUser":"username or display name when explicitly mentioned","reason":"short reason","confidence":0.8}
+{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|risk_account|","targetQuery":"item or topic to match","targetUser":"username or display name when explicitly mentioned","reason":"short reason","confidence":0.8}
 
 Rules:
 - Use action "expire" when the message says a demand, supply, offer, registration, or opportunity is no longer valid, fulfilled, sold out, paused, cancelled, or expired.
+- Use action "dismiss" and targetType "risk_account" when the user says a person/account is not risky, not a scammer, not a risk account, cleared, or incorrectly flagged.
 - Use action "dismiss" only when the user explicitly asks to ignore/remove a fact.
 - Use action "restore" only when the user explicitly says a fact should become valid again.
 - Use action "none" if this is only a query, a new fact, or too ambiguous.
@@ -487,10 +491,11 @@ Rules:
 	return strings.TrimSpace(`
 你负责把用户发给知识库机器人的一句维护说明解析成结构化指令。
 只输出合法 JSON，格式必须是：
-{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|","targetQuery":"要匹配的物品或主题","targetUser":"明确提到的用户名或显示名","reason":"简短原因","confidence":0.8}
+{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|risk_account|","targetQuery":"要匹配的物品或主题","targetUser":"明确提到的用户名或显示名","reason":"简短原因","confidence":0.8}
 
 规则：
 - 如果用户表示某个需求、供应、服务、报名或机会“不需要了、已买到、卖完了、暂停、取消、失效”，action 用 expire。
+- 如果用户说某个人或账号“不是风险账号、不是骗子、已澄清、误判了”，action 用 dismiss，targetType 用 risk_account，targetUser 填该人或账号，targetQuery 填 "*"。
 - 只有用户明确要求“忽略、删除、不再记录”时，action 才用 dismiss。
 - 只有用户明确表示“恢复、重新有效、又开始接单”等，action 才用 restore。
 - 如果只是查询、新增事实或含义不明确，action 用 none。
@@ -515,7 +520,8 @@ Rules:
 - Use factType "solution" for tutorials, methods, setup, installation, how-to.
 - Use factType "resource" for tools, links, services, documents.
 - Use factType "risk" for warnings, scams, pitfalls, problems.
-- Use factType "risk_account" when asking whether a person, handle, account, seller, or counterparty is a scammer, risky, trustworthy, or has been reported.
+- Use factType "risk_account" only when asking whether a person, handle, account, seller, or counterparty has been explicitly exposed, reported, blacklisted, or accused of scam/fraud.
+- Do not use factType "risk_account" for ordinary sensitive or irregular chat content.
 - Use factType "event" for events, registrations, meetups, deadlines.
 - Leave factType empty when the intent does not clearly constrain a type.
 `)
@@ -533,7 +539,8 @@ Rules:
 - 问教程、方法、安装、配置、怎么做时，factType 用 solution。
 - 问工具、链接、资源、文档时，factType 用 resource。
 - 问风险、骗局、避坑、问题时，factType 用 risk。
-- 问某个人、@用户名、账号、卖家、交易对象是不是骗子、是否靠谱、是否有曝光记录时，factType 用 risk_account。
+- 只有在问某个人、@用户名、账号、卖家、交易对象是否被明确曝光、举报、拉黑或指控诈骗/欺诈时，factType 才用 risk_account。
+- 普通敏感或不正规聊天内容不要归到 risk_account。
 - 问活动、报名、聚会、截止时间时，factType 用 event。
 - 如果意图没有明显类型限制，factType 留空。
 `)
@@ -582,6 +589,96 @@ func normalizeMaintenanceAction(action string) string {
 	default:
 		return "none"
 	}
+}
+
+func parseDirectMaintenanceText(text string) (maintenanceInstruction, bool) {
+	trimmed := compactText(text)
+	if trimmed == "" {
+		return maintenanceInstruction{}, false
+	}
+	if instruction, ok := parseRiskAccountMaintenanceText(trimmed); ok {
+		return instruction, true
+	}
+	return maintenanceInstruction{}, false
+}
+
+func parseRiskAccountMaintenanceText(text string) (maintenanceInstruction, bool) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" || !strings.Contains(lower, "风险账号") && !strings.Contains(lower, "骗子") && !strings.Contains(lower, "scammer") && !strings.Contains(lower, "risk account") {
+		return maintenanceInstruction{}, false
+	}
+
+	action := ""
+	reason := ""
+	switch {
+	case containsAny(lower, []string{"不是风险账号", "非风险账号", "不是骗子", "不是 scammer", "not a scammer", "not scammer", "not risk account", "误判", "错判", "已澄清", "澄清了"}):
+		action = "dismiss"
+		reason = "用户澄清该账号不是风险账号"
+	case containsAny(lower, []string{"是风险账号", "确认风险账号", "确认为风险账号", "是骗子", "确认骗子"}):
+		action = "restore"
+		reason = "用户确认该账号仍属于风险账号"
+	default:
+		return maintenanceInstruction{}, false
+	}
+
+	targetUser := extractRiskAccountMaintenanceUser(text)
+	if targetUser == "" {
+		return maintenanceInstruction{}, false
+	}
+	return maintenanceInstruction{
+		Action:      action,
+		TargetType:  "risk_account",
+		TargetQuery: "*",
+		TargetUser:  targetUser,
+		Reason:      reason,
+		Confidence:  1,
+	}, true
+}
+
+func extractRiskAccountMaintenanceUser(text string) string {
+	trimmed := compactText(text)
+	if trimmed == "" {
+		return ""
+	}
+	patterns := []string{
+		"不是风险账号", "非风险账号", "不是骗子", "不是 scammer", "not a scammer", "not scammer", "not risk account",
+		"是风险账号", "确认风险账号", "确认为风险账号", "是骗子", "确认骗子", "误判", "错判", "已澄清", "澄清了",
+	}
+	lower := strings.ToLower(trimmed)
+	cutAt := len(trimmed)
+	for _, pattern := range patterns {
+		if index := strings.Index(lower, strings.ToLower(pattern)); index >= 0 && index < cutAt {
+			cutAt = index
+		}
+	}
+	candidate := strings.TrimSpace(trimmed[:cutAt])
+	candidate = strings.Trim(candidate, " ，,。:：;；")
+	if strings.HasPrefix(candidate, "/update") {
+		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "/update"))
+	}
+	if strings.HasPrefix(candidate, "@") {
+		fields := strings.Fields(candidate)
+		if len(fields) > 0 {
+			return strings.Trim(fields[0], " ，,。:：;；")
+		}
+	}
+	fields := strings.Fields(candidate)
+	if len(fields) == 0 {
+		return ""
+	}
+	if len(fields) > 4 {
+		fields = fields[:4]
+	}
+	return strings.Join(fields, " ")
+}
+
+func containsAny(text string, values []string) bool {
+	for _, value := range values {
+		if strings.Contains(text, strings.ToLower(value)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction maintenanceInstruction, operatorText string, source string) (MaintenanceResult, error) {
@@ -736,6 +833,7 @@ Rules:
 - If a message is posted by an aggregator channel, forwarding channel, announcement channel, or auto-reply bot, do not treat that channel/bot as the seller, demander, owner, or contact.
 - For forwarded/aggregated posts, use the explicitly mentioned contact in the text as the fact subject when present by setting subjectUsername or subjectName; if no real contact is present, skip demand/supply/resource facts from that message.
 - Skip keyword auto-replies, verification/welcome messages, pure advertising slots, and repeated bot advertisements unless the message contains a direct human seller/buyer contact.
+- Do not classify a sender as risk_account only because they posted sensitive, irregular, gray-market, gambling, adult, trading, or advertising content; risk_account requires an explicit account exposure, report, blacklist, scam accusation, or related clarification/dispute.
 - Do not invent prices, quantities, locations, users, or deadlines.
 - If evidence is weak, either lower confidence or skip the fact.
 - If a message says an earlier demand, supply, offer, registration, or skill/profile item is no longer valid, output a status_update fact instead of repeating the old fact.
@@ -755,6 +853,7 @@ Rules:
 - 如果消息来自聚合频道、转发频道、公告频道或关键词自动回复机器人，不要把该频道/机器人当成卖家、需求方、所有者或联系人。
 - 对转发/聚合内容，优先使用正文里明确出现的联系人作为事实主体，并填入 subjectUsername 或 subjectName；如果正文里没有真实联系人，跳过该消息里的需求、供应和资源事实。
 - 跳过关键词自动回复、入群验证/欢迎消息、纯广告位和重复机器人广告；除非消息中明确包含可联系的真人或业务账号。
+- 不要仅因为发言者发布敏感、不正规、灰产、博彩、成人、交易或广告内容，就把该发言者抽取为 risk_account；risk_account 必须来自明确的账号曝光、举报、黑名单、诈骗指控或相关澄清/争议。
 - 不要编造价格、数量、地点、用户或截止时间。
 - 证据较弱时降低 confidence；无法确认时跳过该事实。
 - 如果消息表示之前的需求、供应、服务、报名或用户画像已经不再有效，请输出 status_update 类型，而不是重复旧事实。
@@ -1060,7 +1159,7 @@ func statusUpdateMatchesCandidate(update model.KnowledgeFact, match statusUpdate
 
 func isExpirableKnowledgeFactType(factType string) bool {
 	switch strings.ToLower(strings.TrimSpace(factType)) {
-	case "demand", "supply", "resource", "help_offer", "registration", "candidate", "hiring", "referral", "event":
+	case "demand", "supply", "resource", "help_offer", "registration", "candidate", "hiring", "referral", "event", "risk_account":
 		return true
 	default:
 		return false
@@ -1074,6 +1173,9 @@ func statusUpdateMatchesSubject(update model.KnowledgeFact, match statusUpdateMa
 	candidateAliases := compactNormalizedStrings([]string{
 		candidate.SubjectUsername,
 		candidate.SubjectSenderName,
+		reportedAccountAlias(candidate.DataJSON, "reported_account_username"),
+		reportedAccountAlias(candidate.DataJSON, "reported_account_id"),
+		reportedAccountAlias(candidate.DataJSON, "reported_account_name"),
 	})
 	if len(match.subjectAliases) == 0 || len(candidateAliases) == 0 {
 		return false
@@ -1086,6 +1188,10 @@ func statusUpdateMatchesSubject(update model.KnowledgeFact, match statusUpdateMa
 		}
 	}
 	return false
+}
+
+func reportedAccountAlias(dataJSON string, key string) string {
+	return firstDataString(decodeKnowledgeFactData(dataJSON), key)
 }
 
 func statusUpdateMatchesQuery(query string, candidate model.KnowledgeFact) bool {
@@ -1161,6 +1267,9 @@ func parseExtractionFacts(raw string, space model.KnowledgeSpace, chat model.Cha
 		if len(sourceMessages) == 0 {
 			continue
 		}
+		if strings.EqualFold(factType, "risk_account") && !isSupportedRiskAccountFact(extracted.Data, sourceMessages) {
+			continue
+		}
 		subject := refs[strings.TrimSpace(extracted.SubjectMessageRef)]
 		if subject.TelegramMessageID == 0 {
 			subject = sourceMessages[0]
@@ -1191,6 +1300,58 @@ func parseExtractionFacts(raw string, space model.KnowledgeSpace, chat model.Cha
 		})
 	}
 	return facts, nil
+}
+
+func isSupportedRiskAccountFact(data json.RawMessage, sourceMessages []model.Message) bool {
+	fields := decodeKnowledgeFactData(string(data))
+	if strings.TrimSpace(mapStringField(fields, "reported_account_username")) == "" &&
+		strings.TrimSpace(mapStringField(fields, "reported_account_id")) == "" &&
+		strings.TrimSpace(mapStringField(fields, "reported_account_name")) == "" {
+		return false
+	}
+	evidenceText := strings.Join([]string{
+		mapStringField(fields, "risk_type"),
+		mapStringField(fields, "allegation"),
+		mapStringField(fields, "evidence"),
+		sourceMessagesText(sourceMessages),
+	}, "\n")
+	return containsRiskAccountEvidenceCue(evidenceText)
+}
+
+func mapStringField(fields map[string]any, key string) string {
+	value, ok := fields[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func sourceMessagesText(messages []model.Message) string {
+	parts := make([]string, 0, len(messages))
+	for _, message := range messages {
+		parts = append(parts, message.SummaryText())
+	}
+	return strings.Join(parts, "\n")
+}
+
+func containsRiskAccountEvidenceCue(text string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return false
+	}
+	cues := []string{
+		"骗子", "诈骗", "欺诈", "骗钱", "被骗", "曝光", "举报", "黑名单", "避雷",
+		"跑路", "盗号", "钓鱼", "冒充", "收款不发货", "收钱不发货", "拉黑",
+		"不靠谱", "失联", "澄清", "辟谣", "争议", "dispute", "disputed",
+		"scam", "scammer", "fraud", "fraudster", "exposed",
+		"blacklist", "phishing", "impersonat", "chargeback",
+	}
+	for _, cue := range cues {
+		if strings.Contains(normalized, cue) {
+			return true
+		}
+	}
+	return false
 }
 
 func filterMessages(messages []model.Message, chat model.Chat) []model.Message {

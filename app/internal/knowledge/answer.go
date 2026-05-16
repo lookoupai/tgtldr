@@ -180,6 +180,7 @@ Rules:
 - Do not invent users, contacts, prices, deadlines, skills, availability, or certainty.
 - In risk_account facts, reported_account_* is the reported account and subject/reporter is the reporting source; do not treat a mutable @username as a stable identity ID.
 - Unless the evidence explicitly says confirmed, describe risk-account claims as reported, exposed in the group, or disputed instead of stating them as proven facts.
+- Do not infer account risk from sensitive or irregular speech alone; risk_account evidence must be an explicit report, exposure, blacklist, scam accusation, or clarification/dispute.
 - If the evidence is weak, outdated, or insufficient, say so clearly.
 - Keep the answer concise and suitable for a Telegram message.
 `)
@@ -194,6 +195,7 @@ Rules:
 - 不要编造用户、联系方式、价格、截止时间、技能、可用性或确定性。
 - 风险账号事实中，reported_account_* 是被举报对象，subject/reporter 是举报来源；不要把可变 @username 当成稳定身份 ID。
 - 除非证据字段明确为 confirmed，否则只能表述为“有人举报/群内曾曝光/存在争议”，不要直接定性为事实。
+- 不要仅凭敏感或不正规发言推断账号风险；risk_account 证据必须是明确举报、曝光、黑名单、诈骗指控或相关澄清/争议。
 - 证据薄弱、过期风险或信息不足时，要明确说明。
 - 回答要简洁，适合 Telegram 消息阅读。
 `)
