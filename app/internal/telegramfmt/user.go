@@ -9,11 +9,11 @@ import (
 )
 
 func UserReference(language model.Language, senderID int64, senderName string, username string) string {
-	if normalized := Username(username); normalized != "" {
-		return "@" + normalized
-	}
-
+	normalizedUsername := Username(username)
 	label := compactText(senderName)
+	if label == "" && normalizedUsername != "" {
+		label = "@" + normalizedUsername
+	}
 	if label == "" && senderID != 0 {
 		label = fallbackUserLabel(language, senderID)
 	}
@@ -22,6 +22,9 @@ func UserReference(language model.Language, senderID int64, senderName string, u
 	}
 	if senderID > 0 {
 		return "[" + markdownLinkLabel(label) + "](tg://user?id=" + strconv.FormatInt(senderID, 10) + ")"
+	}
+	if normalizedUsername != "" {
+		return "[" + markdownLinkLabel(label) + "](https://t.me/" + normalizedUsername + ")"
 	}
 	return label
 }

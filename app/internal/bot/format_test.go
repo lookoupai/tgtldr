@@ -38,6 +38,12 @@ func TestFormatTelegramHTML(t *testing.T) {
 		So(output, ShouldContainSubstring, `<a href="tg://user?id=42">Alice</a>`)
 	})
 
+	Convey("用户名链接会保留为 HTML 链接", t, func() {
+		output := formatTelegramHTML("- 联系 [@alice_001](https://t.me/alice_001)")
+
+		So(output, ShouldContainSubstring, `<a href="https://t.me/alice_001">@alice_001</a>`)
+	})
+
 	Convey("当前有效情报中的用户链接会在推送中保持可点击", t, func() {
 		output := formatTelegramHTML("## 当前有效情报\n\n### 供应\n- [Bob](tg://user?id=9)：出售二手显示器")
 

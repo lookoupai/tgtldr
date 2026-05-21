@@ -34,7 +34,7 @@ func TestKnowledgeAnswerEvidence(t *testing.T) {
 		})
 
 		So(evidence, ShouldContainSubstring, "id=#42")
-		So(evidence, ShouldContainSubstring, "subject=@alice")
+		So(evidence, ShouldContainSubstring, "subject=[@alice](https://t.me/alice)")
 		So(evidence, ShouldContainSubstring, "confidence=82%")
 		So(evidence, ShouldContainSubstring, `"area":"Rust"`)
 		So(evidence, ShouldContainSubstring, "相关用户")

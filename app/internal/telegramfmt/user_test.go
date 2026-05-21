@@ -23,7 +23,13 @@ func TestUserReference(t *testing.T) {
 			senderID:   42,
 			senderName: "Alice",
 			username:   "alice_001",
-			want:       "@alice_001",
+			want:       "[Alice](tg://user?id=42)",
+		},
+		{
+			name:     "username only",
+			language: model.LanguageZhCN,
+			username: "alice_001",
+			want:     "[@alice_001](https://t.me/alice_001)",
 		},
 		{
 			name:       "sender id with name",

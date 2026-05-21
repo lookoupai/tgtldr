@@ -43,7 +43,7 @@ func TestAppendKnowledgeFacts(t *testing.T) {
 		So(result, ShouldContainSubstring, "### 供应")
 		So(result, ShouldContainSubstring, "- [Bob](tg://user?id=9)：出售二手显示器（置信度 91%）")
 		So(result, ShouldContainSubstring, "### 需求")
-		So(result, ShouldContainSubstring, "- @alice_001：需要 RTX 4090（置信度 86%）")
+		So(result, ShouldContainSubstring, "- [Alice](https://t.me/alice_001)：需要 RTX 4090（置信度 86%）")
 	})
 
 	Convey("英文摘要会使用英文标题和用户兜底", t, func() {
