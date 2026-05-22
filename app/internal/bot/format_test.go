@@ -38,6 +38,27 @@ func TestFormatTelegramHTML(t *testing.T) {
 		So(output, ShouldContainSubstring, `<a href="tg://user?id=42">Alice</a>`)
 	})
 
+	Convey("加粗的 Telegram 用户链接不会泄漏内部占位符", t, func() {
+		output := formatTelegramHTML("1. **[Alice](tg://user?id=42)**\n• 依据：提供拦截码")
+
+		So(output, ShouldContainSubstring, `<b><a href="tg://user?id=42">Alice</a></b>`)
+		So(output, ShouldNotContainSubstring, "%TGTLDR_HTML_")
+	})
+
+	Convey("多条编号结果中的加粗用户链接都会还原", t, func() {
+		output := formatTelegramHTML(stringsJoin(
+			"1. **[Alice](tg://user?id=42)**",
+			"• 依据：提供拦截码",
+			"",
+			"2. **[Bob](tg://user?id=99)**",
+			"• 依据：供应拦截码平台",
+		))
+
+		So(output, ShouldContainSubstring, `<b><a href="tg://user?id=42">Alice</a></b>`)
+		So(output, ShouldContainSubstring, `<b><a href="tg://user?id=99">Bob</a></b>`)
+		So(output, ShouldNotContainSubstring, "%TGTLDR_HTML_")
+	})
+
 	Convey("用户名链接会保留为 HTML 链接", t, func() {
 		output := formatTelegramHTML("- 联系 [@alice_001](https://t.me/alice_001)")
 

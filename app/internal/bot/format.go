@@ -107,7 +107,8 @@ func formatInlineTelegramHTML(input string) string {
 	})
 
 	escaped := html.EscapeString(withPlaceholders)
-	for index, rendered := range placeholders {
+	for index := len(placeholders) - 1; index >= 0; index-- {
+		rendered := placeholders[index]
 		token := placeholderToken(index)
 		escaped = strings.ReplaceAll(escaped, html.EscapeString(token), rendered)
 	}
