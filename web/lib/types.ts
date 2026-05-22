@@ -298,6 +298,7 @@ export type KnowledgeMaintenanceResult = {
   targetType: string;
   targetQuery: string;
   targetUser: string;
+  replacement?: string;
   reason: string;
   matchedFacts: KnowledgeFact[];
   updatedFacts: KnowledgeFact[];

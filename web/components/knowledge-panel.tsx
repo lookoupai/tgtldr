@@ -85,6 +85,12 @@ type ManualFactDraft = {
   detail: string;
 };
 
+type CorrectionDraft = {
+  fact: KnowledgeFact;
+  wrong: string;
+  replacement: string;
+};
+
 const manualFactModeOptions: Array<{
   mode: ManualFactMode;
   label: string;
@@ -418,6 +424,7 @@ export function KnowledgePanel() {
   const [selectedSubject, setSelectedSubject] = useState<KnowledgeSubject | null>(null);
   const [editingFact, setEditingFact] = useState<KnowledgeFact | null>(null);
   const [editingFactSourceIDs, setEditingFactSourceIDs] = useState("");
+  const [correctionDraft, setCorrectionDraft] = useState<CorrectionDraft | null>(null);
   const [maintenancePreview, setMaintenancePreview] =
     useState<KnowledgeMaintenanceResult | null>(null);
   const [previewingKnowledgeQuery, setPreviewingKnowledgeQuery] = useState(false);
@@ -438,6 +445,7 @@ export function KnowledgePanel() {
   );
   const [creatingManualFact, setCreatingManualFact] = useState(false);
   const [savingFactEdit, setSavingFactEdit] = useState(false);
+  const [applyingFactCorrection, setApplyingFactCorrection] = useState(false);
   const [runChatId, setRunChatId] = useState<number | "">("");
   const [runDate, setRunDate] = useState(localDateInputValue());
   const deferredFactQuery = useDeferredValue(factQuery);
@@ -652,6 +660,57 @@ export function KnowledgePanel() {
     }
   }
 
+  function startCorrectingFact(fact: KnowledgeFact) {
+    const item = primaryFactItem(fact);
+    setCorrectionDraft({
+      fact,
+      wrong: item || fact.title,
+      replacement: "",
+    });
+  }
+
+  async function applyFactCorrection() {
+    if (!correctionDraft) {
+      return;
+    }
+    const wrong = compactText(correctionDraft.wrong);
+    const replacement = compactText(correctionDraft.replacement);
+    if (!wrong) {
+      toast.showError("请填写错误内容。");
+      return;
+    }
+    if (!replacement) {
+      toast.showError("请填写正确内容。");
+      return;
+    }
+    const corrected = buildCorrectedFact(correctionDraft.fact, wrong, replacement);
+    const error = validateManualFact(corrected);
+    if (error) {
+      toast.showError(error);
+      return;
+    }
+
+    setApplyingFactCorrection(true);
+    try {
+      const saved = await api.createKnowledgeFact({
+        ...corrected,
+        factType: corrected.factType.trim(),
+        title: corrected.title.trim(),
+        dataJson: corrected.dataJson.trim() || "{}",
+        subjectSenderName: corrected.subjectSenderName.trim(),
+        subjectUsername: corrected.subjectUsername.trim().replace(/^@/, ""),
+      });
+      await api.updateKnowledgeFactStatus(correctionDraft.fact.id, "dismissed");
+      toast.showSuccess(`已纠正为「${saved.title}」，并忽略旧事实。`);
+      setCorrectionDraft(null);
+      await Promise.all([loadFacts(), loadSubjects(), loadMaintenanceEvents()]);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setApplyingFactCorrection(false);
+    }
+  }
+
   async function createManualFact() {
     const draftError = validateManualFactDraft(manualFactDraft);
     if (draftError) {
@@ -849,6 +908,13 @@ export function KnowledgePanel() {
           type="button"
         >
           来源
+        </button>
+        <button
+          className="text-link-button"
+          onClick={() => startCorrectingFact(fact)}
+          type="button"
+        >
+          纠正
         </button>
         {fact.status === "active" ? (
           <button
@@ -2152,6 +2218,92 @@ export function KnowledgePanel() {
 
       <Modal
         actions={
+          <>
+            <Button
+              onClick={() => setCorrectionDraft(null)}
+              type="button"
+              variant="ghost"
+            >
+              取消
+            </Button>
+            <Button
+              disabled={applyingFactCorrection}
+              onClick={() => startTransition(() => void applyFactCorrection())}
+              type="button"
+            >
+              {applyingFactCorrection ? "纠正中..." : "确认纠正"}
+            </Button>
+          </>
+        }
+        description={
+          correctionDraft
+            ? `#${correctionDraft.fact.id} / ${correctionDraft.fact.chatTitle || correctionDraft.fact.chatId}`
+            : undefined
+        }
+        onClose={() => setCorrectionDraft(null)}
+        open={correctionDraft !== null}
+        title="纠正知识事实"
+      >
+        {correctionDraft ? (
+          <div className="form-stack">
+            <div className="knowledge-fact-card">
+              <div className="knowledge-card-head">
+                <div className="data-row-title">
+                  <strong>{correctionDraft.fact.title}</strong>
+                  <span>{correctionDraft.fact.factType} / {formatSubject(correctionDraft.fact)}</span>
+                </div>
+                <StatusPill tone={factStatusTone(correctionDraft.fact.status)}>
+                  {correctionDraft.fact.status}
+                </StatusPill>
+              </div>
+              <pre className="knowledge-fact-json">
+                {prettyJsonString(correctionDraft.fact.dataJson)}
+              </pre>
+            </div>
+
+            <div className="form-grid">
+              <Field label="错误内容" required>
+                <Input
+                  onChange={(event) =>
+                    setCorrectionDraft((current) =>
+                      current ? { ...current, wrong: event.target.value } : current,
+                    )
+                  }
+                  placeholder="手机号码"
+                  value={correctionDraft.wrong}
+                />
+              </Field>
+              <Field label="正确内容" required>
+                <Input
+                  onChange={(event) =>
+                    setCorrectionDraft((current) =>
+                      current ? { ...current, replacement: event.target.value } : current,
+                    )
+                  }
+                  placeholder="Telegram账号"
+                  value={correctionDraft.replacement}
+                />
+              </Field>
+            </div>
+
+            <div className="knowledge-fact-card">
+              <div className="knowledge-card-head">
+                <div className="data-row-title">
+                  <strong>将保存为</strong>
+                  <span>{buildCorrectedFact(correctionDraft.fact, correctionDraft.wrong, correctionDraft.replacement).title}</span>
+                </div>
+                <StatusPill tone="neutral">active</StatusPill>
+              </div>
+              <pre className="knowledge-fact-json">
+                {prettyJsonString(buildCorrectedFact(correctionDraft.fact, correctionDraft.wrong, correctionDraft.replacement).dataJson)}
+              </pre>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        actions={
           <Button onClick={() => setFactSources(null)} type="button">
             关闭
           </Button>
@@ -2310,6 +2462,73 @@ function prepareManualFact(fact: KnowledgeFact, draft: ManualFactDraft): Knowled
     default:
       return prepared;
   }
+}
+
+function buildCorrectedFact(fact: KnowledgeFact, wrong: string, replacement: string): KnowledgeFact {
+  const cleanWrong = compactText(wrong);
+  const cleanReplacement = compactText(replacement);
+  const nextTitle = correctionTitle(fact.factType, cleanReplacement || cleanWrong || fact.title);
+  return newManualFact({
+    ...fact,
+    id: 0,
+    title: nextTitle,
+    dataJson: rewriteFactDataJson(fact.dataJson, cleanWrong, cleanReplacement),
+    status: "active",
+    firstSeenAt: "",
+    lastSeenAt: "",
+    createdAt: "",
+    updatedAt: "",
+  });
+}
+
+function primaryFactItem(fact: KnowledgeFact) {
+  try {
+    const data = JSON.parse(fact.dataJson || "{}");
+    if (!isRecord(data)) {
+      return "";
+    }
+    for (const key of ["item", "topic", "resource", "title", "keyword", "query"]) {
+      const value = data[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function correctionTitle(factType: string, replacement: string) {
+  switch (factType.trim().toLowerCase()) {
+    case "demand":
+      return `需要 ${replacement}`;
+    case "supply":
+      return `供应 ${replacement}`;
+    default:
+      return replacement;
+  }
+}
+
+function rewriteFactDataJson(raw: string, wrong: string, replacement: string) {
+  let data: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(raw || "{}");
+    data = isRecord(parsed) ? { ...parsed } : {};
+  } catch {
+    data = {};
+  }
+  const keys = ["item", "topic", "resource", "title", "keyword", "query"];
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === "string" && (value.trim() === wrong || !wrong)) {
+      data[key] = replacement;
+    }
+  }
+  if (!("item" in data) && !("topic" in data)) {
+    data.item = replacement;
+  }
+  return schemaString(data);
 }
 
 function validateManualFactDraft(draft: ManualFactDraft) {
@@ -2726,6 +2945,8 @@ function formatMaintenanceAction(action: KnowledgeMaintenanceEvent["action"]) {
       return "忽略";
     case "restore":
       return "恢复";
+    case "correct":
+      return "纠正";
     default:
       return action || "未知";
   }

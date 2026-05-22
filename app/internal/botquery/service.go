@@ -19,6 +19,7 @@ const (
 	commandErrorDelay         = 30 * time.Second
 	commandResultLimit        = 20
 	pendingMaintenanceTTL     = 10 * time.Minute
+	recentAnswerTTL           = 10 * time.Minute
 )
 
 type Service struct {
@@ -27,6 +28,7 @@ type Service struct {
 	maintainer         knowledgeMaintainer
 	pendingMaintenance *pendingMaintenance
 	pendingSeq         int64
+	recentAnswers      map[string]recentKnowledgeAnswer
 }
 
 type parsedCommand struct {
@@ -57,6 +59,12 @@ type pendingMaintenance struct {
 	token     string
 	text      string
 	result    knowledge.MaintenanceResult
+	expiresAt time.Time
+}
+
+type recentKnowledgeAnswer struct {
+	query     string
+	factType  string
 	expiresAt time.Time
 }
 
@@ -95,7 +103,12 @@ var commandDefinitions = []commandDefinition{
 }
 
 func NewService(st *store.Store, botService *bot.Service, maintainer knowledgeMaintainer) *Service {
-	return &Service{store: st, bot: botService, maintainer: maintainer}
+	return &Service{
+		store:         st,
+		bot:           botService,
+		maintainer:    maintainer,
+		recentAnswers: make(map[string]recentKnowledgeAnswer),
+	}
 }
 
 func BotCommands(language model.Language) []bot.Command {
@@ -380,21 +393,28 @@ func (s *Service) responseForUpdate(ctx context.Context, language model.Language
 		return commandIDText(language, update), true, nil
 	}
 	if strings.HasPrefix(text, "/") {
-		return s.responseForCommand(ctx, language, text)
+		return s.responseForCommandForChat(ctx, language, text, update.ChatID)
 	}
 	if strings.EqualFold(strings.TrimSpace(update.ChatType), "private") {
-		return s.respondToNaturalQuery(ctx, language, text)
+		return s.respondToNaturalQueryForChat(ctx, language, update.ChatID, text)
 	}
 	if query, ok := extractMentionQuery(text, botUsername); ok {
-		return s.respondToNaturalQuery(ctx, language, query)
+		return s.respondToNaturalQueryForChat(ctx, language, update.ChatID, query)
 	}
 	if botID != 0 && update.ReplyToBotID == botID {
-		return s.respondToNaturalQuery(ctx, language, text)
+		if maintenanceText, ok := s.replyCorrectionMaintenanceText(update.ChatID, text, time.Now()); ok {
+			return s.applyMaintenanceText(ctx, language, maintenanceText)
+		}
+		return s.respondToNaturalQueryForChat(ctx, language, update.ChatID, text)
 	}
 	return "", false, nil
 }
 
 func (s *Service) responseForCommand(ctx context.Context, language model.Language, text string) (string, bool, error) {
+	return s.responseForCommandForChat(ctx, language, text, "")
+}
+
+func (s *Service) responseForCommandForChat(ctx context.Context, language model.Language, text string, chatID string) (string, bool, error) {
 	s.expirePendingMaintenance(time.Now())
 	command, ok := parseCommand(text)
 	if !ok {
@@ -428,7 +448,7 @@ func (s *Service) responseForCommand(ctx context.Context, language model.Languag
 		return s.applyMaintenanceText(ctx, language, command.updateText)
 	}
 	if command.naturalQueryText != "" {
-		return s.respondToNaturalQuery(ctx, language, command.naturalQueryText)
+		return s.respondToNaturalQueryForChat(ctx, language, chatID, command.naturalQueryText)
 	}
 
 	return s.renderKnowledgeQuery(ctx, language, command.query, command.factType)
@@ -492,6 +512,10 @@ func (s *Service) applyMaintenanceText(ctx context.Context, language model.Langu
 }
 
 func (s *Service) respondToNaturalQuery(ctx context.Context, language model.Language, text string) (string, bool, error) {
+	return s.respondToNaturalQueryForChat(ctx, language, "", text)
+}
+
+func (s *Service) respondToNaturalQueryForChat(ctx context.Context, language model.Language, chatID string, text string) (string, bool, error) {
 	if s.maintainer == nil {
 		return "", true, fmt.Errorf("knowledge maintainer is not configured")
 	}
@@ -501,6 +525,7 @@ func (s *Service) respondToNaturalQuery(ctx context.Context, language model.Lang
 			return commandNaturalQueryEmptyText(language), true, nil
 		}
 		if strings.TrimSpace(answer.Answer) != "" {
+			s.rememberRecentAnswer(chatID, answer, time.Now())
 			return answer.Answer, true, nil
 		}
 	}
@@ -515,6 +540,78 @@ func (s *Service) respondToNaturalQuery(ctx context.Context, language model.Lang
 	return s.renderKnowledgeQuery(ctx, language, query.Query, query.FactType)
 }
 
+func (s *Service) rememberRecentAnswer(chatID string, answer knowledge.KnowledgeAnswerResult, now time.Time) {
+	if strings.TrimSpace(chatID) == "" || strings.TrimSpace(answer.Query) == "" {
+		return
+	}
+	if s.recentAnswers == nil {
+		s.recentAnswers = make(map[string]recentKnowledgeAnswer)
+	}
+	s.recentAnswers[chatID] = recentKnowledgeAnswer{
+		query:     strings.TrimSpace(answer.Query),
+		factType:  strings.TrimSpace(answer.FactType),
+		expiresAt: now.Add(recentAnswerTTL),
+	}
+}
+
+func (s *Service) replyCorrectionMaintenanceText(chatID string, text string, now time.Time) (string, bool) {
+	correction, ok := parseReplyCorrectionText(text)
+	if !ok || strings.TrimSpace(chatID) == "" {
+		return "", false
+	}
+	recent, ok := s.recentAnswers[chatID]
+	if !ok || now.After(recent.expiresAt) || strings.TrimSpace(recent.query) == "" {
+		return "", false
+	}
+	verb := "是"
+	switch strings.ToLower(strings.TrimSpace(recent.factType)) {
+	case "supply":
+		verb = "供应的是"
+	case "demand":
+		verb = "需要的是"
+	}
+	return fmt.Sprintf("%s %s %s，不是 %s", recent.query, verb, correction.replacement, correction.wrong), true
+}
+
+type replyCorrection struct {
+	wrong       string
+	replacement string
+}
+
+func parseReplyCorrectionText(text string) (replyCorrection, bool) {
+	normalized := strings.TrimSpace(text)
+	if normalized == "" {
+		return replyCorrection{}, false
+	}
+	patterns := []struct {
+		leftMarker  string
+		rightMarker string
+	}{
+		{leftMarker: "不是", rightMarker: "，是"},
+		{leftMarker: "不是", rightMarker: ",是"},
+		{leftMarker: "不是", rightMarker: " 是"},
+		{leftMarker: "不是", rightMarker: "，而是"},
+		{leftMarker: "不是", rightMarker: ",而是"},
+	}
+	for _, pattern := range patterns {
+		left := strings.Index(normalized, pattern.leftMarker)
+		if left < 0 {
+			continue
+		}
+		afterLeft := normalized[left+len(pattern.leftMarker):]
+		right := strings.Index(afterLeft, pattern.rightMarker)
+		if right < 0 {
+			continue
+		}
+		wrong := strings.Trim(afterLeft[:right], " \t\r\n，,。.;；：:")
+		replacement := strings.Trim(afterLeft[right+len(pattern.rightMarker):], " \t\r\n，,。.;；：:")
+		if wrong != "" && replacement != "" {
+			return replyCorrection{wrong: wrong, replacement: replacement}, true
+		}
+	}
+	return replyCorrection{}, false
+}
+
 func (s *Service) confirmMaintenance(ctx context.Context, language model.Language, token string) (string, bool, error) {
 	if s.maintainer == nil {
 		return "", true, fmt.Errorf("knowledge maintainer is not configured")
@@ -525,6 +622,14 @@ func (s *Service) confirmMaintenance(ctx context.Context, language model.Languag
 	}
 	if strings.TrimSpace(token) != pending.token {
 		return commandMaintenanceTokenMismatchText(language), true, nil
+	}
+	if strings.EqualFold(pending.result.Action, "correct") {
+		result, err := s.maintainer.ApplyMaintenanceText(ctx, pending.text)
+		if err != nil {
+			return "", true, err
+		}
+		s.pendingMaintenance = nil
+		return commandMaintenanceResultText(language, result), true, nil
 	}
 	targetStatus := maintenanceTargetStatus(pending.result.Action)
 	if targetStatus == "" {
@@ -865,7 +970,11 @@ func commandMaintenanceResultText(language model.Language, result knowledge.Main
 		}
 		return strings.Join(lines, "\n")
 	}
-	lines = append(lines, fmt.Sprintf("已维护 %d 条知识事实：", len(result.UpdatedFacts)))
+	if strings.EqualFold(result.Action, "correct") {
+		lines = append(lines, fmt.Sprintf("已纠正 %d 条知识事实：", len(result.UpdatedFacts)))
+	} else {
+		lines = append(lines, fmt.Sprintf("已维护 %d 条知识事实：", len(result.UpdatedFacts)))
+	}
 	for _, fact := range result.UpdatedFacts {
 		lines = append(lines, fmt.Sprintf("- #%d %s（%s）", fact.ID, fact.Title, fact.Status))
 	}
@@ -879,12 +988,18 @@ func commandMaintenancePreviewText(language model.Language, result knowledge.Mai
 		for _, fact := range result.MatchedFacts {
 			lines = append(lines, fmt.Sprintf("- #%d %s (%s)", fact.ID, fact.Title, fact.Status))
 		}
+		if strings.EqualFold(result.Action, "correct") && strings.TrimSpace(result.Replacement) != "" {
+			lines = append(lines, fmt.Sprintf("Replacement: %s", result.Replacement))
+		}
 		lines = append(lines, fmt.Sprintf("Send /confirm %s to apply, or /cancel to discard.", token))
 		return strings.Join(lines, "\n")
 	}
 	lines = append(lines, fmt.Sprintf("待确认维护：将对 %d 条知识事实执行 %s。", len(result.MatchedFacts), formatMaintenanceActionZH(result.Action)))
 	for _, fact := range result.MatchedFacts {
 		lines = append(lines, fmt.Sprintf("- #%d %s（当前 %s）", fact.ID, fact.Title, fact.Status))
+	}
+	if strings.EqualFold(result.Action, "correct") && strings.TrimSpace(result.Replacement) != "" {
+		lines = append(lines, fmt.Sprintf("纠正内容：%s", result.Replacement))
 	}
 	lines = append(lines, fmt.Sprintf("发送 /confirm %s 执行，或发送 /cancel 取消。", token))
 	return strings.Join(lines, "\n")
@@ -926,6 +1041,8 @@ func formatMaintenanceActionZH(action string) string {
 		return "忽略"
 	case "restore":
 		return "恢复"
+	case "correct":
+		return "纠正"
 	default:
 		return action
 	}

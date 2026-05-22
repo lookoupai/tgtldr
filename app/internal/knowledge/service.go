@@ -39,6 +39,7 @@ type MaintenanceResult struct {
 	TargetType   string                `json:"targetType"`
 	TargetQuery  string                `json:"targetQuery"`
 	TargetUser   string                `json:"targetUser"`
+	Replacement  string                `json:"replacement,omitempty"`
 	Reason       string                `json:"reason"`
 	MatchedFacts []model.KnowledgeFact `json:"matchedFacts"`
 	UpdatedFacts []model.KnowledgeFact `json:"updatedFacts"`
@@ -54,6 +55,7 @@ type maintenanceInstruction struct {
 	TargetType  string  `json:"targetType"`
 	TargetQuery string  `json:"targetQuery"`
 	TargetUser  string  `json:"targetUser"`
+	Replacement string  `json:"replacement"`
 	Reason      string  `json:"reason"`
 	Confidence  float64 `json:"confidence"`
 }
@@ -75,7 +77,10 @@ type extractedFact struct {
 	ExpiresInDays     int             `json:"expiresInDays"`
 }
 
-var codeFencePattern = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
+var (
+	codeFencePattern        = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
+	directCorrectionPattern = regexp.MustCompile(`^\s*(.+?)\s*(供应|出售|提供|售卖|卖|转让|需要|求购|想要|想买|购买|买)\s*(?:的)?(?:是|为)?\s*(.+?)\s*(?:，|,|。|；|;|\s)+不是\s*(.+?)\s*$`)
+)
 
 const extractionChunkTokenBudget = 12000
 const maintenanceMaxOutput = 800
@@ -475,11 +480,12 @@ func buildMaintenanceSystemPrompt(language model.Language) string {
 		return strings.TrimSpace(`
 You parse one user message into a knowledge maintenance instruction.
 Output ONLY valid JSON in this exact shape:
-{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|risk_account|","targetQuery":"item or topic to match","targetUser":"username or display name when explicitly mentioned","reason":"short reason","confidence":0.8}
+{"action":"expire|dismiss|restore|correct|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|risk_account|","targetQuery":"item or topic to match","targetUser":"username or display name when explicitly mentioned","replacement":"corrected item or topic when action is correct","reason":"short reason","confidence":0.8}
 
 Rules:
 - Use action "expire" when the message says a demand, supply, offer, registration, or opportunity is no longer valid, fulfilled, sold out, paused, cancelled, or expired.
 - Use action "dismiss" and targetType "risk_account" when the user says a person/account is not risky, not a scammer, not a risk account, cleared, or incorrectly flagged.
+- Use action "correct" when the user explicitly says an earlier fact should be replaced with a corrected item or topic, such as "X is not A, but B" or "X is B, not A". Set targetQuery to the wrong item or topic and replacement to the corrected item or topic.
 - Use action "dismiss" only when the user explicitly asks to ignore/remove a fact.
 - Use action "restore" only when the user explicitly says a fact should become valid again.
 - Use action "none" if this is only a query, a new fact, or too ambiguous.
@@ -491,11 +497,12 @@ Rules:
 	return strings.TrimSpace(`
 你负责把用户发给知识库机器人的一句维护说明解析成结构化指令。
 只输出合法 JSON，格式必须是：
-{"action":"expire|dismiss|restore|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|risk_account|","targetQuery":"要匹配的物品或主题","targetUser":"明确提到的用户名或显示名","reason":"简短原因","confidence":0.8}
+{"action":"expire|dismiss|restore|correct|none","targetType":"demand|supply|help_offer|registration|candidate|hiring|referral|event|risk_account|","targetQuery":"要匹配的物品或主题","targetUser":"明确提到的用户名或显示名","replacement":"纠正后的物品或主题","reason":"简短原因","confidence":0.8}
 
 规则：
 - 如果用户表示某个需求、供应、服务、报名或机会“不需要了、已买到、卖完了、暂停、取消、失效”，action 用 expire。
 - 如果用户说某个人或账号“不是风险账号、不是骗子、已澄清、误判了”，action 用 dismiss，targetType 用 risk_account，targetUser 填该人或账号，targetQuery 填 "*"。
+- 如果用户明确说某个旧事实应替换为另一个更正内容，例如“不是 A，是 B”、“A 记错了，实际是 B”、“把 A 改成 B”，action 用 correct，targetQuery 填错的内容，replacement 填对的内容。
 - 只有用户明确要求“忽略、删除、不再记录”时，action 才用 dismiss。
 - 只有用户明确表示“恢复、重新有效、又开始接单”等，action 才用 restore。
 - 如果只是查询、新增事实或含义不明确，action 用 none。
@@ -559,6 +566,7 @@ func parseMaintenanceInstruction(raw string) (maintenanceInstruction, error) {
 	instruction.TargetType = normalizeStatusUpdateFactType(instruction.TargetType)
 	instruction.TargetQuery = compactText(instruction.TargetQuery)
 	instruction.TargetUser = compactText(instruction.TargetUser)
+	instruction.Replacement = compactText(instruction.Replacement)
 	instruction.Reason = compactText(instruction.Reason)
 	return instruction, nil
 }
@@ -586,6 +594,8 @@ func normalizeMaintenanceAction(action string) string {
 		return "dismiss"
 	case "restore", "active", "reactivate", "resume":
 		return "restore"
+	case "correct", "correction", "replace", "rewrite":
+		return "correct"
 	default:
 		return "none"
 	}
@@ -596,10 +606,51 @@ func parseDirectMaintenanceText(text string) (maintenanceInstruction, bool) {
 	if trimmed == "" {
 		return maintenanceInstruction{}, false
 	}
+	if instruction, ok := parseCorrectionMaintenanceText(trimmed); ok {
+		return instruction, true
+	}
 	if instruction, ok := parseRiskAccountMaintenanceText(trimmed); ok {
 		return instruction, true
 	}
 	return maintenanceInstruction{}, false
+}
+
+func parseCorrectionMaintenanceText(text string) (maintenanceInstruction, bool) {
+	match := directCorrectionPattern.FindStringSubmatch(text)
+	if len(match) != 5 {
+		return maintenanceInstruction{}, false
+	}
+	targetUser := trimCorrectionPart(match[1])
+	targetType := correctionFactTypeForVerb(match[2])
+	replacement := trimCorrectionPart(match[3])
+	targetQuery := trimCorrectionPart(match[4])
+	if targetUser == "" || targetType == "" || targetQuery == "" || replacement == "" {
+		return maintenanceInstruction{}, false
+	}
+	return maintenanceInstruction{
+		Action:      "correct",
+		TargetType:  targetType,
+		TargetQuery: targetQuery,
+		TargetUser:  targetUser,
+		Replacement: replacement,
+		Reason:      "用户纠正知识事实",
+		Confidence:  1,
+	}, true
+}
+
+func correctionFactTypeForVerb(verb string) string {
+	switch strings.TrimSpace(verb) {
+	case "供应", "出售", "提供", "售卖", "卖", "转让":
+		return "supply"
+	case "需要", "求购", "想要", "想买", "购买", "买":
+		return "demand"
+	default:
+		return ""
+	}
+}
+
+func trimCorrectionPart(value string) string {
+	return strings.Trim(compactText(value), " \t\r\n，,。.;；：:")
 }
 
 func parseRiskAccountMaintenanceText(text string) (maintenanceInstruction, bool) {
@@ -692,6 +743,31 @@ func (s *Service) applyMaintenanceInstruction(ctx context.Context, instruction m
 
 	updatedByID := make(map[int64]model.KnowledgeFact)
 	for _, candidate := range result.MatchedFacts {
+		if instruction.Action == "correct" {
+			replacement, err := s.buildCorrectionFact(candidate, instruction)
+			if err != nil {
+				return result, err
+			}
+			dismissed, err := s.UpdateFactStatus(
+				ctx,
+				candidate.ID,
+				model.KnowledgeFactStatusDismissed,
+				source,
+				instruction.Reason,
+				operatorText,
+				instruction.TargetQuery,
+			)
+			if err != nil {
+				return result, err
+			}
+			created, err := s.store.KnowledgeFacts.Create(ctx, replacement)
+			if err != nil {
+				return result, err
+			}
+			updatedByID[dismissed.ID] = dismissed
+			updatedByID[created.ID] = created
+			continue
+		}
 		updated, err := s.UpdateFactStatus(
 			ctx,
 			candidate.ID,
@@ -716,6 +792,7 @@ func (s *Service) maintenanceCandidates(ctx context.Context, instruction mainten
 		TargetType:  instruction.TargetType,
 		TargetQuery: instruction.TargetQuery,
 		TargetUser:  instruction.TargetUser,
+		Replacement: instruction.Replacement,
 		Reason:      instruction.Reason,
 	}
 	if instruction.Action == "none" || instruction.TargetUser == "" {
@@ -765,6 +842,80 @@ func (s *Service) maintenanceCandidates(ctx context.Context, instruction mainten
 	return result, targetStatus, nil
 }
 
+func (s *Service) buildCorrectionFact(candidate model.KnowledgeFact, instruction maintenanceInstruction) (model.KnowledgeFact, error) {
+	factType := strings.TrimSpace(candidate.FactType)
+	if factType == "" {
+		return model.KnowledgeFact{}, fmt.Errorf("correction requires a source fact type")
+	}
+	replacement := strings.TrimSpace(instruction.Replacement)
+	if replacement == "" {
+		return model.KnowledgeFact{}, fmt.Errorf("correction requires replacement text")
+	}
+	updated := candidate
+	updated.ID = 0
+	updated.Status = model.KnowledgeFactStatusActive
+	updated.Title = correctionTitle(candidate.FactType, replacement)
+	updated.DataJSON = rewriteKnowledgeFactData(candidate.DataJSON, replacement, instruction.TargetQuery)
+	if updated.DataJSON == "" {
+		updated.DataJSON = candidate.DataJSON
+	}
+	updated.SourceMessageIDs = append([]int(nil), candidate.SourceMessageIDs...)
+	updated.FirstSeenAt = s.now()
+	updated.LastSeenAt = updated.FirstSeenAt
+	if updated.Confidence <= 0 {
+		updated.Confidence = candidate.Confidence
+	}
+	switch strings.ToLower(strings.TrimSpace(candidate.FactType)) {
+	case "demand":
+		if strings.TrimSpace(instruction.TargetType) == "" || strings.EqualFold(instruction.TargetType, "demand") {
+			updated.DataJSON = rewriteKnowledgeFactData(candidate.DataJSON, replacement, instruction.TargetQuery)
+		}
+	case "supply":
+		if strings.TrimSpace(instruction.TargetType) == "" || strings.EqualFold(instruction.TargetType, "supply") {
+			updated.DataJSON = rewriteKnowledgeFactData(candidate.DataJSON, replacement, instruction.TargetQuery)
+		}
+	}
+	return updated, nil
+}
+
+func correctionTitle(factType string, replacement string) string {
+	switch strings.ToLower(strings.TrimSpace(factType)) {
+	case "demand":
+		return "需要 " + replacement
+	case "supply":
+		return "供应 " + replacement
+	default:
+		return replacement
+	}
+}
+
+func rewriteKnowledgeFactData(raw string, replacement string, wrong string) string {
+	data := decodeKnowledgeFactData(raw)
+	if len(data) == 0 {
+		data = map[string]any{}
+	}
+	replacement = strings.TrimSpace(replacement)
+	wrong = strings.TrimSpace(wrong)
+	for _, key := range []string{"item", "topic", "resource", "title", "keyword", "query"} {
+		if value, ok := data[key]; ok {
+			text, _ := value.(string)
+			if strings.TrimSpace(text) == wrong || wrong == "" {
+				data[key] = replacement
+			}
+		}
+	}
+	_, hasItem := data["item"]
+	_, hasTopic := data["topic"]
+	if !hasItem && !hasTopic {
+		data["item"] = replacement
+	}
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
 func maintenanceActionForStatus(status model.KnowledgeFactStatus) string {
 	switch status {
 	case model.KnowledgeFactStatusActive:
@@ -786,6 +937,8 @@ func maintenanceStatuses(action string) (model.KnowledgeFactStatus, []model.Know
 		return model.KnowledgeFactStatusDismissed, []model.KnowledgeFactStatus{model.KnowledgeFactStatusActive, model.KnowledgeFactStatusExpired}
 	case "restore":
 		return model.KnowledgeFactStatusActive, []model.KnowledgeFactStatus{model.KnowledgeFactStatusExpired, model.KnowledgeFactStatusDismissed}
+	case "correct":
+		return model.KnowledgeFactStatusDismissed, []model.KnowledgeFactStatus{model.KnowledgeFactStatusActive}
 	default:
 		return "", nil
 	}

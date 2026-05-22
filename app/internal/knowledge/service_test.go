@@ -255,13 +255,25 @@ func TestStatusUpdateFacts(t *testing.T) {
 
 func TestMaintenanceInstruction(t *testing.T) {
 	Convey("维护指令解析会规整动作、类型和查询", t, func() {
-		instruction, err := parseMaintenanceInstruction(`{"action":"resolved","targetType":"need","targetQuery":" Gmail 邮箱 ","targetUser":" @alice ","reason":"已经买到","confidence":0.91}`)
+		instruction, err := parseMaintenanceInstruction(`{"action":"replace","targetType":"need","targetQuery":" Gmail 邮箱 ","targetUser":" @alice ","replacement":" Outlook 邮箱 ","reason":"已经纠正","confidence":0.91}`)
 
 		So(err, ShouldBeNil)
-		So(instruction.Action, ShouldEqual, "expire")
+		So(instruction.Action, ShouldEqual, "correct")
 		So(instruction.TargetType, ShouldEqual, "demand")
 		So(instruction.TargetQuery, ShouldEqual, "Gmail 邮箱")
 		So(instruction.TargetUser, ShouldEqual, "@alice")
+		So(instruction.Replacement, ShouldEqual, "Outlook 邮箱")
+	})
+
+	Convey("口语化供需纠错会解析成 correct 指令", t, func() {
+		instruction, ok := parseDirectMaintenanceText("Cati 供应的是 Telegram账号，不是手机号码")
+
+		So(ok, ShouldBeTrue)
+		So(instruction.Action, ShouldEqual, "correct")
+		So(instruction.TargetType, ShouldEqual, "supply")
+		So(instruction.TargetUser, ShouldEqual, "Cati")
+		So(instruction.TargetQuery, ShouldEqual, "手机号码")
+		So(instruction.Replacement, ShouldEqual, "Telegram账号")
 	})
 
 	Convey("维护匹配要求用户、关键词和可维护类型同时命中", t, func() {
@@ -349,6 +361,35 @@ func TestMaintenanceInstruction(t *testing.T) {
 			SubjectSenderName: "zhang lin",
 			Status:            model.KnowledgeFactStatusActive,
 		}, model.KnowledgeFactStatusActive), ShouldBeTrue)
+	})
+
+	Convey("纠错事实沿用原主体并替换结构化 item", t, func() {
+		service := NewService(nil, nil, 0)
+		corrected, err := service.buildCorrectionFact(model.KnowledgeFact{
+			SpaceID:           1,
+			ChatID:            2,
+			FactType:          "supply",
+			Title:             "供应手机号码",
+			DataJSON:          `{"item":"手机号码","quantity":"大量"}`,
+			SubjectSenderName: "Cati",
+			SubjectUsername:   "cati",
+			Confidence:        0.9,
+			Status:            model.KnowledgeFactStatusActive,
+		}, maintenanceInstruction{
+			Action:      "correct",
+			TargetType:  "supply",
+			TargetQuery: "手机号码",
+			TargetUser:  "Cati",
+			Replacement: "Telegram账号",
+		})
+
+		So(err, ShouldBeNil)
+		So(corrected.ID, ShouldEqual, 0)
+		So(corrected.Status, ShouldEqual, model.KnowledgeFactStatusActive)
+		So(corrected.Title, ShouldEqual, "供应 Telegram账号")
+		So(corrected.SubjectSenderName, ShouldEqual, "Cati")
+		So(corrected.DataJSON, ShouldContainSubstring, `"item":"Telegram账号"`)
+		So(corrected.DataJSON, ShouldContainSubstring, `"quantity":"大量"`)
 	})
 }
 

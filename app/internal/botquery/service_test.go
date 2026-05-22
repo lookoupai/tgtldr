@@ -506,6 +506,56 @@ func TestNaturalQueryUsesKnowledgeAnswer(t *testing.T) {
 	}
 }
 
+func TestReplyCorrectionUsesRecentKnowledgeAnswer(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{
+		answer: knowledge.KnowledgeAnswerResult{
+			Query:    "Cati",
+			FactType: "supply",
+			Answer:   "Cati 供应手机号码，依据 #42。",
+		},
+		preview: knowledge.MaintenanceResult{
+			Action:      "correct",
+			TargetType:  "supply",
+			TargetQuery: "手机号码",
+			TargetUser:  "Cati",
+			Replacement: "Telegram账号",
+			MatchedFacts: []model.KnowledgeFact{
+				{ID: 42, Title: "供应手机号码", Status: model.KnowledgeFactStatusActive},
+			},
+		},
+	})
+
+	got, ok, err := service.responseForUpdate(context.Background(), model.LanguageZhCN, bot.CommandUpdate{
+		ChatID:   "-1001",
+		ChatType: "supergroup",
+		Text:     "@TgtldrBot Cati 供应什么",
+	}, 777, "TgtldrBot")
+	if err != nil {
+		t.Fatalf("responseForUpdate(query) error = %v", err)
+	}
+	if !ok || got != "Cati 供应手机号码，依据 #42。" {
+		t.Fatalf("responseForUpdate(query) = %q, %v", got, ok)
+	}
+
+	got, ok, err = service.responseForUpdate(context.Background(), model.LanguageZhCN, bot.CommandUpdate{
+		ChatID:       "-1001",
+		ChatType:     "supergroup",
+		Text:         "不是手机号码，是 Telegram账号",
+		ReplyToBotID: 777,
+	}, 777, "TgtldrBot")
+	if err != nil {
+		t.Fatalf("responseForUpdate(correction) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("responseForUpdate(correction) ok = false")
+	}
+	if !strings.Contains(got, "待确认维护") || !strings.Contains(got, "纠正内容：Telegram账号") || !strings.Contains(got, "#42") {
+		t.Fatalf("responseForUpdate(correction) = %q", got)
+	}
+}
+
 func TestNaturalQueryEmptyAnswerShowsEmptyQueryText(t *testing.T) {
 	t.Parallel()
 
@@ -524,11 +574,13 @@ func TestNaturalQueryEmptyAnswerShowsEmptyQueryText(t *testing.T) {
 }
 
 type fakeKnowledgeMaintainer struct {
-	answer knowledge.KnowledgeAnswerResult
+	answer  knowledge.KnowledgeAnswerResult
+	preview knowledge.MaintenanceResult
+	applied knowledge.MaintenanceResult
 }
 
 func (f fakeKnowledgeMaintainer) ApplyMaintenanceText(context.Context, string) (knowledge.MaintenanceResult, error) {
-	return knowledge.MaintenanceResult{}, nil
+	return f.applied, nil
 }
 
 func (f fakeKnowledgeMaintainer) AnswerQueryText(context.Context, string, knowledge.KnowledgeAnswerOptions) (knowledge.KnowledgeAnswerResult, error) {
@@ -536,7 +588,7 @@ func (f fakeKnowledgeMaintainer) AnswerQueryText(context.Context, string, knowle
 }
 
 func (f fakeKnowledgeMaintainer) PreviewMaintenanceText(context.Context, string) (knowledge.MaintenanceResult, error) {
-	return knowledge.MaintenanceResult{}, nil
+	return f.preview, nil
 }
 
 func (f fakeKnowledgeMaintainer) ParseQueryText(context.Context, string) (knowledge.KnowledgeQueryInstruction, error) {
