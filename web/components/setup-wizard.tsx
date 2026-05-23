@@ -61,6 +61,7 @@ export function SetupWizard() {
     BotTargetChatCandidate[]
   >([]);
   const [resolvingBotTargetChat, setResolvingBotTargetChat] = useState(false);
+  const [testingOpenAI, setTestingOpenAI] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -140,6 +141,12 @@ export function SetupWizard() {
         ...emptySettings,
         ...fullSettings,
         language,
+        openAIRequestMode: fullSettings.openAIRequestMode || "stream",
+        summaryRetryLimit: fullSettings.summaryRetryLimit ?? 2,
+        summaryRetryBackoffBaseMinutes:
+          fullSettings.summaryRetryBackoffBaseMinutes || 1,
+        summaryRetryBackoffMultiplier:
+          fullSettings.summaryRetryBackoffMultiplier || 3,
         botToken: "",
       });
       setPendingAuth(data.pendingAuth ?? null);
@@ -318,6 +325,20 @@ export function SetupWizard() {
     }
   }
 
+  async function testOpenAI() {
+    setError("");
+    setNotice("");
+    setTestingOpenAI(true);
+    try {
+      const result = await api.testOpenAI(settings);
+      setNotice(`OpenAI 连接测试成功：${result.model || settings.openAIModel}`);
+    } catch (err) {
+      setError(asMessage(err));
+    } finally {
+      setTestingOpenAI(false);
+    }
+  }
+
   function selectBotTargetChat(candidate: BotTargetChatCandidate) {
     setError("");
     setNotice("已选择目标 Chat ID，点击“保存并完成”后生效。");
@@ -412,6 +433,8 @@ export function SetupWizard() {
             settings={settings}
             setSettings={setSettings}
             canSave={validateSettings(settings) === null}
+            testingOpenAI={testingOpenAI}
+            onTestOpenAI={testOpenAI}
             onSaveAndContinue={() =>
               saveSettings("login", "基础配置已保存，进入登录步骤。")
             }
@@ -525,6 +548,12 @@ function validateSettings(settings: typeof emptySettings) {
     return "请填写 Model。";
   }
   if (
+    settings.openAIRequestMode !== "stream" &&
+    settings.openAIRequestMode !== "non_stream"
+  ) {
+    return "请选择有效的调用方式。";
+  }
+  if (
     settings.openAIOutputMode !== "auto" &&
     settings.openAIOutputMode !== "manual"
   ) {
@@ -542,6 +571,24 @@ function validateSettings(settings: typeof emptySettings) {
     settings.summaryParallelism > 6
   ) {
     return "摘要并行度必须在 1 到 6 之间。";
+  }
+  if (
+    !Number.isFinite(settings.summaryRetryLimit) ||
+    settings.summaryRetryLimit < 0
+  ) {
+    return "摘要重试次数不能小于 0。";
+  }
+  if (
+    !Number.isFinite(settings.summaryRetryBackoffBaseMinutes) ||
+    settings.summaryRetryBackoffBaseMinutes <= 0
+  ) {
+    return "摘要重试基础间隔必须大于 0。";
+  }
+  if (
+    !Number.isFinite(settings.summaryRetryBackoffMultiplier) ||
+    settings.summaryRetryBackoffMultiplier < 1
+  ) {
+    return "摘要重试倍率不能小于 1。";
   }
   return null;
 }

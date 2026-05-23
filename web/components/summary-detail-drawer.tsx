@@ -95,7 +95,32 @@ export function SummaryDetailDrawer({
 
 function SummaryContent({ summary }: { summary: Summary }) {
   if (summary.status === "failed") {
-    return <pre className="summary-context-block">{summary.errorMessage || ""}</pre>;
+    const retryLines = [
+      `已重试 ${summary.retryCount || 0} 次`,
+      summary.nextRetryAt
+        ? `下次自动重试：${new Date(summary.nextRetryAt).toLocaleString()}`
+        : "",
+    ].filter(Boolean);
+    const detailBlocks = [
+      { title: "失败上下文", content: summary.errorContext || "" },
+      { title: "失败时系统提示词", content: summary.errorSystemPrompt || "" },
+      { title: "失败时用户输入", content: summary.errorUserPrompt || "" },
+    ].filter((block) => block.content.trim() !== "");
+
+    return (
+      <div className="summary-detail-content">
+        <pre className="summary-context-block">{summary.errorMessage || ""}</pre>
+        {retryLines.length > 0 ? (
+          <p className="summary-detail-meta-text">{retryLines.join(" · ")}</p>
+        ) : null}
+        {detailBlocks.map((block) => (
+          <details className="summary-context-details" key={block.title}>
+            <summary>{block.title}</summary>
+            <pre className="summary-context-block">{block.content}</pre>
+          </details>
+        ))}
+      </div>
+    );
   }
 
   if (!summary.content) {

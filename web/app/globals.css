@@ -1277,6 +1277,12 @@ select {
   line-height: 1.6;
 }
 
+.summary-detail-meta-text {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .summary-detail-meta-actions {
   display: flex;
   align-items: center;
@@ -1321,6 +1327,21 @@ select {
 .summary-context-stack {
   display: grid;
   gap: 12px;
+}
+
+.summary-context-details {
+  display: grid;
+  gap: 10px;
+}
+
+.summary-context-details summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.summary-context-details[open] summary {
+  margin-bottom: 10px;
 }
 
 .summary-context-disclosure {

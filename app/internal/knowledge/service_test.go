@@ -420,6 +420,54 @@ func TestKnowledgeQueryInstruction(t *testing.T) {
 }
 
 func TestParseExtractionFacts(t *testing.T) {
+	Convey("抽取结果允许模型包裹 JSON 代码块", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 99,
+			TelegramSenderID:  9,
+			SenderName:        "Alice",
+			SenderUsername:    "alice",
+			TextContent:       "出售美国 API",
+			MessageTime:       now,
+		}
+
+		facts, err := parseExtractionFacts(
+			"``` JSON\n{\"facts\":[{\"type\":\"supply\",\"title\":\"美国 API 供应\",\"data\":{\"item\":\"美国 API\"},\"subjectMessageRef\":\"m001\",\"sourceMessageRefs\":[\"m001\"],\"confidence\":0.9}]}\n```",
+			model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30},
+			model.Chat{ID: 2},
+			map[string]model.Message{"m001": message},
+			now,
+		)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 1)
+		So(facts[0].Title, ShouldEqual, "美国 API 供应")
+	})
+
+	Convey("抽取结果兼容顶层 facts 数组", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 100,
+			TelegramSenderID:  10,
+			SenderName:        "Bob",
+			SenderUsername:    "bob",
+			TextContent:       "求购验证码服务",
+			MessageTime:       now,
+		}
+
+		facts, err := parseExtractionFacts(
+			`[{"type":"demand","title":"验证码服务需求","data":{"item":"验证码服务"},"subjectMessageRef":"m001","sourceMessageRefs":["m001"],"confidence":0.9}]`,
+			model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30},
+			model.Chat{ID: 2},
+			map[string]model.Message{"m001": message},
+			now,
+		)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 1)
+		So(facts[0].FactType, ShouldEqual, "demand")
+	})
+
 	Convey("抽取结果可用正文联系人覆盖频道发送者作为事实主体", t, func() {
 		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
 		message := model.Message{

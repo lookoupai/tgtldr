@@ -15,6 +15,7 @@ import {
   KnowledgeRun,
   KnowledgeSpace,
   KnowledgeSubject,
+  OpenAITestResult,
   SummaryListResponse,
   SummarySearchFilters,
   Summary,
@@ -136,6 +137,11 @@ export const api = {
   saveSettings: (payload: AppSettings) =>
     request<AppSettings>("/api/settings", {
       method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  testOpenAI: (payload: AppSettings) =>
+    request<OpenAITestResult>("/api/openai/test", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   botStatus: () => request<BotStatus>("/api/bot/status"),

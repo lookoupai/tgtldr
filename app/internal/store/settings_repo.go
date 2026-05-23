@@ -24,8 +24,18 @@ func normalizeAppSettings(settings model.AppSettings) model.AppSettings {
 	if settings.OpenAIBaseURL == "" {
 		settings.OpenAIBaseURL = model.DefaultOpenAIBaseURL
 	}
+	settings.OpenAIRequestMode = model.NormalizeOpenAIRequestMode(settings.OpenAIRequestMode)
 	settings.Language = model.NormalizeLanguage(settings.Language)
 	settings.SummaryOutputLanguage = model.NormalizeSummaryOutputLanguage(settings.SummaryOutputLanguage)
+	if settings.SummaryRetryLimit < 0 {
+		settings.SummaryRetryLimit = 0
+	}
+	if settings.SummaryRetryBackoffBaseMinutes <= 0 {
+		settings.SummaryRetryBackoffBaseMinutes = model.DefaultSummaryRetryBackoffBaseMinutes
+	}
+	if settings.SummaryRetryBackoffMultiplier < 1 {
+		settings.SummaryRetryBackoffMultiplier = model.DefaultSummaryRetryBackoffMultiplier
+	}
 	settings.BotPrivateAllowedUsers = compactStrings(settings.BotPrivateAllowedUsers)
 	return settings
 }
@@ -38,8 +48,9 @@ func (r *SettingsRepository) Get(ctx context.Context) (model.AppSettings, error)
 
 	err := r.pool.QueryRow(ctx, `
 		select id, telegram_api_id, telegram_api_hash, openai_base_url, openai_api_key,
-		       openai_model, openai_temperature, openai_output_mode, openai_max_output_tokens,
-		       summary_parallelism, default_timezone, language, summary_output_language, bot_enabled, bot_token,
+		       openai_model, openai_request_mode, openai_temperature, openai_output_mode, openai_max_output_tokens,
+		       summary_parallelism, summary_retry_limit, summary_retry_backoff_base_minutes,
+		       summary_retry_backoff_multiplier, default_timezone, language, summary_output_language, bot_enabled, bot_token,
 		       bot_target_chat_id, bot_private_allowed_users, created_at, updated_at
 		from app_settings
 		order by id
@@ -51,10 +62,14 @@ func (r *SettingsRepository) Get(ctx context.Context) (model.AppSettings, error)
 		&row.OpenAIBaseURL,
 		&encOpenAIKey,
 		&row.OpenAIModel,
+		&row.OpenAIRequestMode,
 		&row.OpenAITemperature,
 		&row.OpenAIOutputMode,
 		&row.OpenAIMaxOutputToken,
 		&row.SummaryParallelism,
+		&row.SummaryRetryLimit,
+		&row.SummaryRetryBackoffBaseMinutes,
+		&row.SummaryRetryBackoffMultiplier,
 		&row.DefaultTimezone,
 		&row.Language,
 		&row.SummaryOutputLanguage,
@@ -105,17 +120,21 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 		    openai_base_url = $3,
 		    openai_api_key = $4,
 		    openai_model = $5,
-		    openai_temperature = $6,
-		    openai_output_mode = $7,
-		    openai_max_output_tokens = $8,
-		    summary_parallelism = $9,
-		    default_timezone = $10,
-		    language = $11,
-		    summary_output_language = $12,
-		    bot_enabled = $13,
-		    bot_token = $14,
-		    bot_target_chat_id = $15,
-		    bot_private_allowed_users = $16,
+		    openai_request_mode = $6,
+		    openai_temperature = $7,
+		    openai_output_mode = $8,
+		    openai_max_output_tokens = $9,
+		    summary_parallelism = $10,
+		    summary_retry_limit = $11,
+		    summary_retry_backoff_base_minutes = $12,
+		    summary_retry_backoff_multiplier = $13,
+		    default_timezone = $14,
+		    language = $15,
+		    summary_output_language = $16,
+		    bot_enabled = $17,
+		    bot_token = $18,
+		    bot_target_chat_id = $19,
+		    bot_private_allowed_users = $20,
 		    updated_at = now()
 		where id = (select id from app_settings order by id limit 1)
 		returning id, created_at, updated_at
@@ -125,10 +144,14 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 		settings.OpenAIBaseURL,
 		encOpenAIKey,
 		settings.OpenAIModel,
+		settings.OpenAIRequestMode,
 		settings.OpenAITemperature,
 		settings.OpenAIOutputMode,
 		settings.OpenAIMaxOutputToken,
 		settings.SummaryParallelism,
+		settings.SummaryRetryLimit,
+		settings.SummaryRetryBackoffBaseMinutes,
+		settings.SummaryRetryBackoffMultiplier,
 		settings.DefaultTimezone,
 		settings.Language,
 		settings.SummaryOutputLanguage,
@@ -146,10 +169,14 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 	saved.OpenAIBaseURL = settings.OpenAIBaseURL
 	saved.OpenAIAPIKey = settings.OpenAIAPIKey
 	saved.OpenAIModel = settings.OpenAIModel
+	saved.OpenAIRequestMode = settings.OpenAIRequestMode
 	saved.OpenAITemperature = settings.OpenAITemperature
 	saved.OpenAIOutputMode = settings.OpenAIOutputMode
 	saved.OpenAIMaxOutputToken = settings.OpenAIMaxOutputToken
 	saved.SummaryParallelism = settings.SummaryParallelism
+	saved.SummaryRetryLimit = settings.SummaryRetryLimit
+	saved.SummaryRetryBackoffBaseMinutes = settings.SummaryRetryBackoffBaseMinutes
+	saved.SummaryRetryBackoffMultiplier = settings.SummaryRetryBackoffMultiplier
 	saved.DefaultTimezone = settings.DefaultTimezone
 	saved.Language = settings.Language
 	saved.SummaryOutputLanguage = settings.SummaryOutputLanguage

@@ -47,6 +47,7 @@ export function SettingsPanel() {
   const [authEditorOpen, setAuthEditorOpen] = useState(false);
   const [authRetryUntil, setAuthRetryUntil] = useState<number | null>(null);
   const [authRetryNow, setAuthRetryNow] = useState(Date.now());
+  const [testingOpenAI, setTestingOpenAI] = useState(false);
   const toast = useToast();
   const timezoneOptions = useMemo(() => listTimezoneOptions(), []);
 
@@ -76,8 +77,14 @@ export function SettingsPanel() {
         ...settingsData,
         language: normalizeLanguage(settingsData.language),
         summaryOutputLanguage: settingsData.summaryOutputLanguage || "zh-CN",
+        openAIRequestMode: settingsData.openAIRequestMode || "stream",
         openAIOutputMode: settingsData.openAIOutputMode || "auto",
         summaryParallelism: settingsData.summaryParallelism || 2,
+        summaryRetryLimit: settingsData.summaryRetryLimit ?? 2,
+        summaryRetryBackoffBaseMinutes:
+          settingsData.summaryRetryBackoffBaseMinutes || 1,
+        summaryRetryBackoffMultiplier:
+          settingsData.summaryRetryBackoffMultiplier || 3,
         botToken: "",
         openAIApiKey: "",
         telegramApiHash: "",
@@ -110,6 +117,22 @@ export function SettingsPanel() {
     } catch (err) {
       toast.showError(asMessage(err));
       return false;
+    }
+  }
+
+  async function testOpenAI() {
+    if (!settings) {
+      return;
+    }
+
+    setTestingOpenAI(true);
+    try {
+      const result = await api.testOpenAI(settings);
+      toast.showSuccess(`OpenAI 连接测试成功：${result.model || settings.openAIModel}`);
+    } catch (err) {
+      toast.showError(asMessage(err));
+    } finally {
+      setTestingOpenAI(false);
     }
   }
 
@@ -351,6 +374,24 @@ export function SettingsPanel() {
                 />
               </Field>
               <Field
+                label="调用方式"
+                hint="流式适合容易超时的中转站；非流式兼容传统 OpenAI Chat Completions。"
+              >
+                <AppSelect
+                  onChange={(value) =>
+                    setSettings({
+                      ...settings,
+                      openAIRequestMode: value as AppSettings["openAIRequestMode"],
+                    })
+                  }
+                  options={[
+                    { value: "stream", label: "流式" },
+                    { value: "non_stream", label: "非流式" },
+                  ]}
+                  value={settings.openAIRequestMode || "stream"}
+                />
+              </Field>
+              <Field
                 label="Temperature"
                 hint="建议范围：0.0-2.0。摘要场景通常建议 0.1-0.7。"
               >
@@ -424,6 +465,60 @@ export function SettingsPanel() {
                   value={String(settings.summaryParallelism || 2)}
                 />
               </Field>
+              <Field label="摘要失败重试次数">
+                <Input
+                  min="0"
+                  type="number"
+                  value={settings.summaryRetryLimit}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      summaryRetryLimit: Number(event.target.value || "0"),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="重试基础间隔（分钟）">
+                <Input
+                  min="1"
+                  type="number"
+                  value={settings.summaryRetryBackoffBaseMinutes}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      summaryRetryBackoffBaseMinutes: Number(
+                        event.target.value || "1",
+                      ),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="重试倍率">
+                <Input
+                  min="1"
+                  step="0.5"
+                  type="number"
+                  value={settings.summaryRetryBackoffMultiplier}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      summaryRetryBackoffMultiplier: Number(
+                        event.target.value || "1",
+                      ),
+                    })
+                  }
+                />
+              </Field>
+            </div>
+            <div className="button-row">
+              <Button
+                disabled={testingOpenAI}
+                onClick={() => startTransition(() => void testOpenAI())}
+                type="button"
+                variant="secondary"
+              >
+                {testingOpenAI ? "测试中..." : "测试连接"}
+              </Button>
             </div>
           </Surface>
 

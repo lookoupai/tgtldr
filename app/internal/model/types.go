@@ -25,19 +25,25 @@ const (
 )
 
 type OutputMode string
+type OpenAIRequestMode string
 type Language string
 type SummaryOutputLanguage string
 
 const (
-	OutputModeAuto       OutputMode            = "auto"
-	OutputModeManual     OutputMode            = "manual"
-	LanguageZhCN         Language              = "zh-CN"
-	LanguageEN           Language              = "en"
-	SummaryLanguageZhCN  SummaryOutputLanguage = "zh-CN"
-	SummaryLanguageEN    SummaryOutputLanguage = "en"
-	SummaryLanguageRU    SummaryOutputLanguage = "ru"
-	SummaryLanguageAR    SummaryOutputLanguage = "ar"
-	DefaultOpenAIBaseURL                       = "https://api.openai.com/v1"
+	OutputModeAuto                        OutputMode            = "auto"
+	OutputModeManual                      OutputMode            = "manual"
+	OpenAIRequestModeStream               OpenAIRequestMode     = "stream"
+	OpenAIRequestModeNonStream            OpenAIRequestMode     = "non_stream"
+	LanguageZhCN                          Language              = "zh-CN"
+	LanguageEN                            Language              = "en"
+	SummaryLanguageZhCN                   SummaryOutputLanguage = "zh-CN"
+	SummaryLanguageEN                     SummaryOutputLanguage = "en"
+	SummaryLanguageRU                     SummaryOutputLanguage = "ru"
+	SummaryLanguageAR                     SummaryOutputLanguage = "ar"
+	DefaultOpenAIBaseURL                                        = "https://api.openai.com/v1"
+	DefaultSummaryRetryLimit                                    = 2
+	DefaultSummaryRetryBackoffBaseMinutes                       = 1
+	DefaultSummaryRetryBackoffMultiplier                        = 3
 )
 
 func NormalizeLanguage(language Language) Language {
@@ -45,6 +51,17 @@ func NormalizeLanguage(language Language) Language {
 		return LanguageEN
 	}
 	return LanguageZhCN
+}
+
+func NormalizeOpenAIRequestMode(mode OpenAIRequestMode) OpenAIRequestMode {
+	if mode == OpenAIRequestModeNonStream {
+		return OpenAIRequestModeNonStream
+	}
+	return OpenAIRequestModeStream
+}
+
+func (s AppSettings) OpenAIStreamEnabled() bool {
+	return NormalizeOpenAIRequestMode(s.OpenAIRequestMode) != OpenAIRequestModeNonStream
 }
 
 func NormalizeSummaryOutputLanguage(language SummaryOutputLanguage) SummaryOutputLanguage {
@@ -85,25 +102,29 @@ func NormalizeSummaryMode(mode SummaryMode) SummaryMode {
 }
 
 type AppSettings struct {
-	ID                     int64                 `json:"id"`
-	TelegramAPIID          int                   `json:"telegramApiId"`
-	TelegramAPIHash        string                `json:"telegramApiHash,omitempty"`
-	OpenAIBaseURL          string                `json:"openAIBaseUrl"`
-	OpenAIAPIKey           string                `json:"openAIApiKey,omitempty"`
-	OpenAIModel            string                `json:"openAIModel"`
-	OpenAITemperature      float64               `json:"openAITemperature"`
-	OpenAIOutputMode       OutputMode            `json:"openAIOutputMode"`
-	OpenAIMaxOutputToken   int                   `json:"openAIMaxOutputTokens"`
-	SummaryParallelism     int                   `json:"summaryParallelism"`
-	DefaultTimezone        string                `json:"defaultTimezone"`
-	Language               Language              `json:"language"`
-	SummaryOutputLanguage  SummaryOutputLanguage `json:"summaryOutputLanguage"`
-	BotEnabled             bool                  `json:"botEnabled"`
-	BotToken               string                `json:"botToken,omitempty"`
-	BotTargetChatID        string                `json:"botTargetChatId"`
-	BotPrivateAllowedUsers []string              `json:"botPrivateAllowedUsers"`
-	CreatedAt              time.Time             `json:"createdAt"`
-	UpdatedAt              time.Time             `json:"updatedAt"`
+	ID                             int64                 `json:"id"`
+	TelegramAPIID                  int                   `json:"telegramApiId"`
+	TelegramAPIHash                string                `json:"telegramApiHash,omitempty"`
+	OpenAIBaseURL                  string                `json:"openAIBaseUrl"`
+	OpenAIAPIKey                   string                `json:"openAIApiKey,omitempty"`
+	OpenAIModel                    string                `json:"openAIModel"`
+	OpenAIRequestMode              OpenAIRequestMode     `json:"openAIRequestMode"`
+	OpenAITemperature              float64               `json:"openAITemperature"`
+	OpenAIOutputMode               OutputMode            `json:"openAIOutputMode"`
+	OpenAIMaxOutputToken           int                   `json:"openAIMaxOutputTokens"`
+	SummaryParallelism             int                   `json:"summaryParallelism"`
+	SummaryRetryLimit              int                   `json:"summaryRetryLimit"`
+	SummaryRetryBackoffBaseMinutes int                   `json:"summaryRetryBackoffBaseMinutes"`
+	SummaryRetryBackoffMultiplier  float64               `json:"summaryRetryBackoffMultiplier"`
+	DefaultTimezone                string                `json:"defaultTimezone"`
+	Language                       Language              `json:"language"`
+	SummaryOutputLanguage          SummaryOutputLanguage `json:"summaryOutputLanguage"`
+	BotEnabled                     bool                  `json:"botEnabled"`
+	BotToken                       string                `json:"botToken,omitempty"`
+	BotTargetChatID                string                `json:"botTargetChatId"`
+	BotPrivateAllowedUsers         []string              `json:"botPrivateAllowedUsers"`
+	CreatedAt                      time.Time             `json:"createdAt"`
+	UpdatedAt                      time.Time             `json:"updatedAt"`
 }
 
 func (s AppSettings) Sanitized() AppSettings {
@@ -343,6 +364,12 @@ type Summary struct {
 	DeliveredAt        *time.Time    `json:"deliveredAt,omitempty"`
 	DeliveryError      string        `json:"deliveryError"`
 	ErrorMessage       string        `json:"errorMessage"`
+	ErrorContext       string        `json:"errorContext"`
+	ErrorSystemPrompt  string        `json:"errorSystemPrompt"`
+	ErrorUserPrompt    string        `json:"errorUserPrompt"`
+	RetryCount         int           `json:"retryCount"`
+	NextRetryAt        *time.Time    `json:"nextRetryAt,omitempty"`
+	RetryableError     bool          `json:"-"`
 	MatchSnippet       string        `json:"matchSnippet,omitempty"`
 	MatchedFields      []string      `json:"matchedFields,omitempty"`
 	CreatedAt          time.Time     `json:"createdAt"`

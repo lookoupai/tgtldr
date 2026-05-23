@@ -18,7 +18,8 @@ func (r *SummaryRepository) GetByID(ctx context.Context, id int64) (model.Summar
 	if err := scanSummary(r.pool.QueryRow(ctx, `
 		select id, chat_id, summary_date::text, status, content, model,
 		       source_message_count, chunk_count, generated_at, delivered_at,
-		       delivery_error, error_message, ''::text as match_snippet,
+		       delivery_error, error_message, error_context, error_system_prompt,
+		       error_user_prompt, retry_count, next_retry_at, ''::text as match_snippet,
 		       '{}'::text[] as matched_fields, created_at, updated_at
 		from summaries
 		where id = $1
@@ -33,7 +34,8 @@ func (r *SummaryRepository) GetByChatAndDate(ctx context.Context, chatID int64, 
 	if err := scanSummary(r.pool.QueryRow(ctx, `
 		select id, chat_id, summary_date::text, status, content, model,
 		       source_message_count, chunk_count, generated_at, delivered_at,
-		       delivery_error, error_message, ''::text as match_snippet,
+		       delivery_error, error_message, error_context, error_system_prompt,
+		       error_user_prompt, retry_count, next_retry_at, ''::text as match_snippet,
 		       '{}'::text[] as matched_fields, created_at, updated_at
 		from summaries
 		where chat_id = $1 and summary_date = $2::date
@@ -71,7 +73,8 @@ func (r *SummaryRepository) Search(ctx context.Context, params SummaryListParams
 	dataQuery := `
 		select s.id, s.chat_id, s.summary_date::text, s.status, s.content, s.model,
 		       s.source_message_count, s.chunk_count, s.generated_at, s.delivered_at,
-		       s.delivery_error, s.error_message, ''::text as match_snippet,
+		       s.delivery_error, s.error_message, s.error_context, s.error_system_prompt,
+		       s.error_user_prompt, s.retry_count, s.next_retry_at, ''::text as match_snippet,
 		       '{}'::text[] as matched_fields, s.created_at, s.updated_at, c.title
 		from summaries s
 		join chats c on c.id = s.chat_id
@@ -122,11 +125,37 @@ func (r *SummaryRepository) UpsertPending(ctx context.Context, chatID int64, dat
 func (r *SummaryRepository) SetRunning(ctx context.Context, chatID int64, date string) error {
 	_, err := r.pool.Exec(ctx, `
 		update summaries
-		set status = 'running', error_message = '', updated_at = now()
+		set status = 'running',
+		    error_message = '',
+		    error_context = '',
+		    error_system_prompt = '',
+		    error_user_prompt = '',
+		    retry_count = 0,
+		    next_retry_at = null,
+		    updated_at = now()
 		where chat_id = $1 and summary_date = $2::date
 	`, chatID, date)
 	if err != nil {
 		return fmt.Errorf("set summary running: %w", err)
+	}
+	return nil
+}
+
+func (r *SummaryRepository) SetRetryRunning(ctx context.Context, chatID int64, date string) error {
+	_, err := r.pool.Exec(ctx, `
+		update summaries
+		set status = 'running',
+		    error_message = '',
+		    error_context = '',
+		    error_system_prompt = '',
+		    error_user_prompt = '',
+		    retry_count = retry_count + 1,
+		    next_retry_at = null,
+		    updated_at = now()
+		where chat_id = $1 and summary_date = $2::date
+	`, chatID, date)
+	if err != nil {
+		return fmt.Errorf("set retry summary running: %w", err)
 	}
 	return nil
 }
@@ -141,10 +170,15 @@ func (r *SummaryRepository) SaveResult(ctx context.Context, summary model.Summar
 		    chunk_count = $5,
 		    generated_at = $6,
 		    error_message = $7,
+		    error_context = $8,
+		    error_system_prompt = $9,
+		    error_user_prompt = $10,
+		    retry_count = case when $1 = 'succeeded' then 0 else retry_count end,
+		    next_retry_at = case when $1 = 'succeeded' then null else next_retry_at end,
 		    delivered_at = null,
 		    delivery_error = '',
 		    updated_at = now()
-		where chat_id = $8 and summary_date = $9::date
+		where chat_id = $11 and summary_date = $12::date
 	`,
 		summary.Status,
 		summary.Content,
@@ -153,11 +187,27 @@ func (r *SummaryRepository) SaveResult(ctx context.Context, summary model.Summar
 		summary.ChunkCount,
 		summary.GeneratedAt,
 		summary.ErrorMessage,
+		summary.ErrorContext,
+		summary.ErrorSystemPrompt,
+		summary.ErrorUserPrompt,
 		summary.ChatID,
 		summary.SummaryDate,
 	)
 	if err != nil {
 		return fmt.Errorf("save summary result: %w", err)
+	}
+	return nil
+}
+
+func (r *SummaryRepository) ScheduleRetry(ctx context.Context, chatID int64, date string, nextRetryAt time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+		update summaries
+		set next_retry_at = $1,
+		    updated_at = now()
+		where chat_id = $2 and summary_date = $3::date
+	`, nextRetryAt, chatID, date)
+	if err != nil {
+		return fmt.Errorf("schedule summary retry: %w", err)
 	}
 	return nil
 }
@@ -195,6 +245,10 @@ func (r *SummaryRepository) SetFailed(ctx context.Context, chatID int64, date st
 		update summaries
 		set status = 'failed',
 		    error_message = $1,
+		    error_context = '',
+		    error_system_prompt = '',
+		    error_user_prompt = '',
+		    next_retry_at = null,
 		    updated_at = now()
 		where chat_id = $2 and summary_date = $3::date
 	`, message, chatID, date)
@@ -233,6 +287,11 @@ func scanSummary(scanner summaryScanner, item *model.Summary) error {
 		&item.DeliveredAt,
 		&item.DeliveryError,
 		&item.ErrorMessage,
+		&item.ErrorContext,
+		&item.ErrorSystemPrompt,
+		&item.ErrorUserPrompt,
+		&item.RetryCount,
+		&item.NextRetryAt,
 		&item.MatchSnippet,
 		&item.MatchedFields,
 		&item.CreatedAt,
@@ -254,6 +313,11 @@ func scanSummaryWithChatTitle(scanner summaryScanner, item *model.Summary, chatT
 		&item.DeliveredAt,
 		&item.DeliveryError,
 		&item.ErrorMessage,
+		&item.ErrorContext,
+		&item.ErrorSystemPrompt,
+		&item.ErrorUserPrompt,
+		&item.RetryCount,
+		&item.NextRetryAt,
 		&item.MatchSnippet,
 		&item.MatchedFields,
 		&item.CreatedAt,

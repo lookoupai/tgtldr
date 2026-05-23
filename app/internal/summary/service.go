@@ -132,6 +132,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		APIKey:  settings.OpenAIAPIKey,
 		Model:   resolveSummaryModel(chat, settings),
 		Timeout: s.openAITimeout,
+		Stream:  settings.OpenAIStreamEnabled(),
 	})
 
 	stagePrompt := buildStagePromptForChat(summaryLanguage, chat)
@@ -149,11 +150,28 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		chunk := chunk
 		group.Go(func() error {
 			transcript := BuildTranscript(chunk.Messages, messageLookup, location, summaryLanguage)
-			resp, err := client.Chat(groupCtx, openai.ChatRequest{
+			resp, err := chatOpenAIForSummary(groupCtx, client, openai.ChatRequest{
 				SystemPrompt: stagePrompt,
 				UserPrompt:   transcript,
 				Temperature:  settings.OpenAITemperature,
 				MaxOutput:    budget.StageRequestMax,
+			}, summaryOpenAICallContext{
+				Kind:               "summary",
+				Stage:              "chunk",
+				ChatID:             chat.ID,
+				SummaryDate:        date,
+				Timezone:           timezone,
+				Model:              summary.Model,
+				BaseURL:            settings.OpenAIBaseURL,
+				RequestMode:        model.NormalizeOpenAIRequestMode(settings.OpenAIRequestMode),
+				Temperature:        settings.OpenAITemperature,
+				MaxOutput:          budget.StageRequestMax,
+				Parallelism:        budget.Parallelism,
+				ChunkIndex:         index,
+				ChunkCount:         len(chunks),
+				SourceMessageCount: len(filteredMessages),
+				ChunkMessageCount:  len(chunk.Messages),
+				InputRunes:         len([]rune(transcript)),
 			})
 			if err != nil {
 				return err
@@ -164,20 +182,35 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 	}
 	if err := group.Wait(); err != nil {
 		summary.Status = model.SummaryStatusFailed
-		summary.ErrorMessage = err.Error()
+		setSummaryOpenAIError(&summary, err)
 		return summary, nil
 	}
 
 	finalInput := strings.Join(partials, "\n\n---\n\n")
-	finalResp, err := client.Chat(ctx, openai.ChatRequest{
+	finalResp, err := chatOpenAIForSummary(ctx, client, openai.ChatRequest{
 		SystemPrompt: finalPrompt,
 		UserPrompt:   finalInput,
 		Temperature:  settings.OpenAITemperature,
 		MaxOutput:    budget.FinalRequestMax,
+	}, summaryOpenAICallContext{
+		Kind:               "summary",
+		Stage:              "final",
+		ChatID:             chat.ID,
+		SummaryDate:        date,
+		Timezone:           timezone,
+		Model:              summary.Model,
+		BaseURL:            settings.OpenAIBaseURL,
+		RequestMode:        model.NormalizeOpenAIRequestMode(settings.OpenAIRequestMode),
+		Temperature:        settings.OpenAITemperature,
+		MaxOutput:          budget.FinalRequestMax,
+		Parallelism:        budget.Parallelism,
+		ChunkCount:         len(chunks),
+		SourceMessageCount: len(filteredMessages),
+		InputRunes:         len([]rune(finalInput)),
 	})
 	if err != nil {
 		summary.Status = model.SummaryStatusFailed
-		summary.ErrorMessage = err.Error()
+		setSummaryOpenAIError(&summary, err)
 		return summary, nil
 	}
 
@@ -187,6 +220,14 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		return model.Summary{}, err
 	}
 	return summary, nil
+}
+
+func setSummaryOpenAIError(summary *model.Summary, err error) {
+	summary.ErrorMessage = err.Error()
+	summary.ErrorContext = summaryOpenAIErrorContext(err)
+	summary.ErrorSystemPrompt = summaryOpenAIErrorSystemPrompt(err)
+	summary.ErrorUserPrompt = summaryOpenAIErrorUserPrompt(err)
+	summary.RetryableError = summaryOpenAIErrorRetryable(err)
 }
 
 func (s *Service) appendKnowledgeFacts(ctx context.Context, summary *model.Summary, language model.SummaryOutputLanguage, days int, before time.Time) error {

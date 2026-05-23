@@ -3,7 +3,6 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -78,7 +77,7 @@ type extractedFact struct {
 }
 
 var (
-	codeFencePattern        = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
+	codeFencePattern        = regexp.MustCompile("(?is)^```+\\s*(?:json)?\\s*(.*?)\\s*```+$")
 	directCorrectionPattern = regexp.MustCompile(`^\s*(.+?)\s*(供应|出售|提供|售卖|卖|转让|需要|求购|想要|想买|购买|买)\s*(?:的)?(?:是|为)?\s*(.+?)\s*(?:，|,|。|；|;|\s)+不是\s*(.+?)\s*$`)
 )
 
@@ -155,6 +154,7 @@ func (s *Service) RunDailyExtraction(ctx context.Context, req RunRequest) (model
 		APIKey:  settings.OpenAIAPIKey,
 		Model:   resolveModel(chat, settings),
 		Timeout: s.openAITimeout,
+		Stream:  settings.OpenAIStreamEnabled(),
 	})
 
 	chunks := splitExtractionMessages(filtered)
@@ -209,43 +209,14 @@ func extractionMaxOutputTokens(settings model.AppSettings) int {
 }
 
 func chatWithRetry(ctx context.Context, client *openai.Client, req openai.ChatRequest, attempts int) (openai.ChatResponse, error) {
-	if attempts <= 0 {
-		attempts = 1
-	}
-	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		resp, err := client.Chat(ctx, req)
-		if err == nil {
-			return resp, nil
-		}
-		lastErr = err
-		if attempt == attempts || !isTransientOpenAIError(err) {
-			break
-		}
-		timer := time.NewTimer(time.Duration(attempt) * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return openai.ChatResponse{}, ctx.Err()
-		case <-timer.C:
-		}
-	}
-	return openai.ChatResponse{}, lastErr
+	resp, _, err := openai.ChatWithRetry(ctx, client, req, openai.RetryConfig{
+		Attempts: attempts,
+	})
+	return resp, err
 }
 
 func isTransientOpenAIError(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := err.Error()
-	if strings.Contains(message, "openai status 429:") ||
-		strings.Contains(message, "openai status 500:") ||
-		strings.Contains(message, "openai status 502:") ||
-		strings.Contains(message, "openai status 503:") ||
-		strings.Contains(message, "openai status 504:") {
-		return true
-	}
-	return strings.Contains(message, "request chat completion:") && errors.Is(err, context.DeadlineExceeded)
+	return openai.IsRetryableError(err)
 }
 
 func (s *Service) RunDailyExtractionsForSummary(ctx context.Context, chat model.Chat, date string) ([]model.KnowledgeRun, error) {
@@ -435,6 +406,7 @@ func (s *Service) parseMaintenanceText(ctx context.Context, text string) (mainte
 		APIKey:  settings.OpenAIAPIKey,
 		Model:   settings.OpenAIModel,
 		Timeout: s.openAITimeout,
+		Stream:  settings.OpenAIStreamEnabled(),
 	})
 	resp, err := client.Chat(ctx, openai.ChatRequest{
 		SystemPrompt: buildMaintenanceSystemPrompt(settings.Language),
@@ -462,6 +434,7 @@ func (s *Service) ParseQueryText(ctx context.Context, text string) (KnowledgeQue
 		APIKey:  settings.OpenAIAPIKey,
 		Model:   settings.OpenAIModel,
 		Timeout: s.openAITimeout,
+		Stream:  settings.OpenAIStreamEnabled(),
 	})
 	resp, err := client.Chat(ctx, openai.ChatRequest{
 		SystemPrompt: buildKnowledgeQuerySystemPrompt(settings.Language),
@@ -1381,13 +1354,8 @@ func normalizeMatchText(value string) string {
 }
 
 func parseExtractionFacts(raw string, space model.KnowledgeSpace, chat model.Chat, refs map[string]model.Message, now time.Time) ([]model.KnowledgeFact, error) {
-	cleaned := strings.TrimSpace(raw)
-	if match := codeFencePattern.FindStringSubmatch(cleaned); len(match) == 2 {
-		cleaned = strings.TrimSpace(match[1])
-	}
-
-	var decoded extractionResponse
-	if err := json.Unmarshal([]byte(cleaned), &decoded); err != nil {
+	decoded, err := parseExtractionResponse(raw)
+	if err != nil {
 		return nil, fmt.Errorf("parse extraction response: %w", err)
 	}
 
@@ -1453,6 +1421,48 @@ func parseExtractionFacts(raw string, space model.KnowledgeSpace, chat model.Cha
 		})
 	}
 	return facts, nil
+}
+
+func parseExtractionResponse(raw string) (extractionResponse, error) {
+	cleaned := extractionJSONPayload(raw)
+	if cleaned == "" {
+		cleaned = raw
+	}
+	cleaned = strings.TrimSpace(cleaned)
+	if strings.HasPrefix(cleaned, "[") {
+		var facts []extractedFact
+		if err := json.Unmarshal([]byte(cleaned), &facts); err != nil {
+			return extractionResponse{}, err
+		}
+		return extractionResponse{Facts: facts}, nil
+	}
+
+	var decoded extractionResponse
+	if err := json.Unmarshal([]byte(cleaned), &decoded); err != nil {
+		return extractionResponse{}, err
+	}
+	return decoded, nil
+}
+
+func extractionJSONPayload(raw string) string {
+	cleaned := strings.TrimSpace(raw)
+	if match := codeFencePattern.FindStringSubmatch(cleaned); len(match) == 2 {
+		cleaned = strings.TrimSpace(match[1])
+	}
+	if json.Valid([]byte(cleaned)) {
+		return cleaned
+	}
+	for index, r := range cleaned {
+		if r != '{' && r != '[' {
+			continue
+		}
+		decoder := json.NewDecoder(strings.NewReader(cleaned[index:]))
+		var payload json.RawMessage
+		if err := decoder.Decode(&payload); err == nil {
+			return string(payload)
+		}
+	}
+	return cleaned
 }
 
 func isSupportedRiskAccountFact(data json.RawMessage, sourceMessages []model.Message) bool {

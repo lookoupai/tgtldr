@@ -62,6 +62,7 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/setup-password", r.handleSetupPassword)
 	mux.HandleFunc("/api/auth/change-password", r.handleChangePassword)
 	mux.HandleFunc("/api/settings", r.handleSettings)
+	mux.HandleFunc("/api/openai/test", r.handleOpenAITest)
 	mux.HandleFunc("/api/bot/status", r.handleBotStatus)
 	mux.HandleFunc("/api/bot/target-chat/resolve", r.handleResolveBotTargetChat)
 	mux.HandleFunc("/api/telegram/auth/start", r.handleStartAuth)
@@ -283,6 +284,13 @@ func (r *Router) handleSettings(w http.ResponseWriter, req *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请填写 Model。", "Enter Model."))
 		return
 	}
+	if payload.OpenAIRequestMode == "" {
+		payload.OpenAIRequestMode = model.OpenAIRequestModeStream
+	}
+	if payload.OpenAIRequestMode != model.OpenAIRequestModeStream && payload.OpenAIRequestMode != model.OpenAIRequestModeNonStream {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "调用方式必须是 stream 或 non_stream。", "Request mode must be stream or non_stream."))
+		return
+	}
 	if payload.OpenAITemperature < 0 || payload.OpenAITemperature > 2 {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "Temperature 必须在 0.0 到 2.0 之间。", "Temperature must be between 0.0 and 2.0."))
 		return
@@ -314,6 +322,20 @@ func (r *Router) handleSettings(w http.ResponseWriter, req *http.Request) {
 	}
 	if payload.SummaryParallelism < 1 || payload.SummaryParallelism > 6 {
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "摘要并行度必须在 1 到 6 之间。", "Summary parallelism must be between 1 and 6."))
+		return
+	}
+	if payload.SummaryRetryLimit < 0 {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "摘要重试次数不能小于 0。", "Summary retry limit cannot be less than 0."))
+		return
+	}
+	if payload.SummaryRetryBackoffBaseMinutes <= 0 {
+		payload.SummaryRetryBackoffBaseMinutes = model.DefaultSummaryRetryBackoffBaseMinutes
+	}
+	if payload.SummaryRetryBackoffMultiplier <= 0 {
+		payload.SummaryRetryBackoffMultiplier = model.DefaultSummaryRetryBackoffMultiplier
+	}
+	if payload.SummaryRetryBackoffMultiplier < 1 {
+		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "摘要重试倍率不能小于 1。", "Summary retry multiplier cannot be less than 1."))
 		return
 	}
 	if payload.BotEnabled && strings.TrimSpace(payload.BotToken) == "" {

@@ -16,32 +16,72 @@ func TestDecideScheduledAction(t *testing.T) {
 	}
 	readyAt := time.Date(2026, time.April, 18, 0, 1, 0, 0, shanghai)
 	previewAt := time.Date(2026, time.April, 17, 16, 0, 0, 0, shanghai)
+	now := time.Date(2026, time.April, 18, 9, 0, 0, 0, time.UTC)
+	retryDueAt := now.Add(-time.Minute)
+	retryFutureAt := now.Add(time.Minute)
+	defaultSettings := model.AppSettings{SummaryRetryLimit: 2}
 
 	tests := []struct {
 		name     string
 		chat     model.Chat
 		summary  model.Summary
 		found    bool
+		settings model.AppSettings
 		expected scheduledAction
 	}{
 		{
 			name:     "不存在摘要时重新生成",
 			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
 			found:    false,
+			settings: defaultSettings,
 			expected: scheduledActionGenerate,
 		},
 		{
-			name:     "摘要未成功时重新生成",
+			name:     "等待中摘要继续生成",
+			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
+			found:    true,
+			summary:  model.Summary{Status: model.SummaryStatusPending},
+			settings: defaultSettings,
+			expected: scheduledActionGenerate,
+		},
+		{
+			name:     "失败摘要没有重试时间时跳过",
 			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
 			found:    true,
 			summary:  model.Summary{Status: model.SummaryStatusFailed},
-			expected: scheduledActionGenerate,
+			settings: defaultSettings,
+			expected: scheduledActionSkip,
+		},
+		{
+			name:     "失败摘要到达重试时间时执行重试",
+			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
+			found:    true,
+			summary:  model.Summary{Status: model.SummaryStatusFailed, RetryCount: 1, NextRetryAt: &retryDueAt},
+			settings: defaultSettings,
+			expected: scheduledActionRetry,
+		},
+		{
+			name:     "失败摘要未到重试时间时跳过",
+			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
+			found:    true,
+			summary:  model.Summary{Status: model.SummaryStatusFailed, RetryCount: 1, NextRetryAt: &retryFutureAt},
+			settings: defaultSettings,
+			expected: scheduledActionSkip,
+		},
+		{
+			name:     "失败摘要达到重试上限时跳过",
+			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
+			found:    true,
+			summary:  model.Summary{Status: model.SummaryStatusFailed, RetryCount: 2, NextRetryAt: &retryDueAt},
+			settings: defaultSettings,
+			expected: scheduledActionSkip,
 		},
 		{
 			name:     "Bot 模式且摘要完整时只发送",
 			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
 			found:    true,
 			summary:  model.Summary{Status: model.SummaryStatusSucceeded, SummaryDate: "2026-04-17", GeneratedAt: readyAt},
+			settings: defaultSettings,
 			expected: scheduledActionDeliver,
 		},
 		{
@@ -49,6 +89,7 @@ func TestDecideScheduledAction(t *testing.T) {
 			chat:     model.Chat{DeliveryMode: model.DeliveryModeBot},
 			found:    true,
 			summary:  model.Summary{Status: model.SummaryStatusSucceeded, SummaryDate: "2026-04-17", GeneratedAt: previewAt},
+			settings: defaultSettings,
 			expected: scheduledActionGenerate,
 		},
 		{
@@ -61,6 +102,7 @@ func TestDecideScheduledAction(t *testing.T) {
 				GeneratedAt:   readyAt,
 				DeliveryError: "bot delivery is disabled",
 			},
+			settings: defaultSettings,
 			expected: scheduledActionDeliver,
 		},
 		{
@@ -73,6 +115,7 @@ func TestDecideScheduledAction(t *testing.T) {
 				GeneratedAt: readyAt,
 				DeliveredAt: &deliveredAt,
 			},
+			settings: defaultSettings,
 			expected: scheduledActionSkip,
 		},
 		{
@@ -80,13 +123,14 @@ func TestDecideScheduledAction(t *testing.T) {
 			chat:     model.Chat{DeliveryMode: model.DeliveryModeDashboard},
 			found:    true,
 			summary:  model.Summary{Status: model.SummaryStatusSucceeded, SummaryDate: "2026-04-17", GeneratedAt: readyAt},
+			settings: defaultSettings,
 			expected: scheduledActionSkip,
 		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			actual := decideScheduledAction(testCase.chat, testCase.summary, testCase.found, "Asia/Shanghai")
+			actual := decideScheduledAction(testCase.chat, testCase.summary, testCase.found, "Asia/Shanghai", testCase.settings, now)
 			if actual != testCase.expected {
 				t.Fatalf("expected action %d, got %d", testCase.expected, actual)
 			}

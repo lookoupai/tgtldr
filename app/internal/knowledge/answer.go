@@ -153,6 +153,7 @@ func (s *Service) generateKnowledgeAnswer(
 		APIKey:  settings.OpenAIAPIKey,
 		Model:   settings.OpenAIModel,
 		Timeout: s.openAITimeout,
+		Stream:  settings.OpenAIStreamEnabled(),
 	})
 	return client.Chat(ctx, openai.ChatRequest{
 		SystemPrompt: buildKnowledgeAnswerSystemPrompt(settings.Language),

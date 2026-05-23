@@ -22,6 +22,8 @@ type ConfigStepProps = {
   settings: AppSettings;
   setSettings: (settings: AppSettings) => void;
   canSave: boolean;
+  testingOpenAI: boolean;
+  onTestOpenAI: () => void;
   onSaveAndContinue: () => void;
 };
 
@@ -29,6 +31,8 @@ export function ConfigStep({
   settings,
   setSettings,
   canSave,
+  testingOpenAI,
+  onTestOpenAI,
   onSaveAndContinue,
 }: ConfigStepProps) {
   const { dict } = useI18n();
@@ -150,6 +154,24 @@ export function ConfigStep({
                   />
                 </Field>
               ) : null}
+              <Field
+                label="调用方式"
+                hint="流式适合容易超时的中转站；非流式兼容传统 OpenAI Chat Completions。"
+              >
+                <AppSelect
+                  onChange={(value) =>
+                    setSettings({
+                      ...settings,
+                      openAIRequestMode: value as AppSettings["openAIRequestMode"],
+                    })
+                  }
+                  options={[
+                    { value: "stream", label: "流式" },
+                    { value: "non_stream", label: "非流式" },
+                  ]}
+                  value={settings.openAIRequestMode || "stream"}
+                />
+              </Field>
             </div>
 
             <details className="setup-details">
@@ -224,8 +246,62 @@ export function ConfigStep({
                     value={String(settings.summaryParallelism || 2)}
                   />
                 </Field>
+                <Field label="摘要失败重试次数">
+                  <Input
+                    min="0"
+                    type="number"
+                    value={settings.summaryRetryLimit}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        summaryRetryLimit: Number(event.target.value || "0"),
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="重试基础间隔（分钟）">
+                  <Input
+                    min="1"
+                    type="number"
+                    value={settings.summaryRetryBackoffBaseMinutes}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        summaryRetryBackoffBaseMinutes: Number(
+                          event.target.value || "1",
+                        ),
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="重试倍率">
+                  <Input
+                    min="1"
+                    step="0.5"
+                    type="number"
+                    value={settings.summaryRetryBackoffMultiplier}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        summaryRetryBackoffMultiplier: Number(
+                          event.target.value || "1",
+                        ),
+                      })
+                    }
+                  />
+                </Field>
               </div>
             </details>
+            <div className="button-row">
+              <Button
+                disabled={testingOpenAI}
+                onClick={() => startTransition(onTestOpenAI)}
+                type="button"
+                variant="secondary"
+              >
+                {testingOpenAI ? "测试中..." : "测试连接"}
+              </Button>
+            </div>
           </section>
 
           <section className="setup-config-panel">

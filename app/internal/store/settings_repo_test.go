@@ -30,4 +30,27 @@ func TestNormalizeAppSettingsLanguage(t *testing.T) {
 
 		So(settings.BotPrivateAllowedUsers, ShouldResemble, []string{"123", "@alice"})
 	})
+
+	Convey("OpenAI 调用方式为空或非法时默认使用流式", t, func() {
+		So(normalizeAppSettings(model.AppSettings{}).OpenAIRequestMode, ShouldEqual, model.OpenAIRequestModeStream)
+		So(normalizeAppSettings(model.AppSettings{OpenAIRequestMode: "invalid"}).OpenAIRequestMode, ShouldEqual, model.OpenAIRequestModeStream)
+	})
+
+	Convey("OpenAI 非流式调用方式会保留", t, func() {
+		settings := normalizeAppSettings(model.AppSettings{OpenAIRequestMode: model.OpenAIRequestModeNonStream})
+
+		So(settings.OpenAIRequestMode, ShouldEqual, model.OpenAIRequestModeNonStream)
+	})
+
+	Convey("摘要失败重试配置会归一化", t, func() {
+		settings := normalizeAppSettings(model.AppSettings{
+			SummaryRetryLimit:              -1,
+			SummaryRetryBackoffBaseMinutes: 0,
+			SummaryRetryBackoffMultiplier:  0,
+		})
+
+		So(settings.SummaryRetryLimit, ShouldEqual, 0)
+		So(settings.SummaryRetryBackoffBaseMinutes, ShouldEqual, model.DefaultSummaryRetryBackoffBaseMinutes)
+		So(settings.SummaryRetryBackoffMultiplier, ShouldEqual, model.DefaultSummaryRetryBackoffMultiplier)
+	})
 }

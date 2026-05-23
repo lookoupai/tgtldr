@@ -43,6 +43,7 @@ const (
 	scheduledActionSkip scheduledAction = iota
 	scheduledActionGenerate
 	scheduledActionDeliver
+	scheduledActionRetry
 )
 
 const channelExtractionParallelism = 2
@@ -96,6 +97,22 @@ func (s *Service) RunNow(ctx context.Context, chat model.Chat, date string) erro
 	}
 	defer s.finishTask(key)
 	return s.runNow(ctx, chat, date)
+}
+
+func (s *Service) RunRetry(ctx context.Context, chat model.Chat, date string) error {
+	key := summaryTaskKey(chat.ID, date)
+	if !s.beginTask(key) {
+		return nil
+	}
+	defer s.finishTask(key)
+
+	if err := s.store.Summaries.UpsertPending(ctx, chat.ID, date); err != nil {
+		return err
+	}
+	if err := s.store.Summaries.SetRetryRunning(ctx, chat.ID, date); err != nil {
+		return err
+	}
+	return s.executeSummary(ctx, chat, date)
 }
 
 func (s *Service) RunNowAsync(ctx context.Context, chat model.Chat, date string) (bool, error) {
@@ -233,6 +250,9 @@ func (s *Service) executeSummary(ctx context.Context, chat model.Chat, date stri
 		return err
 	}
 	if result.Status != model.SummaryStatusSucceeded {
+		if result.RetryableError {
+			return s.scheduleNextRetry(ctx, result)
+		}
 		return nil
 	}
 	s.tryDeliverSummary(ctx, chat, result)
@@ -337,12 +357,14 @@ func (s *Service) runOnce(ctx context.Context) error {
 				return err
 			}
 
-			switch decideScheduledAction(chat, item, found, timezone) {
+			switch decideScheduledAction(chat, item, found, timezone, settings, s.clock.Now()) {
 			case scheduledActionSkip:
 				return nil
 			case scheduledActionDeliver:
 				s.deliverExistingSummary(groupCtx, chat, item)
 				return nil
+			case scheduledActionRetry:
+				return s.RunRetry(groupCtx, chat, date)
 			default:
 				return s.RunNow(groupCtx, chat, date)
 			}
@@ -647,12 +669,18 @@ func (s *Service) lookupSummary(ctx context.Context, chatID int64, date string) 
 	return model.Summary{}, false, err
 }
 
-func decideScheduledAction(chat model.Chat, item model.Summary, found bool, timezone string) scheduledAction {
+func decideScheduledAction(chat model.Chat, item model.Summary, found bool, timezone string, settings model.AppSettings, now time.Time) scheduledAction {
 	if !found {
 		return scheduledActionGenerate
 	}
 	if item.Status != model.SummaryStatusSucceeded {
-		return scheduledActionGenerate
+		if shouldRetrySummary(settings, item, now) {
+			return scheduledActionRetry
+		}
+		if item.Status == model.SummaryStatusPending || item.Status == model.SummaryStatusRunning {
+			return scheduledActionGenerate
+		}
+		return scheduledActionSkip
 	}
 	if chat.DeliveryMode != model.DeliveryModeBot {
 		return scheduledActionSkip

@@ -91,6 +91,7 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 		APIKey:  settings.OpenAIAPIKey,
 		Model:   settings.OpenAIModel,
 		Timeout: a.openAITimeout,
+		Stream:  settings.OpenAIStreamEnabled(),
 	})
 
 	stagePrompt := buildAggregatedStagePrompt(channel.TargetLanguage, channel.SummaryPrompt, channel.ContentFilter, channel.ContentFilterTypes)
@@ -107,11 +108,32 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 		chunk := chunk
 		group.Go(func() error {
 			transcript := BuildTranscript(chunk.Messages, messageLookup, location, channel.TargetLanguage)
-			resp, err := client.Chat(groupCtx, openai.ChatRequest{
+			resp, err := chatOpenAIForSummary(groupCtx, client, openai.ChatRequest{
 				SystemPrompt: stagePrompt,
 				UserPrompt:   transcript,
 				Temperature:  settings.OpenAITemperature,
 				MaxOutput:    budget.StageRequestMax,
+			}, summaryOpenAICallContext{
+				Kind:                 "aggregated_summary",
+				Stage:                "chunk",
+				ChannelID:            channel.ID,
+				SummaryDate:          date,
+				Timezone:             timezone,
+				Model:                settings.OpenAIModel,
+				BaseURL:              settings.OpenAIBaseURL,
+				RequestMode:          model.NormalizeOpenAIRequestMode(settings.OpenAIRequestMode),
+				Temperature:          settings.OpenAITemperature,
+				MaxOutput:            budget.StageRequestMax,
+				Parallelism:          budget.Parallelism,
+				ChunkIndex:           index,
+				ChunkCount:           len(chunks),
+				SourceMessageCount:   len(allMessages),
+				ChunkMessageCount:    len(chunk.Messages),
+				FilteredMessageCount: len(filteredMessages),
+				SourceChatIDs:        channel.SourceChatIDs,
+				ContentFilterEnabled: channel.ContentFilter != "" && len(channel.ContentFilterTypes) > 0,
+				FilteredFactTypes:    channel.ContentFilterTypes,
+				InputRunes:           len([]rune(transcript)),
 			})
 			if err != nil {
 				return err
@@ -127,11 +149,30 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 	}
 
 	finalInput := strings.Join(partials, "\n\n---\n\n")
-	finalResp, err := client.Chat(ctx, openai.ChatRequest{
+	finalResp, err := chatOpenAIForSummary(ctx, client, openai.ChatRequest{
 		SystemPrompt: finalPrompt,
 		UserPrompt:   finalInput,
 		Temperature:  settings.OpenAITemperature,
 		MaxOutput:    budget.FinalRequestMax,
+	}, summaryOpenAICallContext{
+		Kind:                 "aggregated_summary",
+		Stage:                "final",
+		ChannelID:            channel.ID,
+		SummaryDate:          date,
+		Timezone:             timezone,
+		Model:                settings.OpenAIModel,
+		BaseURL:              settings.OpenAIBaseURL,
+		RequestMode:          model.NormalizeOpenAIRequestMode(settings.OpenAIRequestMode),
+		Temperature:          settings.OpenAITemperature,
+		MaxOutput:            budget.FinalRequestMax,
+		Parallelism:          budget.Parallelism,
+		ChunkCount:           len(chunks),
+		SourceMessageCount:   len(allMessages),
+		FilteredMessageCount: len(filteredMessages),
+		SourceChatIDs:        channel.SourceChatIDs,
+		ContentFilterEnabled: channel.ContentFilter != "" && len(channel.ContentFilterTypes) > 0,
+		FilteredFactTypes:    channel.ContentFilterTypes,
+		InputRunes:           len([]rune(finalInput)),
 	})
 	if err != nil {
 		result.Status = model.SummaryStatusFailed

@@ -1,6 +1,7 @@
 export type AuthStep = "idle" | "code" | "password" | "done";
 export type Language = "zh-CN" | "en";
 export type SummaryOutputLanguage = "zh-CN" | "en" | "ru" | "ar" | string;
+export type OpenAIRequestMode = "stream" | "non_stream";
 
 export type AppSettings = {
   id: number;
@@ -9,10 +10,14 @@ export type AppSettings = {
   openAIBaseUrl: string;
   openAIApiKey?: string;
   openAIModel: string;
+  openAIRequestMode: OpenAIRequestMode;
   openAITemperature: number;
   openAIOutputMode: "auto" | "manual";
   openAIMaxOutputTokens: number;
   summaryParallelism: number;
+  summaryRetryLimit: number;
+  summaryRetryBackoffBaseMinutes: number;
+  summaryRetryBackoffMultiplier: number;
   defaultTimezone: string;
   language: Language;
   summaryOutputLanguage: SummaryOutputLanguage;
@@ -66,6 +71,11 @@ export type BotTargetChatCandidate = {
 
 export type BotTargetChatResolveResult = {
   candidates: BotTargetChatCandidate[];
+};
+
+export type OpenAITestResult = {
+  ok: boolean;
+  model: string;
 };
 
 export type BotCommand = {
@@ -161,6 +171,11 @@ export type Summary = {
   deliveredAt?: string;
   deliveryError: string;
   errorMessage: string;
+  errorContext: string;
+  errorSystemPrompt: string;
+  errorUserPrompt: string;
+  retryCount: number;
+  nextRetryAt?: string;
   matchSnippet?: string;
   matchedFields?: string[];
 };
