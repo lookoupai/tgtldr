@@ -214,7 +214,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		return summary, nil
 	}
 
-	summary.Content = strings.TrimSpace(finalResp.Content)
+	summary.Content = sanitizeSummaryUserLinks(strings.TrimSpace(finalResp.Content), filteredMessages, messageLookup)
 	summary.Model = finalResp.Model
 	if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage, chat.SummaryKnowledgeDays, end); err != nil {
 		return model.Summary{}, err

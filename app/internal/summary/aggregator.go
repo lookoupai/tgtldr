@@ -180,7 +180,7 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 		return result, nil
 	}
 
-	result.Content = strings.TrimSpace(finalResp.Content)
+	result.Content = sanitizeSummaryUserLinks(strings.TrimSpace(finalResp.Content), filteredMessages, messageLookup)
 	result.Model = finalResp.Model
 	if err := a.appendKnowledgeFacts(ctx, &result, channel, end); err != nil {
 		return AggregatedSummaryResult{}, err

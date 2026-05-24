@@ -362,9 +362,9 @@ func buildSystemPrompt(language model.SummaryOutputLanguage, base string, summar
 
 func preserveUserLinkInstruction(language model.SummaryOutputLanguage) string {
 	if language != model.SummaryLanguageZhCN {
-		return "User link preservation:\n- If the input contains a Markdown user reference such as `[Name](tg://user?id=123)`, keep that exact Markdown link when mentioning the same user in the output. Do not rewrite it as plain text."
+		return "User link preservation:\n- Only preserve Markdown user links that already appear in the input. Do not invent new `tg://user?id=...` links from plain names or `@username` handles.\n- If no confirmed user ID appears in the input, keep the text as plain text and do not use placeholder IDs."
 	}
-	return "用户链接保留规则：\n- 如果输入中出现 `[姓名](tg://user?id=123)` 这类 Markdown 用户引用，输出中提到同一用户时保留完整 Markdown 链接，不要改写成纯文本。"
+	return "用户链接保留规则：\n- 只保留输入里已经出现的 Markdown 用户链接，不要根据名字或 `@username` 自行编造新的 `tg://user?id=...`。\n- 如果输入里没有可确认的用户 ID，就保持原样文本，不要改写成占位符或虚构链接。"
 }
 
 func outputLanguageInstruction(language model.SummaryOutputLanguage) string {
