@@ -43,6 +43,23 @@ func TestSanitizeSummaryUserLinks(t *testing.T) {
 		So(got, ShouldEqual, "- James Vega 提供 API 号码")
 	})
 
+	Convey("去掉不在输入来源中的数字 tg 用户链接", t, func() {
+		messages := []model.Message{
+			{
+				TelegramMessageID: 1,
+				TelegramSenderID:  42,
+				SenderName:        "Alice",
+				MessageTime:       time.Date(2026, 5, 24, 9, 0, 0, 0, time.UTC),
+				TextContent:       "出售显示器",
+			},
+		}
+
+		content := "- [Mallory](tg://user?id=99) 声称提供账号"
+		got := sanitizeSummaryUserLinks(content, messages, map[int]model.Message{1: messages[0]})
+
+		So(got, ShouldEqual, "- Mallory 声称提供账号")
+	})
+
 	Convey("保留输入里已有的用户名链接", t, func() {
 		messages := []model.Message{
 			{

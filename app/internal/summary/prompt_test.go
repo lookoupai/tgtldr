@@ -75,4 +75,12 @@ func TestBuildFinalPrompt(t *testing.T) {
 		So(prompt, ShouldContainSubstring, "- 体育: 比赛、转会、赛事讨论")
 		So(prompt, ShouldContainSubstring, "## 分话题日报")
 	})
+
+	Convey("用户链接规则同时要求保留确认链接并禁止编造", t, func() {
+		prompt := buildFinalPrompt(model.SummaryLanguageZhCN, "", "")
+
+		So(prompt, ShouldContainSubstring, "保留完整 Markdown 链接")
+		So(prompt, ShouldContainSubstring, "不要根据名字或 `@username` 自行编造")
+		So(prompt, ShouldContainSubstring, "不要改写成占位符或虚构链接")
+	})
 }

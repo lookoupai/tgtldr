@@ -205,14 +205,15 @@ func (a *Aggregator) aggregateMessages(ctx context.Context, chatIDs []int64, sta
 	messageLookup := make(map[int]model.Message)
 
 	for _, chatID := range chatIDs {
+		chat, err := a.store.Chats.GetByID(ctx, chatID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get source chat %d: %w", chatID, err)
+		}
 		messages, err := a.store.Messages.ListForRange(ctx, chatID, start, end)
 		if err != nil {
 			return nil, nil, fmt.Errorf("get messages for chat %d: %w", chatID, err)
 		}
-		for _, message := range messages {
-			allMessages = append(allMessages, message)
-			messageLookup[message.TelegramMessageID] = message
-		}
+		allMessages = appendAggregatedMessages(allMessages, messageLookup, messages, chat)
 	}
 
 	missingReplyIDs := make([]int, 0)
@@ -239,6 +240,13 @@ func (a *Aggregator) aggregateMessages(ctx context.Context, chatIDs []int64, sta
 	}
 
 	return allMessages, messageLookup, nil
+}
+
+func appendAggregatedMessages(allMessages []model.Message, messageLookup map[int]model.Message, messages []model.Message, chat model.Chat) []model.Message {
+	for _, message := range messages {
+		messageLookup[message.TelegramMessageID] = message
+	}
+	return append(allMessages, filterMessagesForSummary(messages, chat)...)
 }
 
 func (a *Aggregator) filterMessagesByContent(ctx context.Context, messages []model.Message, filter string, factTypes []string, settings model.AppSettings) []model.Message {

@@ -318,6 +318,10 @@ func (s *Service) prepareMessages(ctx context.Context, chat model.Chat, messages
 		}
 	}
 
+	return filterMessagesForSummary(messages, chat), lookup, nil
+}
+
+func filterMessagesForSummary(messages []model.Message, chat model.Chat) []model.Message {
 	filtered := make([]model.Message, 0, len(messages))
 	for _, message := range messages {
 		if shouldSkipMessage(message, chat) {
@@ -328,7 +332,7 @@ func (s *Service) prepareMessages(ctx context.Context, chat model.Chat, messages
 		}
 		filtered = append(filtered, message)
 	}
-	return filtered, lookup, nil
+	return filtered
 }
 
 func shouldSkipMessage(message model.Message, chat model.Chat) bool {
