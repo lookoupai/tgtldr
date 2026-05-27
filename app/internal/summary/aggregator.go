@@ -185,6 +185,10 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 	if err := a.appendKnowledgeFacts(ctx, &result, channel, end); err != nil {
 		return AggregatedSummaryResult{}, err
 	}
+	result.Content, err = appendSourceMessageLinks(ctx, a.store, result.Content, filteredMessages, messageLookup, channel.TargetLanguage)
+	if err != nil {
+		return AggregatedSummaryResult{}, err
+	}
 	return result, nil
 }
 
