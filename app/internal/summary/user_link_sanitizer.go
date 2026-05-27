@@ -45,7 +45,6 @@ func addAllowedSummaryUserLinks(allowed map[string]struct{}, messages []model.Me
 func addAllowedSummaryUserLink(allowed map[string]struct{}, message model.Message) {
 	if message.TelegramSenderID > 0 {
 		allowed["tg://user?id="+strconv.FormatInt(message.TelegramSenderID, 10)] = struct{}{}
-		return
 	}
 	if username := telegramfmt.Username(message.SenderUsername); username != "" {
 		allowed["https://t.me/"+username] = struct{}{}

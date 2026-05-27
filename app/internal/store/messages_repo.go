@@ -109,6 +109,36 @@ func (r *MessageRepository) CountForRange(ctx context.Context, chatID int64, sta
 	return count, nil
 }
 
+func (r *MessageRepository) LatestSenderUsernames(ctx context.Context, senderIDs []int64) (map[int64]string, error) {
+	ids := uniqueMessageSenderIDs(senderIDs)
+	if len(ids) == 0 {
+		return map[int64]string{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		select distinct on (telegram_sender_id) telegram_sender_id, sender_username
+		from messages
+		where telegram_sender_id = any($1)
+		  and btrim(sender_username) <> ''
+		order by telegram_sender_id, message_time desc, id desc
+	`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("query latest sender usernames: %w", err)
+	}
+	defer rows.Close()
+
+	usernames := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var senderID int64
+		var username string
+		if err := rows.Scan(&senderID, &username); err != nil {
+			return nil, fmt.Errorf("scan latest sender username: %w", err)
+		}
+		usernames[senderID] = username
+	}
+	return usernames, rows.Err()
+}
+
 func (r *MessageRepository) LookupByTelegramIDs(ctx context.Context, chatID int64, ids []int) (map[int]model.Message, error) {
 	if len(ids) == 0 {
 		return map[int]model.Message{}, nil
@@ -153,4 +183,20 @@ func (r *MessageRepository) LookupByTelegramIDs(ctx context.Context, chatID int6
 		lookup[message.TelegramMessageID] = message
 	}
 	return lookup, rows.Err()
+}
+
+func uniqueMessageSenderIDs(values []int64) []int64 {
+	seen := make(map[int64]struct{}, len(values))
+	out := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

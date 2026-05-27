@@ -318,7 +318,59 @@ func (s *Service) prepareMessages(ctx context.Context, chat model.Chat, messages
 		}
 	}
 
+	if s.store != nil && s.store.Messages != nil {
+		if err := enrichSenderUsernames(ctx, s.store.Messages, messages, lookup); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	return filterMessagesForSummary(messages, chat), lookup, nil
+}
+
+func enrichSenderUsernames(ctx context.Context, messagesRepo *store.MessageRepository, messages []model.Message, lookup map[int]model.Message) error {
+	if messagesRepo == nil {
+		return nil
+	}
+	usernames, err := messagesRepo.LatestSenderUsernames(ctx, collectSenderIDs(messages, lookup))
+	if err != nil {
+		return err
+	}
+	if len(usernames) == 0 {
+		return nil
+	}
+	applySenderUsernames(messages, lookup, usernames)
+	return nil
+}
+
+func collectSenderIDs(messages []model.Message, lookup map[int]model.Message) []int64 {
+	ids := make([]int64, 0, len(messages)+len(lookup))
+	for _, message := range messages {
+		ids = append(ids, message.TelegramSenderID)
+	}
+	for _, message := range lookup {
+		ids = append(ids, message.TelegramSenderID)
+	}
+	return ids
+}
+
+func applySenderUsernames(messages []model.Message, lookup map[int]model.Message, usernames map[int64]string) {
+	for index := range messages {
+		if strings.TrimSpace(messages[index].SenderUsername) != "" {
+			continue
+		}
+		if username := strings.TrimSpace(usernames[messages[index].TelegramSenderID]); username != "" {
+			messages[index].SenderUsername = username
+		}
+	}
+	for key, message := range lookup {
+		if strings.TrimSpace(message.SenderUsername) != "" {
+			continue
+		}
+		if username := strings.TrimSpace(usernames[message.TelegramSenderID]); username != "" {
+			message.SenderUsername = username
+			lookup[key] = message
+		}
+	}
 }
 
 func filterMessagesForSummary(messages []model.Message, chat model.Chat) []model.Message {

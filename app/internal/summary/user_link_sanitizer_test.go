@@ -77,6 +77,24 @@ func TestSanitizeSummaryUserLinks(t *testing.T) {
 		So(got, ShouldEqual, content)
 	})
 
+	Convey("发送者同时有 ID 和用户名时也保留用户名链接", t, func() {
+		messages := []model.Message{
+			{
+				TelegramMessageID: 1,
+				TelegramSenderID:  42,
+				SenderUsername:    "alice_001",
+				SenderName:        "Alice",
+				MessageTime:       time.Date(2026, 5, 24, 9, 0, 0, 0, time.UTC),
+				TextContent:       "需要 RTX 4090",
+			},
+		}
+
+		content := "- [Alice](https://t.me/alice_001) 需要 RTX 4090"
+		got := sanitizeSummaryUserLinks(content, messages, map[int]model.Message{1: messages[0]})
+
+		So(got, ShouldEqual, content)
+	})
+
 	Convey("回复引用消息里的用户链接也算合法来源", t, func() {
 		reference := model.Message{
 			TelegramMessageID: 100,

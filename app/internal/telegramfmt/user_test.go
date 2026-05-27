@@ -18,12 +18,12 @@ func TestUserReference(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "username",
+			name:       "sender id remains primary with username fallback label",
 			language:   model.LanguageZhCN,
 			senderID:   42,
 			senderName: "Alice",
 			username:   "alice_001",
-			want:       "[Alice](tg://user?id=42)",
+			want:       "[Alice (@alice_001)](tg://user?id=42)",
 		},
 		{
 			name:     "username only",

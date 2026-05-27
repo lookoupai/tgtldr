@@ -29,6 +29,7 @@ func BuildTranscript(messages []model.Message, lookup map[int]model.Message, loc
 	for index, message := range messages {
 		localRefs[message.TelegramMessageID] = fmt.Sprintf("m%03d", index+1)
 	}
+	senderUsernames := collectSenderUsernames(messages, lookup)
 
 	externalRefs := make(map[int]string)
 	externalOrder := make([]int, 0)
@@ -41,7 +42,7 @@ func BuildTranscript(messages []model.Message, lookup map[int]model.Message, loc
 		}
 
 		blockLines := []string{
-			fmt.Sprintf("[%s] %s %s", localRefs[message.TelegramMessageID], formatTranscriptTime(message.MessageTime, location), transcriptSenderReference(message, language)),
+			fmt.Sprintf("[%s] %s %s", localRefs[message.TelegramMessageID], formatTranscriptTime(message.MessageTime, location), transcriptSenderReference(message, language, senderUsernames)),
 		}
 
 		if message.ReplyToMessageID > 0 {
@@ -67,7 +68,7 @@ func BuildTranscript(messages []model.Message, lookup map[int]model.Message, loc
 			label := externalRefs[messageID]
 			referenced = append(
 				referenced,
-				fmt.Sprintf("[%s] %s %s", label, formatTranscriptTime(reference.MessageTime, location), transcriptSenderReference(reference, language)),
+				fmt.Sprintf("[%s] %s %s", label, formatTranscriptTime(reference.MessageTime, location), transcriptSenderReference(reference, language, senderUsernames)),
 				referenceSummaryText(reference, language),
 			)
 		}
@@ -78,11 +79,42 @@ func BuildTranscript(messages []model.Message, lookup map[int]model.Message, loc
 	return strings.Join(sections, "\n\n")
 }
 
-func transcriptSenderReference(message model.Message, language model.SummaryOutputLanguage) string {
-	if ref := telegramfmt.UserReference(summaryReferenceLanguage(language), message.TelegramSenderID, message.SenderName, message.SenderUsername); ref != "" {
+func transcriptSenderReference(message model.Message, language model.SummaryOutputLanguage, senderUsernames map[int64]string) string {
+	username := message.SenderUsername
+	if strings.TrimSpace(username) == "" && message.TelegramSenderID != 0 {
+		username = senderUsernames[message.TelegramSenderID]
+	}
+	if ref := telegramfmt.UserReference(summaryReferenceLanguage(language), message.TelegramSenderID, message.SenderName, username); ref != "" {
 		return ref
 	}
 	return telegramfmt.UnknownUserLabel(summaryReferenceLanguage(language))
+}
+
+func collectSenderUsernames(messages []model.Message, lookup map[int]model.Message) map[int64]string {
+	usernames := make(map[int64]string)
+	addSenderUsernames(usernames, messages)
+	for _, message := range lookup {
+		addSenderUsername(usernames, message)
+	}
+	return usernames
+}
+
+func addSenderUsernames(usernames map[int64]string, messages []model.Message) {
+	for _, message := range messages {
+		addSenderUsername(usernames, message)
+	}
+}
+
+func addSenderUsername(usernames map[int64]string, message model.Message) {
+	if message.TelegramSenderID == 0 {
+		return
+	}
+	if _, ok := usernames[message.TelegramSenderID]; ok {
+		return
+	}
+	if username := telegramfmt.Username(message.SenderUsername); username != "" {
+		usernames[message.TelegramSenderID] = username
+	}
 }
 
 func formatTranscriptTime(messageTime time.Time, location *time.Location) string {

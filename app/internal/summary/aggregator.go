@@ -239,6 +239,10 @@ func (a *Aggregator) aggregateMessages(ctx context.Context, chatIDs []int64, sta
 		}
 	}
 
+	if err := enrichSenderUsernames(ctx, a.store.Messages, allMessages, messageLookup); err != nil {
+		return nil, nil, err
+	}
+
 	return allMessages, messageLookup, nil
 }
 

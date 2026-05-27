@@ -59,6 +59,54 @@ func TestBuildTranscriptReferenceFallback(t *testing.T) {
 		So(transcript, ShouldContainSubstring, "[m001] 09:00 [Alice](tg://user?id=42)")
 	})
 
+	Convey("消息发送者有用户名时保留稳定 ID 并补充用户名文本", t, func() {
+		base := time.Date(2026, 4, 16, 9, 0, 0, 0, time.Local)
+		message := model.Message{
+			TelegramMessageID: 101,
+			TelegramSenderID:  42,
+			SenderName:        "Alice",
+			SenderUsername:    "alice_001",
+			MessageTime:       base,
+			TextContent:       "我可以供应二手显示器",
+		}
+
+		transcript := BuildTranscript(
+			[]model.Message{message},
+			map[int]model.Message{101: message},
+			time.Local,
+			model.SummaryLanguageZhCN,
+		)
+
+		So(transcript, ShouldContainSubstring, "[m001] 09:00 [Alice (@alice_001)](tg://user?id=42)")
+	})
+
+	Convey("同一发送者其它消息有用户名时复用用户名文本", t, func() {
+		base := time.Date(2026, 4, 16, 9, 0, 0, 0, time.Local)
+		message := model.Message{
+			TelegramMessageID: 101,
+			TelegramSenderID:  42,
+			SenderName:        "Alice",
+			MessageTime:       base,
+			TextContent:       "我可以供应二手显示器",
+		}
+		withUsername := message
+		withUsername.TelegramMessageID = 102
+		withUsername.SenderUsername = "alice_001"
+		withUsername.TextContent = "补充说明"
+
+		transcript := BuildTranscript(
+			[]model.Message{message},
+			map[int]model.Message{
+				101: message,
+				102: withUsername,
+			},
+			time.Local,
+			model.SummaryLanguageZhCN,
+		)
+
+		So(transcript, ShouldContainSubstring, "[m001] 09:00 [Alice (@alice_001)](tg://user?id=42)")
+	})
+
 	Convey("引用消息发送者也应该保留可点击用户引用", t, func() {
 		base := time.Date(2026, 4, 16, 9, 0, 0, 0, time.Local)
 		reference := model.Message{

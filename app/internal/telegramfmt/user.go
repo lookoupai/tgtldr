@@ -21,7 +21,7 @@ func UserReference(language model.Language, senderID int64, senderName string, u
 		return ""
 	}
 	if senderID > 0 {
-		return "[" + markdownLinkLabel(label) + "](tg://user?id=" + strconv.FormatInt(senderID, 10) + ")"
+		return "[" + markdownLinkLabel(labelWithUsername(label, normalizedUsername)) + "](tg://user?id=" + strconv.FormatInt(senderID, 10) + ")"
 	}
 	if normalizedUsername != "" {
 		return "[" + markdownLinkLabel(label) + "](https://t.me/" + normalizedUsername + ")"
@@ -59,6 +59,17 @@ func fallbackUserLabel(language model.Language, senderID int64) string {
 
 func markdownLinkLabel(value string) string {
 	return strings.NewReplacer("[", "(", "]", ")", "\n", " ", "\r", " ").Replace(value)
+}
+
+func labelWithUsername(label string, username string) string {
+	if username == "" {
+		return label
+	}
+	handle := "@" + username
+	if strings.EqualFold(label, handle) || strings.Contains(label, handle) {
+		return label
+	}
+	return label + " (" + handle + ")"
 }
 
 func compactText(value string) string {
