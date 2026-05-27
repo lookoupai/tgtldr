@@ -2040,6 +2040,69 @@ select {
   line-height: 1.6;
 }
 
+.channel-chatid-panel {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.channel-chatid-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.channel-chatid-panel-row span {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.channel-chatid-value {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.channel-source-toolbar {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: end;
+}
+
+.channel-source-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.channel-source-empty {
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px dashed rgba(28, 25, 23, 0.16);
+  background: rgba(255, 255, 255, 0.58);
+  display: grid;
+  gap: 8px;
+}
+
+.channel-source-empty strong {
+  font-size: 0.98rem;
+}
+
+.channel-source-empty p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .channel-source-grid {
   display: grid;
   gap: 12px;

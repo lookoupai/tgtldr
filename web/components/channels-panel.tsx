@@ -357,7 +357,36 @@ function ChannelEditor({
   onSave: () => void;
   onDelete: () => void;
 }) {
-  const selectedChats = chats.filter((ch) => channel.sourceChatIds.includes(ch.id));
+  const [sourceQuery, setSourceQuery] = useState("");
+  const deferredSourceQuery = useDeferredValue(sourceQuery);
+
+  useEffect(() => {
+    setSourceQuery("");
+  }, [channel.id]);
+
+  const selectedChatIDSet = useMemo(() => new Set(channel.sourceChatIds), [channel.sourceChatIds]);
+  const selectedChats = useMemo(
+    () => chats.filter((chat) => selectedChatIDSet.has(chat.id)),
+    [chats, selectedChatIDSet]
+  );
+  const filteredChats = useMemo(() => {
+    const keyword = deferredSourceQuery.trim().toLowerCase();
+    const normalizedKeyword = keyword.replace(/^@/, "");
+    const matched = chats.filter((chat) => {
+      if (!keyword) {
+        return true;
+      }
+      const title = chat.title.toLowerCase();
+      const username = chat.username.toLowerCase();
+      return title.includes(keyword) || username.includes(normalizedKeyword);
+    });
+    return matched.sort((left, right) => {
+      const leftSelected = selectedChatIDSet.has(left.id) ? 1 : 0;
+      const rightSelected = selectedChatIDSet.has(right.id) ? 1 : 0;
+      return rightSelected - leftSelected;
+    });
+  }, [chats, deferredSourceQuery, selectedChatIDSet]);
+  const targetChatIdAssessment = assessTargetChatId(channel.targetChatId);
 
   return (
     <div className="table-editor channel-editor-stack">
@@ -367,8 +396,8 @@ function ChannelEditor({
           <strong>{channel.enabled ? "已启用" : "未启用"}</strong>
         </div>
         <div className="settings-overview-item">
-          <span>目标 Chat ID</span>
-          <strong>{channel.targetChatId.trim() || "未设置"}</strong>
+          <span>目标会话</span>
+          <strong>{describeTargetChatOverview(channel.targetChatId)}</strong>
         </div>
         <div className="settings-overview-item">
           <span>源群组</span>
@@ -422,6 +451,17 @@ function ChannelEditor({
               onChange={(event) => onPatch({ summaryTimeLocal: event.target.value })}
             />
           </Field>
+        </div>
+        <div className="channel-chatid-panel">
+          <div className="channel-chatid-panel-row">
+            <StatusPill tone={targetChatIdAssessment.tone}>
+              {targetChatIdAssessment.label}
+            </StatusPill>
+            <span>{targetChatIdAssessment.detail}</span>
+          </div>
+          {channel.targetChatId.trim() ? (
+            <p className="channel-chatid-value">当前值：{channel.targetChatId.trim()}</p>
+          ) : null}
         </div>
       </section>
 
@@ -481,12 +521,28 @@ function ChannelEditor({
           </div>
           <StatusPill tone="neutral">已选 {selectedChats.length} 个</StatusPill>
         </div>
+        <div className="channel-source-toolbar">
+          <Input
+            onChange={(event) => setSourceQuery(event.target.value)}
+            placeholder="按群组名或 @username 搜索"
+            value={sourceQuery}
+          />
+          <div className="channel-source-toolbar-meta">
+            <span>候选 {chats.length} 个</span>
+            <span>匹配 {filteredChats.length} 个</span>
+          </div>
+        </div>
         {chats.length === 0 ? (
           <p className="muted">暂无可选源群组，请先到群组页面启用需要监听的“消息保存”。</p>
+        ) : filteredChats.length === 0 ? (
+          <div className="channel-source-empty">
+            <strong>没有匹配的群组</strong>
+            <p>调整搜索关键词后再试一次。</p>
+          </div>
         ) : (
           <div className="channel-source-grid">
-            {chats.map((chat) => {
-              const checked = channel.sourceChatIds.includes(chat.id);
+            {filteredChats.map((chat) => {
+              const checked = selectedChatIDSet.has(chat.id);
               return (
                 <label
                   key={chat.id}
@@ -556,6 +612,9 @@ function validateChannel(channel: DeliveryChannel): string {
   if (!channel.targetChatId.trim()) {
     return "请填写目标 Chat ID。";
   }
+  if (assessTargetChatId(channel.targetChatId).kind === "invalid") {
+    return "目标 Chat ID 格式不正确，请输入纯数字，可带前导负号。";
+  }
   return "";
 }
 
@@ -598,6 +657,62 @@ function formatOutputLanguage(value: SummaryOutputLanguage): string {
     return "默认";
   }
   return languageLabels[normalized] ?? normalized;
+}
+
+function describeTargetChatOverview(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "未设置";
+  }
+  const assessment = assessTargetChatId(normalized);
+  return `${assessment.label} · ${normalized}`;
+}
+
+function assessTargetChatId(value: string): {
+  kind: "empty" | "invalid" | "channel" | "group" | "private";
+  label: string;
+  detail: string;
+  tone: "neutral" | "good" | "warn" | "bad";
+} {
+  const normalized = value.trim();
+  if (!normalized) {
+    return {
+      kind: "empty",
+      label: "未设置",
+      detail: "请输入目标会话的 Chat ID。先在目标群组或私聊里给 Bot 发一条消息，再把对应 Chat ID 填到这里。",
+      tone: "neutral",
+    };
+  }
+  if (!/^-?\d+$/.test(normalized)) {
+    return {
+      kind: "invalid",
+      label: "格式有误",
+      detail: "Chat ID 只能包含数字，可带前导负号，例如 -1001234567890。",
+      tone: "bad",
+    };
+  }
+  if (normalized.startsWith("-100")) {
+    return {
+      kind: "channel",
+      label: "群组 / 频道",
+      detail: "看起来像超级群组或频道的 Chat ID，适合作为 Bot 推送目标。",
+      tone: "good",
+    };
+  }
+  if (normalized.startsWith("-")) {
+    return {
+      kind: "group",
+      label: "普通群组",
+      detail: "看起来像普通群组的 Chat ID，请确认 Bot 已在该群并且具备发消息权限。",
+      tone: "neutral",
+    };
+  }
+  return {
+    kind: "private",
+    label: "私聊 / 用户",
+    detail: "看起来像私聊或用户 Chat ID，请确认这是你期望的接收目标。",
+    tone: "warn",
+  };
 }
 
 function EditIcon() {
