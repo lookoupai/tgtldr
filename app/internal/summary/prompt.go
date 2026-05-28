@@ -60,6 +60,7 @@ Ignore or downplay:
 - Pure repetition
 
 If a message includes reply_to and reply_excerpt, use them to understand context. Do not interpret replies in isolation.
+The transcript may contain internal message anchors such as [m001], [ref001], or [msg:123]. These anchors are only for internal reference and context resolution. Do not copy them into the output. When citing information, refer to the sender or the content itself instead of internal anchor IDs.
 
 ` + outputLanguageInstruction(language) + ` and use this structure:
 
@@ -103,6 +104,7 @@ If a message includes reply_to and reply_excerpt, use them to understand context
 - 纯重复表达
 
 如果消息带有 reply_to 和 reply_excerpt，请结合它理解上下文，不要孤立理解回复内容。
+输入中可能包含 [m001]、[ref001]、[msg:123] 这类内部消息锚点。它们只用于内部定位和上下文理解，禁止原样输出到摘要正文。引用信息时请改写为发言人或内容描述，不要保留内部锚点编号。
 
 请使用中文输出，并按以下结构整理：
 
@@ -139,6 +141,7 @@ Rules:
 - If no topic groups are configured, infer concise topic names from the messages.
 - Preserve evidence level. Do not turn scattered claims into certain facts.
 - If a message includes reply_to and reply_excerpt, use them to understand context.
+- The transcript may contain internal message anchors such as [m001], [ref001], or [msg:123]. These anchors are only for internal reference and context resolution. Do not copy them into the output. Refer to the sender or the content itself instead of internal anchor IDs.
 
 ` + outputLanguageInstruction(language) + ` and use this structure:
 
@@ -168,6 +171,7 @@ Rules:
 - 如果没有配置话题组，请从消息中自行推断简洁的话题名称。
 - 保留证据强度，不要把零散说法包装成确定事实。
 - 如果消息带有 reply_to 和 reply_excerpt，请结合它理解上下文。
+- 输入中可能包含 [m001]、[ref001]、[msg:123] 这类内部消息锚点。它们只用于内部定位和上下文理解，禁止原样输出到摘要正文。引用信息时请改写为发言人或内容描述，不要保留内部锚点编号。
 
 请使用中文输出，并按以下结构整理：
 
@@ -203,6 +207,7 @@ Writing requirements:
 3. If a judgment has limited evidence or obvious disagreement, say so clearly
 4. Do not turn scattered messages into certain facts
 5. Keep the language concise, direct, and suitable for a daily digest
+6. The input may contain internal message anchors such as [m001], [ref001], or [msg:123]. These anchors are only for internal reference and context resolution. Do not copy them into the output. Refer to the sender or the content itself instead of internal anchor IDs.
 
 ` + outputLanguageInstruction(language) + ` and use this format:
 
@@ -248,6 +253,7 @@ Writing requirements:
 3. 如果某个判断样本不足或存在明显争议，要明确说明
 4. 不要把零散消息包装成确定事实
 5. 语言简洁、直接，适合日报阅读
+6. 输入中可能包含 [m001]、[ref001]、[msg:123] 这类内部消息锚点。它们只用于内部定位和上下文理解，禁止原样输出到摘要正文。引用信息时请改写为发言人或内容描述，不要保留内部锚点编号。
 
 请按以下格式输出：
 
@@ -291,6 +297,7 @@ Writing requirements:
 3. If no topic groups are configured, infer concise topic names from the stage summaries.
 4. Keep the digest concise and useful for fast reading.
 5. Clearly mark weak evidence, disagreements, and unresolved points.
+6. The input may contain internal message anchors such as [m001], [ref001], or [msg:123]. These anchors are only for internal reference and context resolution. Do not copy them into the output. Refer to the sender or the content itself instead of internal anchor IDs.
 
 ` + outputLanguageInstruction(language) + ` and use this format:
 
@@ -324,6 +331,7 @@ Writing requirements:
 3. 如果没有配置话题组，请从阶段摘要中自行推断简洁的话题名称。
 4. 保持简洁，适合快速阅读。
 5. 对证据不足、明显分歧和未解决点要明确说明。
+6. 输入中可能包含 [m001]、[ref001]、[msg:123] 这类内部消息锚点。它们只用于内部定位和上下文理解，禁止原样输出到摘要正文。引用信息时请改写为发言人或内容描述，不要保留内部锚点编号。
 
 请按以下格式输出：
 

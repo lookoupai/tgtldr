@@ -83,4 +83,12 @@ func TestBuildFinalPrompt(t *testing.T) {
 		So(prompt, ShouldContainSubstring, "不要根据名字或 `@username` 自行编造")
 		So(prompt, ShouldContainSubstring, "不要改写成占位符或虚构链接")
 	})
+
+	Convey("最终提示词明确禁止输出内部消息锚点", t, func() {
+		prompt := buildFinalPrompt(model.SummaryLanguageZhCN, "", "")
+
+		So(prompt, ShouldContainSubstring, "[m001]")
+		So(prompt, ShouldContainSubstring, "禁止原样输出到摘要正文")
+		So(prompt, ShouldContainSubstring, "不要保留内部锚点编号")
+	})
 }
