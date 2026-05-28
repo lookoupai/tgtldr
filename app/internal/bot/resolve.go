@@ -42,6 +42,7 @@ type CommandUpdate struct {
 	Text         string
 	FromID       int64
 	FromUsername string
+	FromIsBot    bool
 	ChatTitle    string
 	ChatUsername string
 	MessageDate  int64
@@ -127,6 +128,7 @@ func (s *Service) GetCommandUpdates(ctx context.Context, token string, offset in
 			if update.Message.From != nil {
 				item.FromID = update.Message.From.ID
 				item.FromUsername = strings.TrimSpace(update.Message.From.Username)
+				item.FromIsBot = update.Message.From.IsBot
 			}
 			if update.Message.ReplyToMessage != nil &&
 				update.Message.ReplyToMessage.From != nil &&

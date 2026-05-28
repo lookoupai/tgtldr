@@ -122,6 +122,7 @@ type AppSettings struct {
 	BotEnabled                     bool                  `json:"botEnabled"`
 	BotToken                       string                `json:"botToken,omitempty"`
 	BotTargetChatID                string                `json:"botTargetChatId"`
+	BotIgnoreMessagesFromBots      bool                  `json:"botIgnoreMessagesFromBots"`
 	BotPrivateAllowedUsers         []string              `json:"botPrivateAllowedUsers"`
 	CreatedAt                      time.Time             `json:"createdAt"`
 	UpdatedAt                      time.Time             `json:"updatedAt"`

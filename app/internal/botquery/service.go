@@ -209,6 +209,9 @@ func (s *Service) Run(ctx context.Context) error {
 			if update.UpdateID >= state.offset {
 				state.offset = update.UpdateID + 1
 			}
+			if shouldIgnoreBotOrigin(settings, update) {
+				continue
+			}
 			s.recordTargetChatCandidate(ctx, state.botID, update)
 			target, ok := targets[update.ChatID]
 			if !ok && privateUpdateAllowed(settings, update) {
@@ -252,6 +255,10 @@ func (s *Service) Run(ctx context.Context) error {
 			s.markRuntimeHandled(ctx, state.botUsername)
 		}
 	}
+}
+
+func shouldIgnoreBotOrigin(settings model.AppSettings, update bot.CommandUpdate) bool {
+	return settings.BotIgnoreMessagesFromBots && update.FromIsBot
 }
 
 func (s *Service) responseTargets(ctx context.Context, settings model.AppSettings) (map[string]responseTarget, error) {
@@ -355,6 +362,9 @@ func (s *Service) recordTargetChatCandidate(ctx context.Context, botID int64, up
 		return
 	}
 	if botID == 0 || update.FromID == 0 || strings.TrimSpace(update.ChatID) == "" {
+		return
+	}
+	if update.FromIsBot {
 		return
 	}
 	messageDate := time.Now()

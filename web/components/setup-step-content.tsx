@@ -732,6 +732,24 @@ export function BotStep({
                 </span>
               </div>
             </Field>
+            <Field
+              label="机器人消息保护"
+              hint="推荐保持开启。启用后，TGTLDR Bot 会忽略其他机器人发来的消息，避免因为关键词触发自动回复而出现机器人互相循环回复。"
+            >
+              <AppSelect
+                onChange={(value) =>
+                  setSettings({
+                    ...settings,
+                    botIgnoreMessagesFromBots: value === "yes",
+                  })
+                }
+                options={[
+                  { value: "yes", label: "忽略机器人消息" },
+                  { value: "no", label: "允许机器人消息" },
+                ]}
+                value={settings.botIgnoreMessagesFromBots ? "yes" : "no"}
+              />
+            </Field>
           </div>
         ) : null}
 

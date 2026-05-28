@@ -51,6 +51,8 @@ export function BotPanel() {
       setSecretPlaceholders({ botToken: settingsData.botToken || "" });
       setSettings({
         ...settingsData,
+        botIgnoreMessagesFromBots:
+          settingsData.botIgnoreMessagesFromBots ?? true,
         botPrivateAllowedUsers: settingsData.botPrivateAllowedUsers ?? [],
         botToken: "",
         openAIApiKey: "",
@@ -75,6 +77,7 @@ export function BotPanel() {
               ...current,
               botEnabled: saved.botEnabled,
               botTargetChatId: saved.botTargetChatId,
+              botIgnoreMessagesFromBots: saved.botIgnoreMessagesFromBots,
               botPrivateAllowedUsers: saved.botPrivateAllowedUsers,
               botToken: "",
             }
@@ -167,6 +170,7 @@ export function BotPanel() {
               ...current,
               botEnabled: saved.botEnabled,
               botTargetChatId: saved.botTargetChatId,
+              botIgnoreMessagesFromBots: saved.botIgnoreMessagesFromBots,
               botPrivateAllowedUsers: saved.botPrivateAllowedUsers,
               botToken: "",
             }
@@ -298,6 +302,24 @@ export function BotPanel() {
                       botPrivateAllowedUsers: splitLines(event.target.value),
                     })
                   }
+                />
+              </Field>
+              <Field
+                label="机器人消息保护"
+                hint="推荐开启。开启后，TGTLDR Bot 会忽略其他机器人发来的消息，避免摘要触发自动回复机器人后进入互相循环回复。"
+              >
+                <AppSelect
+                  onChange={(value) =>
+                    setSettings({
+                      ...settings,
+                      botIgnoreMessagesFromBots: value === "yes",
+                    })
+                  }
+                  options={[
+                    { value: "yes", label: "忽略机器人消息" },
+                    { value: "no", label: "允许机器人消息" },
+                  ]}
+                  value={settings.botIgnoreMessagesFromBots ? "yes" : "no"}
                 />
               </Field>
             </div>

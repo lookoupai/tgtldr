@@ -24,6 +24,7 @@ export type AppSettings = {
   botEnabled: boolean;
   botToken?: string;
   botTargetChatId: string;
+  botIgnoreMessagesFromBots: boolean;
   botPrivateAllowedUsers: string[];
 };
 

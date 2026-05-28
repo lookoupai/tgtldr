@@ -161,7 +161,7 @@ func TestGetCommandUpdates(t *testing.T) {
 					"message": {
 						"message_id": 101,
 						"date": 1710000001,
-						"from": {"id": 501, "username": "alice"},
+						"from": {"id": 501, "username": "alice", "is_bot": false},
 						"chat": {"id": -1001, "type": "supergroup", "title": "GPU Deals", "username": "gpu_deals"},
 						"text": "  /knowledge gpu  "
 					}
@@ -181,7 +181,7 @@ func TestGetCommandUpdates(t *testing.T) {
 					"message": {
 						"message_id": 103,
 						"date": 1710000003,
-						"from": {"id": 503, "username": "carol"},
+						"from": {"id": 503, "username": "carol", "is_bot": true},
 						"chat": {"id": 0, "type": "private"},
 						"text": "/help",
 						"reply_to_message": {
@@ -208,7 +208,7 @@ func TestGetCommandUpdates(t *testing.T) {
 		{UpdateID: 30, MessageID: 101, ChatID: "-1001", ChatType: "supergroup", Text: "/knowledge gpu", FromID: 501, FromUsername: "alice", ChatTitle: "GPU Deals", ChatUsername: "gpu_deals", MessageDate: 1710000001},
 		{UpdateID: 31, MessageID: 102, ChatID: "-1002", ChatType: "supergroup", ChatTitle: "超级群", MessageDate: 1710000002},
 		{UpdateID: 32},
-		{UpdateID: 33, MessageID: 103, ChatType: "private", Text: "/help", FromID: 503, FromUsername: "carol", ChatTitle: "与 Bot 的私聊", MessageDate: 1710000003, ReplyToBotID: 777},
+		{UpdateID: 33, MessageID: 103, ChatType: "private", Text: "/help", FromID: 503, FromUsername: "carol", FromIsBot: true, ChatTitle: "与 Bot 的私聊", MessageDate: 1710000003, ReplyToBotID: 777},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("GetCommandUpdates() = %#v, want %#v", got, want)

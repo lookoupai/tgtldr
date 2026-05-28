@@ -258,6 +258,20 @@ func TestPrivateUpdateAllowed(t *testing.T) {
 	}
 }
 
+func TestShouldIgnoreBotOrigin(t *testing.T) {
+	t.Parallel()
+
+	if !shouldIgnoreBotOrigin(model.AppSettings{BotIgnoreMessagesFromBots: true}, bot.CommandUpdate{FromIsBot: true}) {
+		t.Fatal("expected bot-origin message to be ignored when protection is enabled")
+	}
+	if shouldIgnoreBotOrigin(model.AppSettings{BotIgnoreMessagesFromBots: false}, bot.CommandUpdate{FromIsBot: true}) {
+		t.Fatal("expected bot-origin message to be allowed when protection is disabled")
+	}
+	if shouldIgnoreBotOrigin(model.AppSettings{BotIgnoreMessagesFromBots: true}, bot.CommandUpdate{FromIsBot: false}) {
+		t.Fatal("expected non-bot message to be allowed")
+	}
+}
+
 func TestBotQueryReady(t *testing.T) {
 	t.Parallel()
 
