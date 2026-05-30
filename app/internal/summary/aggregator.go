@@ -138,7 +138,7 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 			if err != nil {
 				return err
 			}
-			partials[index] = strings.TrimSpace(resp.Content)
+			partials[index] = sanitizeSummaryOutput(resp.Content)
 			return nil
 		})
 	}
@@ -180,7 +180,7 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 		return result, nil
 	}
 
-	result.Content = sanitizeSummaryInternalReferences(strings.TrimSpace(finalResp.Content))
+	result.Content = sanitizeSummaryOutput(finalResp.Content)
 	result.Content = sanitizeSummaryUserLinks(result.Content, filteredMessages, messageLookup)
 	result.Model = finalResp.Model
 	if err := a.appendKnowledgeFacts(ctx, &result, channel, end); err != nil {

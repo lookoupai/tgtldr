@@ -355,7 +355,11 @@ Writing requirements:
 }
 
 func buildSystemPrompt(language model.SummaryOutputLanguage, base string, summaryContext string, prompt string) string {
-	sections := []string{strings.TrimSpace(base), preserveUserLinkInstruction(language)}
+	sections := []string{
+		strings.TrimSpace(base),
+		finalAnswerOnlyInstruction(language),
+		preserveUserLinkInstruction(language),
+	}
 
 	if contextText := strings.TrimSpace(summaryContext); contextText != "" {
 		sections = append(sections, sectionLabel(language, contextLabel(language))+"\n"+contextText)
@@ -366,6 +370,13 @@ func buildSystemPrompt(language model.SummaryOutputLanguage, base string, summar
 	}
 
 	return strings.Join(sections, "\n\n")
+}
+
+func finalAnswerOnlyInstruction(language model.SummaryOutputLanguage) string {
+	if language != model.SummaryLanguageZhCN {
+		return "Output discipline:\n- Return only the final summary body.\n- Do not include thinking, analysis, self-checks, meta commentary, or prefaces such as `Thinking...`."
+	}
+	return "输出约束：\n- 只输出最终摘要正文。\n- 不要输出思考过程、自我分析、自检说明、元话术或 `Thinking...` 之类的前置内容。"
 }
 
 func preserveUserLinkInstruction(language model.SummaryOutputLanguage) string {

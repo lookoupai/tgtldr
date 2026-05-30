@@ -176,7 +176,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 			if err != nil {
 				return err
 			}
-			partials[index] = strings.TrimSpace(resp.Content)
+			partials[index] = sanitizeSummaryOutput(resp.Content)
 			return nil
 		})
 	}
@@ -214,7 +214,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 		return summary, nil
 	}
 
-	summary.Content = sanitizeSummaryInternalReferences(strings.TrimSpace(finalResp.Content))
+	summary.Content = sanitizeSummaryOutput(finalResp.Content)
 	summary.Content = sanitizeSummaryUserLinks(summary.Content, filteredMessages, messageLookup)
 	summary.Model = finalResp.Model
 	if err := s.appendKnowledgeFacts(ctx, &summary, summaryLanguage, chat.SummaryKnowledgeDays, end); err != nil {
