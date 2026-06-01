@@ -1,14 +1,34 @@
 package knowledge
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/frederic/tgtldr/app/internal/model"
+	"github.com/frederic/tgtldr/app/internal/openai"
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+type fakeExtractionChatClient struct {
+	responses []openai.ChatResponse
+	errs      []error
+	requests  []openai.ChatRequest
+}
+
+func (c *fakeExtractionChatClient) Chat(_ context.Context, req openai.ChatRequest) (openai.ChatResponse, error) {
+	index := len(c.requests)
+	c.requests = append(c.requests, req)
+	if index < len(c.errs) && c.errs[index] != nil {
+		return openai.ChatResponse{}, c.errs[index]
+	}
+	if index < len(c.responses) {
+		return c.responses[index], nil
+	}
+	return openai.ChatResponse{}, nil
+}
 
 func TestSummaryExtractionSpaces(t *testing.T) {
 	Convey("摘要前只自动抽取启用且允许并入摘要的知识空间", t, func() {
@@ -103,6 +123,42 @@ func TestSplitExtractionMessages(t *testing.T) {
 		So(chunks[1].Messages[0].TelegramMessageID, ShouldEqual, 2)
 		So(chunks[2].Messages[0].TelegramMessageID, ShouldEqual, 3)
 	})
+
+	Convey("知识抽取会限制单个 chunk 的消息数", t, func() {
+		base := time.Date(2026, 5, 2, 9, 0, 0, 0, time.UTC)
+		messages := make([]model.Message, 13)
+		for index := range messages {
+			messages[index] = model.Message{
+				TelegramMessageID: index + 1,
+				TextContent:       "出售账号",
+				MessageTime:       base.Add(time.Duration(index) * time.Minute),
+			}
+		}
+
+		chunks := splitExtractionMessagesWithBudget(messages, 10000)
+
+		So(chunks, ShouldHaveLength, 3)
+		So(chunks[0].Messages, ShouldHaveLength, 6)
+		So(chunks[1].Messages, ShouldHaveLength, 6)
+		So(chunks[2].Messages, ShouldHaveLength, 1)
+	})
+}
+
+func TestExtractionMaxOutputTokens(t *testing.T) {
+	Convey("自动模式使用较高的知识抽取输出上限", t, func() {
+		So(extractionMaxOutputTokens(model.AppSettings{OpenAIOutputMode: model.OutputModeAuto}), ShouldEqual, extractionDefaultMaxOutput)
+	})
+
+	Convey("手动模式允许用户显式调高或调低知识抽取输出上限", t, func() {
+		So(extractionMaxOutputTokens(model.AppSettings{
+			OpenAIOutputMode:     model.OutputModeManual,
+			OpenAIMaxOutputToken: 2000,
+		}), ShouldEqual, 2000)
+		So(extractionMaxOutputTokens(model.AppSettings{
+			OpenAIOutputMode:     model.OutputModeManual,
+			OpenAIMaxOutputToken: 8000,
+		}), ShouldEqual, 8000)
+	})
 }
 
 func TestFlattenKnowledgeFacts(t *testing.T) {
@@ -120,6 +176,43 @@ func TestFlattenKnowledgeFacts(t *testing.T) {
 	})
 }
 
+func TestExtractFactsFromChunk(t *testing.T) {
+	Convey("模型首次返回非 JSON 时会用更严格提示重试", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 99,
+			TelegramSenderID:  9,
+			SenderName:        "Alice",
+			SenderUsername:    "alice",
+			TextContent:       "出售美国 API",
+			MessageTime:       now,
+		}
+		client := &fakeExtractionChatClient{
+			responses: []openai.ChatResponse{
+				{Content: "Thought: I should extract a JSON object"},
+				{Content: `{"facts":[{"type":"supply","title":"美国 API 供应","data":{"item":"美国 API"},"subjectMessageRef":"m001","sourceMessageRefs":["m001"],"confidence":0.9}]}`},
+			},
+		}
+
+		transcript, refs := buildExtractionTranscript([]model.Message{message}, "Asia/Shanghai")
+		facts, err := extractFactsFromChunk(context.Background(), client, openai.ChatRequest{
+			SystemPrompt: "base prompt",
+			UserPrompt:   transcript,
+			Temperature:  0.1,
+			MaxOutput:    1200,
+		}, 1, 2, model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30}, model.Chat{ID: 2}, refs, now)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 1)
+		So(facts[0].Title, ShouldEqual, "美国 API 供应")
+		So(client.requests, ShouldHaveLength, 2)
+		So(client.requests[1].Temperature, ShouldEqual, 0)
+		So(client.requests[1].MaxOutput, ShouldEqual, extractionDefaultMaxOutput)
+		So(client.requests[1].SystemPrompt, ShouldContainSubstring, "只输出完整、压缩的 JSON")
+		So(client.requests[1].SystemPrompt, ShouldContainSubstring, `{"facts":[]}`)
+	})
+}
+
 func TestIsTransientOpenAIError(t *testing.T) {
 	Convey("临时网关和限流错误会触发抽取重试", t, func() {
 		So(isTransientOpenAIError(errors.New("openai status 429: rate limit")), ShouldBeTrue)
@@ -128,7 +221,7 @@ func TestIsTransientOpenAIError(t *testing.T) {
 		So(isTransientOpenAIError(errors.New("openai status 504: error code: 504")), ShouldBeTrue)
 	})
 
-	Convey("解析错误和认证错误不会盲目重试", t, func() {
+	Convey("解析错误和认证错误不会被当作临时 OpenAI 错误", t, func() {
 		So(isTransientOpenAIError(errors.New("parse extraction response: unexpected end of JSON input")), ShouldBeFalse)
 		So(isTransientOpenAIError(errors.New("openai status 401: unauthorized")), ShouldBeFalse)
 	})
@@ -466,6 +559,30 @@ func TestParseExtractionFacts(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(facts, ShouldHaveLength, 1)
 		So(facts[0].FactType, ShouldEqual, "demand")
+	})
+
+	Convey("抽取结果被截断时保留已完整输出的事实", t, func() {
+		now := time.Date(2026, 5, 9, 9, 0, 0, 0, time.UTC)
+		message := model.Message{
+			TelegramMessageID: 100,
+			TelegramSenderID:  10,
+			SenderName:        "Bob",
+			SenderUsername:    "bob",
+			TextContent:       "求购验证码服务",
+			MessageTime:       now,
+		}
+
+		facts, err := parseExtractionFacts(
+			`{"facts":[{"type":"demand","title":"验证码服务需求","data":{"item":"验证码服务"},"subjectMessageRef":"m001","sourceMessageRefs":["m001"],"confidence":0.9},{"type":"supply","title":"截断事实","data":{"item":"`,
+			model.KnowledgeSpace{ID: 1, ConfidenceThreshold: 0.75, RetentionDays: 30},
+			model.Chat{ID: 2},
+			map[string]model.Message{"m001": message},
+			now,
+		)
+
+		So(err, ShouldBeNil)
+		So(facts, ShouldHaveLength, 1)
+		So(facts[0].Title, ShouldEqual, "验证码服务需求")
 	})
 
 	Convey("抽取结果可用正文联系人覆盖频道发送者作为事实主体", t, func() {

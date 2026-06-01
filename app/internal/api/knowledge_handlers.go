@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -123,7 +124,7 @@ func (r *Router) handleKnowledgeRun(w http.ResponseWriter, req *http.Request, id
 		httpx.Error(w, http.StatusBadRequest, r.localized(req.Context(), "请选择抽取日期。", "Choose extraction date."))
 		return
 	}
-	run, err := r.knowledge.RunDailyExtraction(req.Context(), knowledge.RunRequest{
+	run, err := r.knowledge.RunDailyExtraction(context.WithoutCancel(req.Context()), knowledge.RunRequest{
 		SpaceID: id,
 		ChatID:  payload.ChatID,
 		Date:    strings.TrimSpace(payload.Date),
