@@ -336,6 +336,66 @@ export type KnowledgeRun = {
   updatedAt: string;
 };
 
+export type LLMWikiMessageRef = {
+  chatId: number;
+  telegramMessageId: number;
+};
+
+export type LLMWikiPage = {
+  id: number;
+  spaceId: number;
+  path: string;
+  title: string;
+  pageType: string;
+  contentHash: string;
+  contentText?: string;
+  sourceFactIds: number[];
+  sourceMessageRefs: LLMWikiMessageRef[];
+  createdAt: string;
+  updatedAt: string;
+  indexedAt: string;
+};
+
+export type LLMWikiPageListResponse = {
+  items: LLMWikiPage[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type LLMWikiSearchFilters = {
+  q?: string;
+  spaceId?: number | "all";
+  type?: string | "all";
+  page?: number;
+  pageSize?: number;
+};
+
+export type LLMWikiReindexResult = {
+  root: string;
+  pageCount: number;
+};
+
+export type LLMWikiRun = {
+  id: number;
+  spaceId: number;
+  chatId: number;
+  summaryId: number;
+  rangeStart?: string;
+  rangeEnd?: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  updatedPageCount: number;
+  errorMessage: string;
+  startedAt: string;
+  finishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LLMWikiRunListResponse = {
+  items: LLMWikiRun[];
+};
+
 export type KnowledgeMaintenanceEvent = {
   id: number;
   factId: number;

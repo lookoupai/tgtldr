@@ -15,6 +15,11 @@ import {
   KnowledgeRun,
   KnowledgeSpace,
   KnowledgeSubject,
+  LLMWikiPage,
+  LLMWikiPageListResponse,
+  LLMWikiReindexResult,
+  LLMWikiRunListResponse,
+  LLMWikiSearchFilters,
   OpenAITestResult,
   SummaryListResponse,
   SummarySearchFilters,
@@ -368,6 +373,34 @@ export const api = {
     }),
   getHistoryBackfill: (taskId: string) =>
     request<HistoryBackfillTask>(`/api/history-backfills/${taskId}`),
+  listLLMWikiPages: (filters?: LLMWikiSearchFilters) =>
+    request<LLMWikiPageListResponse>(
+      `/api/llm-wiki/pages${buildQuery({
+        q: filters?.q?.trim() || undefined,
+        spaceId: filters?.spaceId && filters.spaceId !== "all" ? filters.spaceId : undefined,
+        type: filters?.type && filters.type !== "all" ? filters.type : undefined,
+        page: filters?.page,
+        pageSize: filters?.pageSize,
+      })}`,
+    ),
+  getLLMWikiPage: (id: number) =>
+    request<LLMWikiPage>(`/api/llm-wiki/pages/${id}`),
+  listLLMWikiRuns: (filters?: {
+    spaceId?: number;
+    chatId?: number;
+    limit?: number;
+  }) =>
+    request<LLMWikiRunListResponse>(
+      `/api/llm-wiki/runs${buildQuery({
+        spaceId: filters?.spaceId,
+        chatId: filters?.chatId,
+        limit: filters?.limit,
+      })}`,
+    ),
+  reindexLLMWiki: () =>
+    request<LLMWikiReindexResult>("/api/llm-wiki/reindex", {
+      method: "POST",
+    }),
   summaryStats: () => request<SummaryStats>("/api/summaries/stats"),
   listSummaries: (filters?: SummarySearchFilters) =>
     request<SummaryListResponse>(

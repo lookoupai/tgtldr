@@ -16,17 +16,20 @@ type Config struct {
 	DatabaseURL   string
 	MasterKey     []byte
 	WebOrigin     string
+	LLMWikiDir    string
 	RequestTimout time.Duration
 	OpenAITimeout time.Duration
 }
 
 const defaultMasterKeyFile = "/var/lib/tgtldr/master.key"
+const defaultLLMWikiDir = "/var/lib/tgtldr/wiki"
 
 func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:      env("TGTLDR_HTTP_ADDR", ":8080"),
 		DatabaseURL:   env("TGTLDR_DATABASE_URL", "postgres://postgres:postgres@localhost:5432/tgtldr?sslmode=disable"),
 		WebOrigin:     env("TGTLDR_WEB_ORIGIN", "http://localhost:3000"),
+		LLMWikiDir:    env("TGTLDR_LLM_WIKI_DIR", defaultLLMWikiDir),
 		RequestTimout: envDuration("TGTLDR_REQUEST_TIMEOUT", 30*time.Second),
 		OpenAITimeout: envDuration("TGTLDR_OPENAI_TIMEOUT", 3*time.Minute),
 	}

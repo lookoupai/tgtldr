@@ -326,6 +326,62 @@ type KnowledgeMaintenanceEvent struct {
 	CreatedAt      time.Time           `json:"createdAt"`
 }
 
+type LLMWikiMessageRef struct {
+	ChatID            int64 `json:"chatId"`
+	TelegramMessageID int   `json:"telegramMessageId"`
+}
+
+type LLMWikiPage struct {
+	ID                int64               `json:"id"`
+	SpaceID           int64               `json:"spaceId"`
+	Path              string              `json:"path"`
+	Title             string              `json:"title"`
+	PageType          string              `json:"pageType"`
+	ContentHash       string              `json:"contentHash"`
+	ContentText       string              `json:"contentText,omitempty"`
+	SourceFactIDs     []int64             `json:"sourceFactIds"`
+	SourceMessageRefs []LLMWikiMessageRef `json:"sourceMessageRefs"`
+	CreatedAt         time.Time           `json:"createdAt"`
+	UpdatedAt         time.Time           `json:"updatedAt"`
+	IndexedAt         time.Time           `json:"indexedAt"`
+}
+
+type LLMWikiPageListResponse struct {
+	Items    []LLMWikiPage `json:"items"`
+	Total    int           `json:"total"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"pageSize"`
+}
+
+type LLMWikiRunListResponse struct {
+	Items []LLMWikiRun `json:"items"`
+}
+
+type LLMWikiRunStatus string
+
+const (
+	LLMWikiRunStatusPending   LLMWikiRunStatus = "pending"
+	LLMWikiRunStatusRunning   LLMWikiRunStatus = "running"
+	LLMWikiRunStatusSucceeded LLMWikiRunStatus = "succeeded"
+	LLMWikiRunStatusFailed    LLMWikiRunStatus = "failed"
+)
+
+type LLMWikiRun struct {
+	ID               int64            `json:"id"`
+	SpaceID          int64            `json:"spaceId"`
+	ChatID           int64            `json:"chatId"`
+	SummaryID        int64            `json:"summaryId"`
+	RangeStart       *time.Time       `json:"rangeStart,omitempty"`
+	RangeEnd         *time.Time       `json:"rangeEnd,omitempty"`
+	Status           LLMWikiRunStatus `json:"status"`
+	UpdatedPageCount int              `json:"updatedPageCount"`
+	ErrorMessage     string           `json:"errorMessage"`
+	StartedAt        time.Time        `json:"startedAt"`
+	FinishedAt       *time.Time       `json:"finishedAt,omitempty"`
+	CreatedAt        time.Time        `json:"createdAt"`
+	UpdatedAt        time.Time        `json:"updatedAt"`
+}
+
 type Message struct {
 	ID                int64     `json:"id"`
 	ChatID            int64     `json:"chatId"`

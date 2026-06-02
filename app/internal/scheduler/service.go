@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,10 @@ type aggregator interface {
 	RunAggregatedSummary(ctx context.Context, channel model.DeliveryChannel, date string) (summary.AggregatedSummaryResult, error)
 }
 
+type llmWikiUpdater interface {
+	UpdateFromSummary(ctx context.Context, chat model.Chat, summary model.Summary) (model.LLMWikiRun, error)
+}
+
 type Service struct {
 	store              *store.Store
 	clock              clock.Clock
@@ -33,6 +38,7 @@ type Service struct {
 	botService         *bot.Service
 	knowledgeExtractor knowledgeExtractor
 	aggregator         aggregator
+	llmWikiUpdater     llmWikiUpdater
 	mu                 sync.Mutex
 	inflight           map[string]struct{}
 }
@@ -54,7 +60,7 @@ type extractionRunReport struct {
 	Run       model.KnowledgeRun
 }
 
-func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botService *bot.Service, extractor knowledgeExtractor, agg aggregator) *Service {
+func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botService *bot.Service, extractor knowledgeExtractor, agg aggregator, wikiUpdater llmWikiUpdater) *Service {
 	return &Service{
 		store:              st,
 		clock:              c,
@@ -62,6 +68,7 @@ func NewService(st *store.Store, c clock.Clock, summaries *summary.Service, botS
 		botService:         botService,
 		knowledgeExtractor: extractor,
 		aggregator:         agg,
+		llmWikiUpdater:     wikiUpdater,
 		inflight:           make(map[string]struct{}),
 	}
 }
@@ -249,14 +256,29 @@ func (s *Service) executeSummary(ctx context.Context, chat model.Chat, date stri
 	if err := s.store.Summaries.SaveResult(ctx, result); err != nil {
 		return err
 	}
+	if saved, err := s.store.Summaries.GetByChatAndDate(ctx, chat.ID, result.SummaryDate); err == nil {
+		result.ID = saved.ID
+	}
 	if result.Status != model.SummaryStatusSucceeded {
 		if result.RetryableError {
 			return s.scheduleNextRetry(ctx, result)
 		}
 		return nil
 	}
+	s.updateWikiForSummary(chat, result)
 	s.tryDeliverSummary(ctx, chat, result)
 	return nil
+}
+
+func (s *Service) updateWikiForSummary(chat model.Chat, result model.Summary) {
+	if s.llmWikiUpdater == nil || result.Status != model.SummaryStatusSucceeded {
+		return
+	}
+	go func() {
+		if _, err := s.llmWikiUpdater.UpdateFromSummary(context.Background(), chat, result); err != nil {
+			fmt.Fprintf(os.Stderr, "update llm wiki for chat %d on %s: %v\n", chat.ID, result.SummaryDate, err)
+		}
+	}()
 }
 
 func (s *Service) extractKnowledgeForSummary(ctx context.Context, chat model.Chat, date string) []model.KnowledgeRun {

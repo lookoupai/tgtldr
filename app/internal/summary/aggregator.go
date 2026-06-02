@@ -95,6 +95,7 @@ func (a *Aggregator) RunAggregatedSummary(ctx context.Context, channel model.Del
 	})
 
 	stagePrompt := buildAggregatedStagePrompt(channel.TargetLanguage, channel.SummaryPrompt, channel.ContentFilter, channel.ContentFilterTypes)
+	stagePrompt = appendWikiContextToPrompt(ctx, a.store, stagePrompt, channel.SourceChatIDs, channel.Name, channel.TargetLanguage)
 	finalPrompt := buildAggregatedFinalPrompt(channel.TargetLanguage, channel.SummaryPrompt, channel.ContentFilter, channel.ContentFilterTypes)
 	budget := resolveSummaryBudget(settings, settings.OpenAIModel, stagePrompt)
 	chunks := SplitMessages(filteredMessages, budget.ChunkTokenBudget)

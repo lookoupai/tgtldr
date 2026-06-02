@@ -13,6 +13,7 @@ import (
 	"github.com/frederic/tgtldr/app/internal/botquery"
 	"github.com/frederic/tgtldr/app/internal/httpx"
 	"github.com/frederic/tgtldr/app/internal/knowledge"
+	"github.com/frederic/tgtldr/app/internal/llmwiki"
 	"github.com/frederic/tgtldr/app/internal/localauth"
 	"github.com/frederic/tgtldr/app/internal/model"
 	"github.com/frederic/tgtldr/app/internal/scheduler"
@@ -24,6 +25,7 @@ type Router struct {
 	store     *store.Store
 	bot       *bot.Service
 	knowledge *knowledge.Service
+	llmWiki   *llmwiki.Service
 	telegram  *telegramsvc.Service
 	scheduler *scheduler.Service
 	auth      *localauth.Service
@@ -37,6 +39,7 @@ func New(
 	scheduler *scheduler.Service,
 	botService *bot.Service,
 	knowledgeService *knowledge.Service,
+	llmWikiService *llmwiki.Service,
 	origin string,
 	timeout time.Duration,
 ) *Router {
@@ -44,6 +47,7 @@ func New(
 		store:     store,
 		bot:       botService,
 		knowledge: knowledgeService,
+		llmWiki:   llmWikiService,
 		telegram:  telegram,
 		scheduler: scheduler,
 		auth:      localauth.NewService(store),
@@ -83,6 +87,10 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("/api/knowledge/spaces/", r.handleKnowledgeSpaceByID)
 	mux.HandleFunc("/api/knowledge/facts", r.handleKnowledgeFacts)
 	mux.HandleFunc("/api/knowledge/facts/", r.handleKnowledgeFactByID)
+	mux.HandleFunc("/api/llm-wiki/pages", r.handleLLMWikiPages)
+	mux.HandleFunc("/api/llm-wiki/pages/", r.handleLLMWikiPageByID)
+	mux.HandleFunc("/api/llm-wiki/runs", r.handleLLMWikiRuns)
+	mux.HandleFunc("/api/llm-wiki/reindex", r.handleLLMWikiReindex)
 	mux.HandleFunc("/api/history-backfills", r.handleStartHistoryBackfill)
 	mux.HandleFunc("/api/history-backfills/", r.handleHistoryBackfillByID)
 	mux.HandleFunc("/api/summaries", r.handleSummaries)

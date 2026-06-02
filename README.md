@@ -162,6 +162,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 cd app
 export TGTLDR_DATABASE_URL='postgres://postgres:postgres@localhost:5432/tgtldr?sslmode=disable'
 export TGTLDR_MASTER_KEY_FILE="$HOME/.tgtldr/master.key"
+export TGTLDR_LLM_WIKI_DIR="$HOME/.tgtldr/wiki"
 export TGTLDR_MASTER_KEY='替换为 openssl rand -base64 32 生成的值'
 go run ./cmd/server
 ```
@@ -179,6 +180,7 @@ TGTLDR_INTERNAL_API_BASE_URL=http://127.0.0.1:8080 npm run dev
 - `TGTLDR_MASTER_KEY` 用于加密保存 Telegram session、OpenAI API Key 和 Bot Token。
 - 如果你不显式设置 `TGTLDR_MASTER_KEY`，系统会自动生成一把随机 key，并持久化到 `/var/lib/tgtldr/master.key`。
 - 请妥善保存这把 key 或对应的数据卷；如果丢失，已经保存到数据库里的密钥和 Telegram session 将无法解密。
+- LLM Wiki Markdown 工作区默认位于 app 数据卷的 `/var/lib/tgtldr/wiki`，可通过 `TGTLDR_LLM_WIKI_DIR` 覆盖。
 - 建议只部署在本机或可信内网；如果要暴露到公网，请先确认已经完成访问密码设置，并放在可信反向代理之后。
 
 ## 反向代理部署

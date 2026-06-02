@@ -31,7 +31,7 @@ func TestKnowledgeAnswerEvidence(t *testing.T) {
 				LastSeenAt:      seenAt,
 				Facts:           []model.KnowledgeFact{{Title: "Rust 后端经验"}},
 			},
-		})
+		}, nil)
 
 		So(evidence, ShouldContainSubstring, "id=#42")
 		So(evidence, ShouldContainSubstring, "subject=[@alice](https://t.me/alice)")
@@ -62,7 +62,7 @@ func TestEnsureKnowledgeAnswerCitations(t *testing.T) {
 		answer := ensureKnowledgeAnswerCitations(model.LanguageZhCN, "可以先联系 Alice。", []model.KnowledgeFact{
 			{ID: 42},
 			{ID: 43},
-		})
+		}, nil)
 
 		So(answer, ShouldContainSubstring, "依据事实：#42、#43")
 	})
@@ -70,8 +70,16 @@ func TestEnsureKnowledgeAnswerCitations(t *testing.T) {
 	Convey("模型回答已经包含事实 ID 时不重复补充", t, func() {
 		answer := ensureKnowledgeAnswerCitations(model.LanguageZhCN, "可以先联系 Alice，依据 #42。", []model.KnowledgeFact{
 			{ID: 42},
-		})
+		}, nil)
 
 		So(answer, ShouldEqual, "可以先联系 Alice，依据 #42。")
+	})
+
+	Convey("模型回答缺少事实但有 Wiki 页面时应自动补充 Wiki 依据", t, func() {
+		answer := ensureKnowledgeAnswerCitations(model.LanguageZhCN, "Alice 长期关注 Rust 后端。", nil, []model.LLMWikiPage{
+			{Path: "spaces/general/people/alice.md"},
+		})
+
+		So(answer, ShouldContainSubstring, "依据 Wiki：wiki:spaces/general/people/alice.md")
 	})
 }

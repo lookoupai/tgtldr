@@ -55,6 +55,7 @@ func (s *Service) BuildContextPreview(ctx context.Context, summary model.Summary
 	}
 	summaryLanguage := model.ResolveSummaryOutputLanguage(settings, chat)
 	stagePrompt := buildStagePromptForChat(summaryLanguage, chat)
+	stagePrompt = appendWikiContextToPrompt(ctx, s.store, stagePrompt, []int64{chat.ID}, chat.Title, summaryLanguage)
 	finalPrompt := buildFinalPromptForChat(summaryLanguage, chat)
 	budget := resolveSummaryBudget(settings, resolveSummaryModel(chat, settings), stagePrompt)
 	chunks := SplitMessages(filteredMessages, budget.ChunkTokenBudget)
@@ -136,6 +137,7 @@ func (s *Service) RunDailySummary(ctx context.Context, chat model.Chat, date str
 	})
 
 	stagePrompt := buildStagePromptForChat(summaryLanguage, chat)
+	stagePrompt = appendWikiContextToPrompt(ctx, s.store, stagePrompt, []int64{chat.ID}, chat.Title, summaryLanguage)
 	finalPrompt := buildFinalPromptForChat(summaryLanguage, chat)
 	budget := resolveSummaryBudget(settings, resolveSummaryModel(chat, settings), stagePrompt)
 	chunks := SplitMessages(filteredMessages, budget.ChunkTokenBudget)
