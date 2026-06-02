@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/frederic/tgtldr/app/internal/bot"
@@ -20,6 +21,7 @@ const (
 	commandResultLimit        = 20
 	pendingMaintenanceTTL     = 10 * time.Minute
 	recentAnswerTTL           = 10 * time.Minute
+	asyncNaturalQueryLimit    = 2
 )
 
 type Service struct {
@@ -28,7 +30,9 @@ type Service struct {
 	maintainer         knowledgeMaintainer
 	pendingMaintenance *pendingMaintenance
 	pendingSeq         int64
+	recentAnswersMu    sync.Mutex
 	recentAnswers      map[string]recentKnowledgeAnswer
+	asyncQuerySlots    chan struct{}
 }
 
 type parsedCommand struct {
@@ -108,6 +112,10 @@ func NewService(st *store.Store, botService *bot.Service, maintainer knowledgeMa
 		bot:           botService,
 		maintainer:    maintainer,
 		recentAnswers: make(map[string]recentKnowledgeAnswer),
+		asyncQuerySlots: make(
+			chan struct{},
+			asyncNaturalQueryLimit,
+		),
 	}
 }
 
@@ -240,6 +248,15 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			language := responseLanguage(settings, target)
+			if queryText, ok := s.asyncNaturalQueryText(update, state.botID, state.botUsername); ok {
+				if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, asyncNaturalQueryQueuedText(language), language, update.MessageID); err != nil {
+					s.markRuntimeError(ctx, state.botUsername, err)
+					continue
+				}
+				s.markRuntimeHandled(ctx, state.botUsername)
+				s.startAsyncNaturalQuery(ctx, token, language, update, queryText, state.botUsername)
+				continue
+			}
 			response, ok, err := s.responseForUpdate(ctx, language, update, state.botID, state.botUsername)
 			if err != nil {
 				response = commandErrorText(language, err)
@@ -420,6 +437,67 @@ func (s *Service) responseForUpdate(ctx context.Context, language model.Language
 	return "", false, nil
 }
 
+func (s *Service) asyncNaturalQueryText(update bot.CommandUpdate, botID int64, botUsername string) (string, bool) {
+	text := strings.TrimSpace(update.Text)
+	if text == "" {
+		return "", false
+	}
+	if strings.HasPrefix(text, "/") {
+		command, ok := parseCommand(text)
+		if !ok || command.naturalQueryText == "" {
+			return "", false
+		}
+		return command.naturalQueryText, true
+	}
+	if strings.EqualFold(strings.TrimSpace(update.ChatType), "private") {
+		return text, true
+	}
+	if query, ok := extractMentionQuery(text, botUsername); ok {
+		return query, true
+	}
+	if botID != 0 && update.ReplyToBotID == botID {
+		if _, ok := s.replyCorrectionMaintenanceText(update.ChatID, text, time.Now()); ok {
+			return "", false
+		}
+		return text, true
+	}
+	return "", false
+}
+
+func (s *Service) startAsyncNaturalQuery(
+	parent context.Context,
+	token string,
+	language model.Language,
+	update bot.CommandUpdate,
+	queryText string,
+	botUsername string,
+) {
+	if s == nil || s.bot == nil {
+		return
+	}
+	go func() {
+		select {
+		case s.asyncQuerySlots <- struct{}{}:
+			defer func() { <-s.asyncQuerySlots }()
+		case <-parent.Done():
+			return
+		}
+
+		response, _, err := s.respondToNaturalQueryForChat(parent, language, update.ChatID, queryText)
+		if err != nil {
+			response = commandErrorText(language, err)
+		}
+		if strings.TrimSpace(response) == "" {
+			response = commandNaturalQueryEmptyText(language)
+		}
+		if err := s.bot.SendReplyWithLanguage(parent, token, update.ChatID, response, language, update.MessageID); err != nil {
+			s.markRuntimeError(parent, botUsername, err)
+			return
+		}
+		s.markRuntimeHandled(parent, botUsername)
+	}()
+}
+
 func (s *Service) responseForCommand(ctx context.Context, language model.Language, text string) (string, bool, error) {
 	return s.responseForCommandForChat(ctx, language, text, "")
 }
@@ -554,6 +632,8 @@ func (s *Service) rememberRecentAnswer(chatID string, answer knowledge.Knowledge
 	if strings.TrimSpace(chatID) == "" || strings.TrimSpace(answer.Query) == "" {
 		return
 	}
+	s.recentAnswersMu.Lock()
+	defer s.recentAnswersMu.Unlock()
 	if s.recentAnswers == nil {
 		s.recentAnswers = make(map[string]recentKnowledgeAnswer)
 	}
@@ -569,7 +649,9 @@ func (s *Service) replyCorrectionMaintenanceText(chatID string, text string, now
 	if !ok || strings.TrimSpace(chatID) == "" {
 		return "", false
 	}
+	s.recentAnswersMu.Lock()
 	recent, ok := s.recentAnswers[chatID]
+	s.recentAnswersMu.Unlock()
 	if !ok || now.After(recent.expiresAt) || strings.TrimSpace(recent.query) == "" {
 		return "", false
 	}
@@ -1041,6 +1123,13 @@ func commandNaturalQueryEmptyText(language model.Language) string {
 		return "I could not extract a safe knowledge query. Try /knowledge <keyword> or /type <fact_type> <keyword>."
 	}
 	return "没有识别到可执行的知识查询。可以改用 /knowledge <关键词> 或 /type <事实类型> <关键词>。"
+}
+
+func asyncNaturalQueryQueuedText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "Received. I am checking the knowledge base and will send the result here when it is ready."
+	}
+	return "收到，正在查询知识库，整理好后会在这里回复。"
 }
 
 func formatMaintenanceActionZH(action string) string {

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/frederic/tgtldr/app/internal/bot"
 	"github.com/frederic/tgtldr/app/internal/knowledge"
@@ -419,6 +420,102 @@ func TestResponseForUpdateNaturalConversation(t *testing.T) {
 				t.Fatalf("responseForUpdate() = %q", got)
 			}
 		})
+	}
+}
+
+func TestAsyncNaturalQueryText(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, nil)
+	tests := []struct {
+		name   string
+		update bot.CommandUpdate
+		want   string
+		ok     bool
+	}{
+		{
+			name: "ask command",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "/ask 谁了解 Rust",
+			},
+			want: "谁了解 Rust",
+			ok:   true,
+		},
+		{
+			name: "private plain text",
+			update: bot.CommandUpdate{
+				ChatType: "private",
+				Text:     "谁了解 Rust",
+			},
+			want: "谁了解 Rust",
+			ok:   true,
+		},
+		{
+			name: "group mention",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "@TgtldrBot 谁了解 Rust",
+			},
+			want: "谁了解 Rust",
+			ok:   true,
+		},
+		{
+			name: "group reply to bot",
+			update: bot.CommandUpdate{
+				ChatType:     "supergroup",
+				Text:         "谁了解 Rust",
+				ReplyToBotID: 777,
+			},
+			want: "谁了解 Rust",
+			ok:   true,
+		},
+		{
+			name: "knowledge command stays sync",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "/knowledge Rust",
+			},
+		},
+		{
+			name: "plain group text ignored",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "谁了解 Rust",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := service.asyncNaturalQueryText(tt.update, 777, "TgtldrBot")
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("asyncNaturalQueryText() = %q, %v; want %q, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestAsyncNaturalQueryTextSkipsReplyCorrection(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, nil)
+	service.rememberRecentAnswer("-1001", knowledge.KnowledgeAnswerResult{
+		Query:    "Cati",
+		FactType: "supply",
+	}, time.Now())
+
+	got, ok := service.asyncNaturalQueryText(bot.CommandUpdate{
+		ChatID:       "-1001",
+		ChatType:     "supergroup",
+		Text:         "不是手机号码，是 Telegram账号",
+		ReplyToBotID: 777,
+	}, 777, "TgtldrBot")
+	if ok || got != "" {
+		t.Fatalf("asyncNaturalQueryText(correction) = %q, %v; want no async query", got, ok)
 	}
 }
 
