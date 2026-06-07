@@ -54,8 +54,10 @@ type parsedCommand struct {
 type knowledgeMaintainer interface {
 	ApplyMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
 	AnswerQueryText(ctx context.Context, text string, opts knowledge.KnowledgeAnswerOptions) (knowledge.KnowledgeAnswerResult, error)
+	ClassifyBotIntentText(ctx context.Context, text string) (knowledge.BotIntent, error)
 	PreviewMaintenanceText(ctx context.Context, text string) (knowledge.MaintenanceResult, error)
 	ParseQueryText(ctx context.Context, text string) (knowledge.KnowledgeQueryInstruction, error)
+	RecordBotIntentFact(ctx context.Context, intent knowledge.BotIntent, source knowledge.InlineFactSource) (knowledge.InlineFactResult, error)
 	UpdateFactStatus(ctx context.Context, factID int64, status model.KnowledgeFactStatus, source string, reason string, operatorText string, matchedQuery string) (model.KnowledgeFact, error)
 }
 
@@ -254,7 +256,7 @@ func (s *Service) Run(ctx context.Context) error {
 					continue
 				}
 				s.markRuntimeHandled(ctx, state.botUsername)
-				s.startAsyncNaturalQuery(ctx, token, language, update, queryText, state.botUsername)
+				s.startAsyncNaturalQuery(ctx, token, language, update, queryText, state.botUsername, target)
 				continue
 			}
 			response, ok, err := s.responseForUpdate(ctx, language, update, state.botID, state.botUsername)
@@ -471,6 +473,7 @@ func (s *Service) startAsyncNaturalQuery(
 	update bot.CommandUpdate,
 	queryText string,
 	botUsername string,
+	target responseTarget,
 ) {
 	if s == nil || s.bot == nil {
 		return
@@ -483,7 +486,7 @@ func (s *Service) startAsyncNaturalQuery(
 			return
 		}
 
-		response, _, err := s.respondToNaturalQueryForChat(parent, language, update.ChatID, queryText)
+		response, _, err := s.respondToNaturalIntentForChat(parent, language, update.ChatID, queryText, inlineFactSource(update, target))
 		if err != nil {
 			response = commandErrorText(language, err)
 		}
@@ -496,6 +499,20 @@ func (s *Service) startAsyncNaturalQuery(
 		}
 		s.markRuntimeHandled(parent, botUsername)
 	}()
+}
+
+func inlineFactSource(update bot.CommandUpdate, target responseTarget) knowledge.InlineFactSource {
+	messageTime := time.Time{}
+	if update.MessageDate > 0 {
+		messageTime = time.Unix(update.MessageDate, 0)
+	}
+	return knowledge.InlineFactSource{
+		ChatID:         target.chatID,
+		MessageID:      update.MessageID,
+		SenderID:       update.FromID,
+		SenderUsername: update.FromUsername,
+		MessageTime:    messageTime,
+	}
 }
 
 func (s *Service) responseForCommand(ctx context.Context, language model.Language, text string) (string, bool, error) {
@@ -601,6 +618,64 @@ func (s *Service) applyMaintenanceText(ctx context.Context, language model.Langu
 
 func (s *Service) respondToNaturalQuery(ctx context.Context, language model.Language, text string) (string, bool, error) {
 	return s.respondToNaturalQueryForChat(ctx, language, "", text)
+}
+
+func (s *Service) respondToNaturalIntentForChat(ctx context.Context, language model.Language, chatID string, text string, source knowledge.InlineFactSource) (string, bool, error) {
+	if s.maintainer == nil {
+		return "", true, fmt.Errorf("knowledge maintainer is not configured")
+	}
+	intent, err := s.maintainer.ClassifyBotIntentText(ctx, text)
+	if err != nil {
+		return "", true, err
+	}
+
+	switch intent.Intent {
+	case knowledge.BotIntentQuery:
+		return s.respondToNaturalQueryForChat(ctx, language, chatID, text)
+	case knowledge.BotIntentFactUpsert:
+		return s.respondToFactUpsertIntent(ctx, language, text, intent, source)
+	case knowledge.BotIntentMaintenance, knowledge.BotIntentCorrection:
+		if intent.LowConfidence() {
+			return commandBotIntentAmbiguousText(language), true, nil
+		}
+		return s.applyMaintenanceText(ctx, language, text)
+	case knowledge.BotIntentIgnore:
+		return commandNaturalQueryEmptyText(language), true, nil
+	default:
+		return s.respondToNaturalQueryForChat(ctx, language, chatID, text)
+	}
+}
+
+func (s *Service) respondToFactUpsertIntent(ctx context.Context, language model.Language, text string, intent knowledge.BotIntent, source knowledge.InlineFactSource) (string, bool, error) {
+	if intent.LowConfidence() {
+		return commandBotIntentAmbiguousText(language), true, nil
+	}
+	if source.ChatID <= 0 {
+		return commandFactRecordNeedsBoundChatText(language), true, nil
+	}
+	if riskClearIntent(intent) {
+		result, err := s.maintainer.PreviewMaintenanceText(ctx, text)
+		if err != nil {
+			return "", true, err
+		}
+		if maintenanceResultNeedsConfirmation(result) {
+			token := s.setPendingMaintenance(text, result)
+			return commandMaintenancePreviewText(language, result, token), true, nil
+		}
+	}
+	result, err := s.maintainer.RecordBotIntentFact(ctx, intent, source)
+	if err != nil {
+		return "", true, err
+	}
+	if len(result.Facts) == 0 {
+		return commandBotIntentAmbiguousText(language), true, nil
+	}
+	return commandInlineFactRecordedText(language, result.Facts), true, nil
+}
+
+func riskClearIntent(intent knowledge.BotIntent) bool {
+	return strings.EqualFold(strings.TrimSpace(intent.FactType), "risk_account") &&
+		strings.EqualFold(strings.TrimSpace(intent.Action), "cleared")
 }
 
 func (s *Service) respondToNaturalQueryForChat(ctx context.Context, language model.Language, chatID string, text string) (string, bool, error) {
@@ -1118,6 +1193,42 @@ func commandMaintenanceCancelledText(language model.Language) string {
 	return "已取消待确认的知识维护。"
 }
 
+func commandInlineFactRecordedText(language model.Language, facts []model.KnowledgeFact) string {
+	lines := make([]string, 0, len(facts)+1)
+	if language == model.LanguageEN {
+		lines = append(lines, fmt.Sprintf("Recorded %d knowledge fact(s):", len(facts)))
+		for _, fact := range facts {
+			lines = append(lines, "- "+inlineFactLine(language, fact))
+		}
+		return strings.Join(lines, "\n")
+	}
+	lines = append(lines, fmt.Sprintf("已记录 %d 条知识事实：", len(facts)))
+	for _, fact := range facts {
+		lines = append(lines, "- "+inlineFactLine(language, fact))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func inlineFactLine(language model.Language, fact model.KnowledgeFact) string {
+	parts := make([]string, 0, 3)
+	if fact.ID > 0 {
+		parts = append(parts, fmt.Sprintf("#%d", fact.ID))
+	}
+	if strings.TrimSpace(fact.FactType) != "" {
+		parts = append(parts, strings.TrimSpace(fact.FactType))
+	}
+	if strings.TrimSpace(fact.ChatTitle) != "" {
+		parts = append(parts, strings.TrimSpace(fact.ChatTitle))
+	}
+	if len(parts) == 0 {
+		return strings.TrimSpace(fact.Title)
+	}
+	if language == model.LanguageEN {
+		return fmt.Sprintf("%s (%s)", strings.TrimSpace(fact.Title), strings.Join(parts, ", "))
+	}
+	return fmt.Sprintf("%s（%s）", strings.TrimSpace(fact.Title), strings.Join(parts, "，"))
+}
+
 func commandNaturalQueryEmptyText(language model.Language) string {
 	if language == model.LanguageEN {
 		return "I could not extract a safe knowledge query. Try /knowledge <keyword> or /type <fact_type> <keyword>."
@@ -1125,11 +1236,25 @@ func commandNaturalQueryEmptyText(language model.Language) string {
 	return "没有识别到可执行的知识查询。可以改用 /knowledge <关键词> 或 /type <事实类型> <关键词>。"
 }
 
+func commandBotIntentAmbiguousText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "I understood this may affect the knowledge base, but the subject or fact is not clear enough. Use /ask for questions or /update for maintenance."
+	}
+	return "我判断这可能要操作知识库，但主体或事实不够明确。查询请用 /ask，维护请用 /update。"
+}
+
+func commandFactRecordNeedsBoundChatText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "This kind of fact can only be recorded from a bound group chat, so I can associate it with the correct knowledge space."
+	}
+	return "这类事实需要在已绑定的群聊里记录，才能关联到正确的知识空间。"
+}
+
 func asyncNaturalQueryQueuedText(language model.Language) string {
 	if language == model.LanguageEN {
-		return "Received. I am checking the knowledge base and will send the result here when it is ready."
+		return "Received. I am processing the knowledge-base request and will send the result here when it is ready."
 	}
-	return "收到，正在查询知识库，整理好后会在这里回复。"
+	return "收到，正在处理知识库请求，整理好后会在这里回复。"
 }
 
 func formatMaintenanceActionZH(action string) string {

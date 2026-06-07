@@ -519,6 +519,117 @@ func TestAsyncNaturalQueryTextSkipsReplyCorrection(t *testing.T) {
 	}
 }
 
+func TestNaturalIntentRecordsFactUpsert(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{
+		intent: knowledge.BotIntent{
+			Intent:     knowledge.BotIntentFactUpsert,
+			Confidence: 0.94,
+			FactType:   "supply",
+			Subject:    "@tianyou158",
+			Item:       "telegram账号",
+		},
+		inline: knowledge.InlineFactResult{
+			Facts: []model.KnowledgeFact{
+				{ID: 88, FactType: "supply", Title: "供应 telegram账号", ChatTitle: "合集网群"},
+			},
+		},
+	})
+
+	got, ok, err := service.respondToNaturalIntentForChat(context.Background(), model.LanguageZhCN, "-1001", "@tianyou158 搞飞机号的", knowledge.InlineFactSource{ChatID: 1, MessageID: 486184})
+	if err != nil {
+		t.Fatalf("respondToNaturalIntentForChat() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("respondToNaturalIntentForChat() ok = false")
+	}
+	if !strings.Contains(got, "已记录 1 条知识事实") || !strings.Contains(got, "#88") {
+		t.Fatalf("respondToNaturalIntentForChat() = %q", got)
+	}
+}
+
+func TestNaturalIntentRequiresInternalChatForFactUpsert(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{
+		intent: knowledge.BotIntent{
+			Intent:     knowledge.BotIntentFactUpsert,
+			Confidence: 0.94,
+			FactType:   "supply",
+			Subject:    "@tianyou158",
+			Item:       "telegram账号",
+		},
+	})
+
+	got, ok, err := service.respondToNaturalIntentForChat(context.Background(), model.LanguageZhCN, "-1001", "@tianyou158 搞飞机号的", knowledge.InlineFactSource{})
+	if err != nil {
+		t.Fatalf("respondToNaturalIntentForChat() error = %v", err)
+	}
+	if !ok || !strings.Contains(got, "已绑定的群聊") {
+		t.Fatalf("respondToNaturalIntentForChat() = %q, %v; want bound chat warning", got, ok)
+	}
+}
+
+func TestNaturalIntentRiskClearUsesMaintenancePreviewWhenMatched(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{
+		intent: knowledge.BotIntent{
+			Intent:     knowledge.BotIntentFactUpsert,
+			Confidence: 1,
+			FactType:   "risk_account",
+			Subject:    "@tianyou158",
+			Action:     "cleared",
+		},
+		preview: knowledge.MaintenanceResult{
+			Action:      "dismiss",
+			TargetType:  "risk_account",
+			TargetQuery: "*",
+			TargetUser:  "@tianyou158",
+			MatchedFacts: []model.KnowledgeFact{
+				{ID: 99, Title: "@tianyou158 被举报", Status: model.KnowledgeFactStatusActive},
+			},
+		},
+	})
+
+	got, ok, err := service.respondToNaturalIntentForChat(context.Background(), model.LanguageZhCN, "-1001", "@tianyou158 不是风险账号", knowledge.InlineFactSource{ChatID: 1, MessageID: 486196})
+	if err != nil {
+		t.Fatalf("respondToNaturalIntentForChat() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("respondToNaturalIntentForChat() ok = false")
+	}
+	if !strings.Contains(got, "待确认维护") || !strings.Contains(got, "#99") {
+		t.Fatalf("respondToNaturalIntentForChat() = %q", got)
+	}
+}
+
+func TestNaturalIntentLowConfidenceDoesNotWrite(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{
+		intent: knowledge.BotIntent{
+			Intent:     knowledge.BotIntentFactUpsert,
+			Confidence: 0.6,
+			FactType:   "supply",
+			Subject:    "@maybe",
+			Item:       "账号",
+		},
+		inline: knowledge.InlineFactResult{
+			Facts: []model.KnowledgeFact{{ID: 100, Title: "不应写入"}},
+		},
+	})
+
+	got, ok, err := service.respondToNaturalIntentForChat(context.Background(), model.LanguageZhCN, "-1001", "这个可能卖号吧", knowledge.InlineFactSource{ChatID: 1})
+	if err != nil {
+		t.Fatalf("respondToNaturalIntentForChat() error = %v", err)
+	}
+	if !ok || !strings.Contains(got, "不够明确") {
+		t.Fatalf("respondToNaturalIntentForChat() = %q, %v; want ambiguity warning", got, ok)
+	}
+}
+
 func TestResponseForUpdateIDCommand(t *testing.T) {
 	t.Parallel()
 
@@ -686,8 +797,10 @@ func TestNaturalQueryEmptyAnswerShowsEmptyQueryText(t *testing.T) {
 
 type fakeKnowledgeMaintainer struct {
 	answer  knowledge.KnowledgeAnswerResult
+	intent  knowledge.BotIntent
 	preview knowledge.MaintenanceResult
 	applied knowledge.MaintenanceResult
+	inline  knowledge.InlineFactResult
 }
 
 func (f fakeKnowledgeMaintainer) ApplyMaintenanceText(context.Context, string) (knowledge.MaintenanceResult, error) {
@@ -698,12 +811,23 @@ func (f fakeKnowledgeMaintainer) AnswerQueryText(context.Context, string, knowle
 	return f.answer, nil
 }
 
+func (f fakeKnowledgeMaintainer) ClassifyBotIntentText(context.Context, string) (knowledge.BotIntent, error) {
+	if strings.TrimSpace(f.intent.Intent) != "" {
+		return f.intent, nil
+	}
+	return knowledge.BotIntent{Intent: knowledge.BotIntentQuery, Confidence: 1}, nil
+}
+
 func (f fakeKnowledgeMaintainer) PreviewMaintenanceText(context.Context, string) (knowledge.MaintenanceResult, error) {
 	return f.preview, nil
 }
 
 func (f fakeKnowledgeMaintainer) ParseQueryText(context.Context, string) (knowledge.KnowledgeQueryInstruction, error) {
 	return knowledge.KnowledgeQueryInstruction{}, nil
+}
+
+func (f fakeKnowledgeMaintainer) RecordBotIntentFact(context.Context, knowledge.BotIntent, knowledge.InlineFactSource) (knowledge.InlineFactResult, error) {
+	return f.inline, nil
 }
 
 func (f fakeKnowledgeMaintainer) UpdateFactStatus(context.Context, int64, model.KnowledgeFactStatus, string, string, string, string) (model.KnowledgeFact, error) {
