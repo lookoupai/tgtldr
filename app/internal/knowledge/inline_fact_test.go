@@ -27,6 +27,12 @@ func TestInlineFactParsing(t *testing.T) {
 		So(instruction.Item, ShouldEqual, "")
 	})
 
+	Convey("风险账号问句不会解析成 cleared 事实", t, func() {
+		_, ok := parseDirectInlineFactText("@tianyou158 不是风险账号吗")
+
+		So(ok, ShouldBeFalse)
+	})
+
 	Convey("问题不会被误解析成写入事实", t, func() {
 		_, ok := parseDirectInlineFactText("@tianyou158 是做什么的？")
 

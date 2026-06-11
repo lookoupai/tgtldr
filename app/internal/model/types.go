@@ -124,6 +124,7 @@ type AppSettings struct {
 	BotTargetChatID                string                `json:"botTargetChatId"`
 	BotIgnoreMessagesFromBots      bool                  `json:"botIgnoreMessagesFromBots"`
 	BotPrivateAllowedUsers         []string              `json:"botPrivateAllowedUsers"`
+	BotBlockedUsers                []string              `json:"botBlockedUsers"`
 	CreatedAt                      time.Time             `json:"createdAt"`
 	UpdatedAt                      time.Time             `json:"updatedAt"`
 }
@@ -191,6 +192,7 @@ type Chat struct {
 	BotChatID            string                `json:"botChatId"`
 	BotInteraction       bool                  `json:"botInteractionEnabled"`
 	BotAllowedUsers      []string              `json:"botAllowedUsers"`
+	BotBlockedUsers      []string              `json:"botBlockedUsers"`
 	CreatedAt            time.Time             `json:"createdAt"`
 	UpdatedAt            time.Time             `json:"updatedAt"`
 }

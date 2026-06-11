@@ -74,6 +74,11 @@ type recentKnowledgeAnswer struct {
 	expiresAt time.Time
 }
 
+type asyncKnowledgeRequest struct {
+	text      string
+	useIntent bool
+}
+
 type pollState struct {
 	token        string
 	targetChatID string
@@ -87,6 +92,7 @@ type responseTarget struct {
 	chatID       int64
 	language     model.SummaryOutputLanguage
 	allowedUsers []string
+	blockedUsers []string
 }
 
 type commandDefinition struct {
@@ -228,6 +234,17 @@ func (s *Service) Run(ctx context.Context) error {
 				target = responseTarget{}
 				ok = true
 			}
+			language := responseLanguage(settings, target)
+			if botUserBlocked(settings.BotBlockedUsers, target.blockedUsers, update) {
+				if strings.EqualFold(strings.TrimSpace(update.ChatType), "private") {
+					if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, commandBlockedUserText(language), language, update.MessageID); err != nil {
+						s.markRuntimeError(ctx, state.botUsername, err)
+						continue
+					}
+					s.markRuntimeHandled(ctx, state.botUsername)
+				}
+				continue
+			}
 			if !ok {
 				if response, shouldReply := safeUtilityResponse(settings.Language, update); shouldReply {
 					if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, settings.Language, update.MessageID); err != nil {
@@ -239,7 +256,6 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			if !targetAllowsUpdate(target, update) {
-				language := responseLanguage(settings, target)
 				if response, shouldReply := safeUtilityResponse(language, update); shouldReply {
 					if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, response, language, update.MessageID); err != nil {
 						s.markRuntimeError(ctx, state.botUsername, err)
@@ -249,14 +265,13 @@ func (s *Service) Run(ctx context.Context) error {
 				}
 				continue
 			}
-			language := responseLanguage(settings, target)
-			if queryText, ok := s.asyncNaturalQueryText(update, state.botID, state.botUsername); ok {
+			if request, ok := s.asyncKnowledgeRequest(update, state.botID, state.botUsername); ok {
 				if err := s.bot.SendReplyWithLanguage(ctx, token, update.ChatID, asyncNaturalQueryQueuedText(language), language, update.MessageID); err != nil {
 					s.markRuntimeError(ctx, state.botUsername, err)
 					continue
 				}
 				s.markRuntimeHandled(ctx, state.botUsername)
-				s.startAsyncNaturalQuery(ctx, token, language, update, queryText, state.botUsername, target)
+				s.startAsyncNaturalQuery(ctx, token, language, update, request, state.botUsername, target)
 				continue
 			}
 			response, ok, err := s.responseForUpdate(ctx, language, update, state.botID, state.botUsername)
@@ -298,6 +313,7 @@ func (s *Service) responseTargets(ctx context.Context, settings model.AppSetting
 			chatID:       chat.ID,
 			language:     model.ResolveSummaryOutputLanguage(settings, chat),
 			allowedUsers: chat.BotAllowedUsers,
+			blockedUsers: chat.BotBlockedUsers,
 		}
 	}
 	return targets, nil
@@ -307,13 +323,21 @@ func targetAllowsUpdate(target responseTarget, update bot.CommandUpdate) bool {
 	if len(target.allowedUsers) == 0 {
 		return true
 	}
+	return updateUserMatches(update, target.allowedUsers)
+}
+
+func botUserBlocked(globalBlockedUsers []string, targetBlockedUsers []string, update bot.CommandUpdate) bool {
+	return updateUserMatches(update, globalBlockedUsers) || updateUserMatches(update, targetBlockedUsers)
+}
+
+func updateUserMatches(update bot.CommandUpdate, users []string) bool {
 	fromID := ""
 	if update.FromID != 0 {
 		fromID = strconv.FormatInt(update.FromID, 10)
 	}
 	fromUsername := normalizeAllowedUsername(update.FromUsername)
-	for _, allowed := range target.allowedUsers {
-		trimmed := strings.TrimSpace(allowed)
+	for _, user := range users {
+		trimmed := strings.TrimSpace(user)
 		if trimmed == "" {
 			continue
 		}
@@ -440,30 +464,38 @@ func (s *Service) responseForUpdate(ctx context.Context, language model.Language
 }
 
 func (s *Service) asyncNaturalQueryText(update bot.CommandUpdate, botID int64, botUsername string) (string, bool) {
+	request, ok := s.asyncKnowledgeRequest(update, botID, botUsername)
+	if !ok {
+		return "", false
+	}
+	return request.text, true
+}
+
+func (s *Service) asyncKnowledgeRequest(update bot.CommandUpdate, botID int64, botUsername string) (asyncKnowledgeRequest, bool) {
 	text := strings.TrimSpace(update.Text)
 	if text == "" {
-		return "", false
+		return asyncKnowledgeRequest{}, false
 	}
 	if strings.HasPrefix(text, "/") {
 		command, ok := parseCommand(text)
 		if !ok || command.naturalQueryText == "" {
-			return "", false
+			return asyncKnowledgeRequest{}, false
 		}
-		return command.naturalQueryText, true
+		return asyncKnowledgeRequest{text: command.naturalQueryText}, true
 	}
 	if strings.EqualFold(strings.TrimSpace(update.ChatType), "private") {
-		return text, true
+		return asyncKnowledgeRequest{text: text, useIntent: !knowledge.LooksLikeQuestionText(text)}, true
 	}
 	if query, ok := extractMentionQuery(text, botUsername); ok {
-		return query, true
+		return asyncKnowledgeRequest{text: query, useIntent: !knowledge.LooksLikeQuestionText(query)}, true
 	}
 	if botID != 0 && update.ReplyToBotID == botID {
 		if _, ok := s.replyCorrectionMaintenanceText(update.ChatID, text, time.Now()); ok {
-			return "", false
+			return asyncKnowledgeRequest{}, false
 		}
-		return text, true
+		return asyncKnowledgeRequest{text: text, useIntent: !knowledge.LooksLikeQuestionText(text)}, true
 	}
-	return "", false
+	return asyncKnowledgeRequest{}, false
 }
 
 func (s *Service) startAsyncNaturalQuery(
@@ -471,7 +503,7 @@ func (s *Service) startAsyncNaturalQuery(
 	token string,
 	language model.Language,
 	update bot.CommandUpdate,
-	queryText string,
+	request asyncKnowledgeRequest,
 	botUsername string,
 	target responseTarget,
 ) {
@@ -486,7 +518,13 @@ func (s *Service) startAsyncNaturalQuery(
 			return
 		}
 
-		response, _, err := s.respondToNaturalIntentForChat(parent, language, update.ChatID, queryText, inlineFactSource(update, target))
+		var response string
+		var err error
+		if request.useIntent {
+			response, _, err = s.respondToNaturalIntentForChat(parent, language, update.ChatID, request.text, inlineFactSource(update, target))
+		} else {
+			response, _, err = s.respondToNaturalQueryForChat(parent, language, update.ChatID, request.text)
+		}
 		if err != nil {
 			response = commandErrorText(language, err)
 		}
@@ -786,6 +824,9 @@ func (s *Service) confirmMaintenance(ctx context.Context, language model.Languag
 	pending := s.pendingMaintenance
 	if pending == nil {
 		return commandMaintenanceNoPendingText(language), true, nil
+	}
+	if strings.TrimSpace(token) == "" {
+		return commandMaintenanceConfirmUsageText(language, pending.token), true, nil
 	}
 	if strings.TrimSpace(token) != pending.token {
 		return commandMaintenanceTokenMismatchText(language), true, nil
@@ -1186,6 +1227,13 @@ func commandMaintenanceTokenMismatchText(language model.Language) string {
 	return "确认码与待确认的知识维护不匹配。"
 }
 
+func commandMaintenanceConfirmUsageText(language model.Language, token string) string {
+	if language == model.LanguageEN {
+		return fmt.Sprintf("Send /confirm %s to apply the pending knowledge update, or /cancel to discard it.", token)
+	}
+	return fmt.Sprintf("请发送 /confirm %s 执行当前待确认维护，或发送 /cancel 取消。", token)
+}
+
 func commandMaintenanceCancelledText(language model.Language) string {
 	if language == model.LanguageEN {
 		return "Pending knowledge update was cancelled."
@@ -1241,6 +1289,13 @@ func commandBotIntentAmbiguousText(language model.Language) string {
 		return "I understood this may affect the knowledge base, but the subject or fact is not clear enough. Use /ask for questions or /update for maintenance."
 	}
 	return "我判断这可能要操作知识库，但主体或事实不够明确。查询请用 /ask，维护请用 /update。"
+}
+
+func commandBlockedUserText(language model.Language) string {
+	if language == model.LanguageEN {
+		return "You do not have permission to use this bot."
+	}
+	return "你没有权限使用此 Bot。"
 }
 
 func commandFactRecordNeedsBoundChatText(language model.Language) string {

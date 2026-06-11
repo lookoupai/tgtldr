@@ -129,12 +129,13 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		    keep_bot_messages = $11,
 		    filtered_senders = $12,
 		    filtered_keywords = $13,
-		    bot_chat_id = $14,
-		    bot_interaction_enabled = $15,
-		    bot_allowed_users = $16,
-		    summary_knowledge_days = $18,
-		    updated_at = now()
-		where id = $17
+			    bot_chat_id = $14,
+			    bot_interaction_enabled = $15,
+			    bot_allowed_users = $16,
+			    summary_knowledge_days = $18,
+			    bot_blocked_users = $19,
+			    updated_at = now()
+			where id = $17
 		returning `+chatColumns()+`
 	`,
 		chat.Enabled,
@@ -155,6 +156,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat model.Chat) (model.Chat,
 		compactStrings(chat.BotAllowedUsers),
 		chat.ID,
 		normalizeKnowledgeDays(chat.SummaryKnowledgeDays),
+		compactStrings(chat.BotBlockedUsers),
 	)})
 	if err != nil {
 		return model.Chat{}, fmt.Errorf("save chat %d: %w", chat.ID, err)
@@ -241,8 +243,8 @@ func chatColumns() string {
 		       enabled, summary_enabled, summary_context, summary_prompt, summary_mode, summary_language, topic_groups::text,
 		       summary_time_local, summary_timezone, summary_knowledge_days,
 		       delivery_mode, model_override, keep_bot_messages, filtered_senders, filtered_keywords,
-		       bot_chat_id, bot_interaction_enabled, bot_allowed_users,
-		       created_at, updated_at`
+			       bot_chat_id, bot_interaction_enabled, bot_allowed_users, bot_blocked_users,
+			       created_at, updated_at`
 }
 
 func scanChat(scanner chatScanner) (model.Chat, error) {
@@ -273,6 +275,7 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 		&chat.BotChatID,
 		&chat.BotInteraction,
 		&chat.BotAllowedUsers,
+		&chat.BotBlockedUsers,
 		&chat.CreatedAt,
 		&chat.UpdatedAt,
 	)
@@ -284,6 +287,7 @@ func scanChat(scanner chatScanner) (model.Chat, error) {
 	chat.SummaryKnowledgeDays = normalizeKnowledgeDays(chat.SummaryKnowledgeDays)
 	chat.TopicGroups = unmarshalTopicGroups(topicGroupsJSON)
 	chat.BotAllowedUsers = compactStrings(chat.BotAllowedUsers)
+	chat.BotBlockedUsers = compactStrings(chat.BotBlockedUsers)
 	return chat, nil
 }
 

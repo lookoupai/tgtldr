@@ -677,6 +677,9 @@ func parseRiskAccountMaintenanceText(text string) (maintenanceInstruction, bool)
 	if lower == "" || !strings.Contains(lower, "风险账号") && !strings.Contains(lower, "骗子") && !strings.Contains(lower, "scammer") && !strings.Contains(lower, "risk account") {
 		return maintenanceInstruction{}, false
 	}
+	if LooksLikeQuestionText(text) {
+		return maintenanceInstruction{}, false
+	}
 
 	action := ""
 	reason := ""
@@ -745,6 +748,52 @@ func extractRiskAccountMaintenanceUser(text string) string {
 func containsAny(text string, values []string) bool {
 	for _, value := range values {
 		if strings.Contains(text, strings.ToLower(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+func LooksLikeQuestionText(text string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return false
+	}
+	if strings.ContainsAny(normalized, "?？") {
+		return true
+	}
+	questionMarkers := []string{
+		"是什么",
+		"做什么",
+		"干什么",
+		"是否",
+		"是不是",
+		"有没有",
+		"有无",
+		"谁",
+		"哪里",
+		"哪儿",
+		"怎么",
+		"如何",
+		"什么",
+		"吗",
+		"查一下",
+		"查询",
+		"查找",
+		"了解",
+		"who",
+		"what",
+		"where",
+		"whether",
+		"how",
+	}
+	for _, marker := range questionMarkers {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	for _, prefix := range []string{"is ", "are ", "do ", "does ", "can "} {
+		if strings.HasPrefix(normalized, prefix) {
 			return true
 		}
 	}
@@ -834,31 +883,59 @@ func (s *Service) maintenanceCandidates(ctx context.Context, instruction mainten
 	}
 	matchedByID := make(map[int64]model.KnowledgeFact)
 	for _, sourceStatus := range sourceStatuses {
-		query := instruction.TargetQuery
-		if isWildcardQuery(query) {
-			query = instruction.TargetUser
-		}
-		candidates, err := s.store.KnowledgeFacts.List(ctx, store.KnowledgeFactFilter{
-			Status:   sourceStatus,
-			FactType: instruction.TargetType,
-			Query:    query,
-			Limit:    100,
-		})
-		if err != nil {
-			return result, "", err
-		}
-		for _, candidate := range candidates {
-			if _, seen := matchedByID[candidate.ID]; seen {
-				continue
+		for _, query := range maintenanceCandidateQueries(instruction) {
+			candidates, err := s.store.KnowledgeFacts.List(ctx, store.KnowledgeFactFilter{
+				Status:   sourceStatus,
+				FactType: instruction.TargetType,
+				Query:    query,
+				Limit:    200,
+			})
+			if err != nil {
+				return result, "", err
 			}
-			if !maintenanceMatchesCandidate(match, candidate, sourceStatus) {
-				continue
+			for _, candidate := range candidates {
+				if _, seen := matchedByID[candidate.ID]; seen {
+					continue
+				}
+				if !maintenanceMatchesCandidate(match, candidate, sourceStatus) {
+					continue
+				}
+				matchedByID[candidate.ID] = candidate
 			}
-			matchedByID[candidate.ID] = candidate
 		}
 	}
 	result.MatchedFacts = sortedMaintenanceFacts(matchedByID)
 	return result, targetStatus, nil
+}
+
+func maintenanceCandidateQueries(instruction maintenanceInstruction) []string {
+	if !isWildcardQuery(instruction.TargetQuery) {
+		return compactSearchQueries([]string{instruction.TargetQuery})
+	}
+	if !strings.EqualFold(strings.TrimSpace(instruction.TargetType), "risk_account") {
+		return compactSearchQueries([]string{instruction.TargetUser})
+	}
+	return compactSearchQueries([]string{
+		instruction.TargetUser,
+		strings.TrimPrefix(strings.TrimSpace(instruction.TargetUser), "@"),
+		normalizeMatchText(instruction.TargetUser),
+		"",
+	})
+}
+
+func compactSearchQueries(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func (s *Service) buildCorrectionFact(candidate model.KnowledgeFact, instruction maintenanceInstruction) (model.KnowledgeFact, error) {

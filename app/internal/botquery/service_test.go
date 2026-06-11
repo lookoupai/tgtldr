@@ -241,6 +241,60 @@ func TestTargetAllowsUpdate(t *testing.T) {
 	}
 }
 
+func TestBotUserBlocked(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		global   []string
+		target   []string
+		update   bot.CommandUpdate
+		blocked  bool
+		allowed  []string
+		canQuery bool
+	}{
+		{
+			name:     "matches global numeric id",
+			global:   []string{"42"},
+			update:   bot.CommandUpdate{FromID: 42, FromUsername: "alice"},
+			blocked:  true,
+			allowed:  []string{"42"},
+			canQuery: true,
+		},
+		{
+			name:     "matches target username case insensitive",
+			target:   []string{"@Alice"},
+			update:   bot.CommandUpdate{FromID: 7, FromUsername: "alice"},
+			blocked:  true,
+			allowed:  []string{"@alice"},
+			canQuery: true,
+		},
+		{
+			name:     "non matching user",
+			global:   []string{"@bob"},
+			target:   []string{"99"},
+			update:   bot.CommandUpdate{FromID: 42, FromUsername: "alice"},
+			blocked:  false,
+			allowed:  []string{"@alice"},
+			canQuery: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := botUserBlocked(tt.global, tt.target, tt.update); got != tt.blocked {
+				t.Fatalf("botUserBlocked() = %v, want %v", got, tt.blocked)
+			}
+			if got := targetAllowsUpdate(responseTarget{allowedUsers: tt.allowed}, tt.update); got != tt.canQuery {
+				t.Fatalf("targetAllowsUpdate() = %v, want %v", got, tt.canQuery)
+			}
+		})
+	}
+}
+
 func TestPrivateUpdateAllowed(t *testing.T) {
 	t.Parallel()
 
@@ -494,6 +548,75 @@ func TestAsyncNaturalQueryText(t *testing.T) {
 			got, ok := service.asyncNaturalQueryText(tt.update, 777, "TgtldrBot")
 			if ok != tt.ok || got != tt.want {
 				t.Fatalf("asyncNaturalQueryText() = %q, %v; want %q, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestAsyncKnowledgeRequestMode(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, nil)
+	tests := []struct {
+		name      string
+		update    bot.CommandUpdate
+		wantText  string
+		wantMode  bool
+		wantFound bool
+	}{
+		{
+			name: "ask command is read-only query",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "/ask @feierbuni 是风险账号吗",
+			},
+			wantText:  "@feierbuni 是风险账号吗",
+			wantFound: true,
+		},
+		{
+			name: "group mention question is read-only query",
+			update: bot.CommandUpdate{
+				ChatType: "supergroup",
+				Text:     "@TgtldrBot @feierbuni 是做什么的？",
+			},
+			wantText:  "@feierbuni 是做什么的？",
+			wantFound: true,
+		},
+		{
+			name: "private question is read-only query",
+			update: bot.CommandUpdate{
+				ChatType: "private",
+				Text:     "@feierbuni 是风险账号吗",
+			},
+			wantText:  "@feierbuni 是风险账号吗",
+			wantFound: true,
+		},
+		{
+			name: "private maintenance statement can use intent",
+			update: bot.CommandUpdate{
+				ChatType: "private",
+				Text:     "@feierbuni 不是风险账号",
+			},
+			wantText:  "@feierbuni 不是风险账号",
+			wantMode:  true,
+			wantFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := service.asyncKnowledgeRequest(tt.update, 777, "TgtldrBot")
+			if ok != tt.wantFound {
+				t.Fatalf("asyncKnowledgeRequest() ok = %v, want %v", ok, tt.wantFound)
+			}
+			if !ok {
+				return
+			}
+			if got.text != tt.wantText || got.useIntent != tt.wantMode {
+				t.Fatalf("asyncKnowledgeRequest() = %#v; want text %q useIntent %v", got, tt.wantText, tt.wantMode)
 			}
 		})
 	}
@@ -792,6 +915,29 @@ func TestNaturalQueryEmptyAnswerShowsEmptyQueryText(t *testing.T) {
 	}
 	if got != commandNaturalQueryEmptyText(model.LanguageZhCN) {
 		t.Fatalf("responseForCommand() = %q", got)
+	}
+}
+
+func TestConfirmMaintenanceWithoutTokenShowsExactCommand(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, fakeKnowledgeMaintainer{})
+	token := service.setPendingMaintenance("@feierbuni 不是风险账号", knowledge.MaintenanceResult{
+		Action:      "dismiss",
+		TargetType:  "risk_account",
+		TargetQuery: "*",
+		TargetUser:  "@feierbuni",
+		MatchedFacts: []model.KnowledgeFact{
+			{ID: 465, Title: "@feierbuni 被指控为柬埔寨盘总", Status: model.KnowledgeFactStatusActive},
+		},
+	})
+
+	got, ok, err := service.confirmMaintenance(context.Background(), model.LanguageZhCN, "")
+	if err != nil {
+		t.Fatalf("confirmMaintenance() error = %v", err)
+	}
+	if !ok || !strings.Contains(got, "/confirm "+token) {
+		t.Fatalf("confirmMaintenance() = %q, %v; want exact confirm command", got, ok)
 	}
 }
 

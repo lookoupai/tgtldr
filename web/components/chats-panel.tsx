@@ -312,7 +312,8 @@ function normalizeChat(chat: Chat): Chat {
     keepBotMessages: chat.keepBotMessages ?? true,
     botChatId: chat.botChatId ?? "",
     botInteractionEnabled: chat.botInteractionEnabled ?? false,
-    botAllowedUsers: Array.isArray(chat.botAllowedUsers) ? chat.botAllowedUsers : []
+    botAllowedUsers: Array.isArray(chat.botAllowedUsers) ? chat.botAllowedUsers : [],
+    botBlockedUsers: Array.isArray(chat.botBlockedUsers) ? chat.botBlockedUsers : []
   };
 }
 
@@ -393,6 +394,9 @@ function botChatStatus(
   }
   if (!chat.botInteractionEnabled) {
     return { label: "未开放", tone: "neutral" };
+  }
+  if (chat.botBlockedUsers.length > 0) {
+    return { label: "含黑名单", tone: "warn" };
   }
   if (chat.botAllowedUsers.length > 0) {
     return { label: "白名单", tone: "good" };
@@ -654,6 +658,19 @@ function ChatTableRow({
                       value={joinLines(chat.botAllowedUsers)}
                       onChange={(event) =>
                         onPatch({ botAllowedUsers: splitLines(event.target.value) })
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="禁止查询用户"
+                    hint="每行填写 @username 或 Telegram 数字用户 ID；黑名单优先于允许查询用户。"
+                  >
+                    <Textarea
+                      rows={4}
+                      placeholder={"@abuser\n123456789"}
+                      value={joinLines(chat.botBlockedUsers)}
+                      onChange={(event) =>
+                        onPatch({ botBlockedUsers: splitLines(event.target.value) })
                       }
                     />
                   </Field>

@@ -31,6 +31,12 @@ func TestNormalizeAppSettingsLanguage(t *testing.T) {
 		So(settings.BotPrivateAllowedUsers, ShouldResemble, []string{"123", "@alice"})
 	})
 
+	Convey("Bot 黑名单用户会去除空行和首尾空白", t, func() {
+		settings := normalizeAppSettings(model.AppSettings{BotBlockedUsers: []string{" 123 ", "", " @abuser "}})
+
+		So(settings.BotBlockedUsers, ShouldResemble, []string{"123", "@abuser"})
+	})
+
 	Convey("OpenAI 调用方式为空或非法时默认使用流式", t, func() {
 		So(normalizeAppSettings(model.AppSettings{}).OpenAIRequestMode, ShouldEqual, model.OpenAIRequestModeStream)
 		So(normalizeAppSettings(model.AppSettings{OpenAIRequestMode: "invalid"}).OpenAIRequestMode, ShouldEqual, model.OpenAIRequestModeStream)

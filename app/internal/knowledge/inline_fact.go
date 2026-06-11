@@ -146,7 +146,7 @@ func parseDirectInlineFactText(text string) (inlineFactInstruction, bool) {
 		return inlineFactInstruction{}, false
 	}
 
-	if inlineRiskCleared(rest) {
+	if inlineRiskCleared(rest) && !LooksLikeQuestionText(rest) {
 		return inlineFactInstruction{
 			FactType:        "risk_account",
 			SubjectUsername: username,

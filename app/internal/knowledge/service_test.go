@@ -438,6 +438,12 @@ func TestMaintenanceInstruction(t *testing.T) {
 		So(instruction.TargetUser, ShouldEqual, "zhang lin")
 	})
 
+	Convey("风险账号问句不会解析成维护指令", t, func() {
+		_, ok := parseDirectMaintenanceText("@feierbuni 是风险账号吗")
+
+		So(ok, ShouldBeFalse)
+	})
+
 	Convey("风险账号维护支持按用户名匹配", t, func() {
 		match := statusUpdateMatch{
 			factType:        "risk_account",
@@ -454,6 +460,19 @@ func TestMaintenanceInstruction(t *testing.T) {
 			SubjectSenderName: "zhang lin",
 			Status:            model.KnowledgeFactStatusActive,
 		}, model.KnowledgeFactStatusActive), ShouldBeTrue)
+	})
+
+	Convey("风险账号通配维护会扩展用户名候选", t, func() {
+		queries := maintenanceCandidateQueries(maintenanceInstruction{
+			Action:      "dismiss",
+			TargetType:  "risk_account",
+			TargetQuery: "*",
+			TargetUser:  "@feierbuni",
+		})
+
+		So(queries, ShouldContain, "@feierbuni")
+		So(queries, ShouldContain, "feierbuni")
+		So(queries, ShouldContain, "")
 	})
 
 	Convey("纠错事实沿用原主体并替换结构化 item", t, func() {

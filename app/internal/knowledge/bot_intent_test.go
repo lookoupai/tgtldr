@@ -39,4 +39,10 @@ func TestBotIntentParsing(t *testing.T) {
 		So(intent.Action, ShouldEqual, "cleared")
 		So(intent.Subject, ShouldEqual, "@tianyou158")
 	})
+
+	Convey("风险账号问句不会走直接维护或写入意图", t, func() {
+		_, ok := directBotIntent("@tianyou158 是风险账号吗")
+
+		So(ok, ShouldBeFalse)
+	})
 }

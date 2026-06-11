@@ -54,6 +54,7 @@ export function BotPanel() {
         botIgnoreMessagesFromBots:
           settingsData.botIgnoreMessagesFromBots ?? true,
         botPrivateAllowedUsers: settingsData.botPrivateAllowedUsers ?? [],
+        botBlockedUsers: settingsData.botBlockedUsers ?? [],
         botToken: "",
         openAIApiKey: "",
         telegramApiHash: "",
@@ -79,6 +80,7 @@ export function BotPanel() {
               botTargetChatId: saved.botTargetChatId,
               botIgnoreMessagesFromBots: saved.botIgnoreMessagesFromBots,
               botPrivateAllowedUsers: saved.botPrivateAllowedUsers,
+              botBlockedUsers: saved.botBlockedUsers,
               botToken: "",
             }
           : current,
@@ -172,6 +174,7 @@ export function BotPanel() {
               botTargetChatId: saved.botTargetChatId,
               botIgnoreMessagesFromBots: saved.botIgnoreMessagesFromBots,
               botPrivateAllowedUsers: saved.botPrivateAllowedUsers,
+              botBlockedUsers: saved.botBlockedUsers,
               botToken: "",
             }
           : current,
@@ -300,6 +303,22 @@ export function BotPanel() {
                     setSettings({
                       ...settings,
                       botPrivateAllowedUsers: splitLines(event.target.value),
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="全局黑名单"
+                hint="每行一个 Telegram 数字用户 ID 或 @username；命中后无法使用 Bot 查询、维护或 /id。"
+              >
+                <Textarea
+                  placeholder={"123456789\n@abuser"}
+                  rows={4}
+                  value={joinLines(settings.botBlockedUsers)}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      botBlockedUsers: splitLines(event.target.value),
                     })
                   }
                 />
@@ -559,6 +578,21 @@ export function BotPanel() {
                           }
                         />
                       </Field>
+                      <Field
+                        label="禁止查询用户"
+                        hint="每行填写 @username 或 Telegram 数字用户 ID；黑名单优先于允许查询用户。"
+                      >
+                        <Textarea
+                          rows={3}
+                          placeholder={"@abuser\n123456789"}
+                          value={joinLines(chat.botBlockedUsers)}
+                          onChange={(event) =>
+                            patchChat(chat.id, {
+                              botBlockedUsers: splitLines(event.target.value),
+                            })
+                          }
+                        />
+                      </Field>
                       <div className="button-row">
                         <Button
                           onClick={() => startTransition(() => void saveChat(chat))}
@@ -590,6 +624,7 @@ function normalizeChat(chat: Chat): Chat {
     botChatId: chat.botChatId ?? "",
     botInteractionEnabled: chat.botInteractionEnabled ?? false,
     botAllowedUsers: Array.isArray(chat.botAllowedUsers) ? chat.botAllowedUsers : [],
+    botBlockedUsers: Array.isArray(chat.botBlockedUsers) ? chat.botBlockedUsers : [],
   };
 }
 
@@ -626,6 +661,9 @@ function botChatStatus(
   }
   if (!chat.botInteractionEnabled) {
     return { label: "未开放", tone: "neutral" };
+  }
+  if (chat.botBlockedUsers.length > 0) {
+    return { label: "含黑名单", tone: "warn" };
   }
   if (chat.botAllowedUsers.length > 0) {
     return { label: "白名单", tone: "good" };

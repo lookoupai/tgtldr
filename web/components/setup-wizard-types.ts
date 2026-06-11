@@ -64,4 +64,5 @@ export const emptySettings: AppSettings = {
   botTargetChatId: "",
   botIgnoreMessagesFromBots: true,
   botPrivateAllowedUsers: [],
+  botBlockedUsers: [],
 };

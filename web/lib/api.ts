@@ -204,6 +204,7 @@ export const api = {
         botChatId: chat.botChatId,
         botInteractionEnabled: chat.botInteractionEnabled,
         botAllowedUsers: chat.botAllowedUsers,
+        botBlockedUsers: chat.botBlockedUsers,
       }),
     }),
   listKnowledgeSpaces: async () =>

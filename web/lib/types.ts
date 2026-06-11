@@ -26,6 +26,7 @@ export type AppSettings = {
   botTargetChatId: string;
   botIgnoreMessagesFromBots: boolean;
   botPrivateAllowedUsers: string[];
+  botBlockedUsers: string[];
 };
 
 export type PendingAuth = {
@@ -143,6 +144,7 @@ export type Chat = {
   botChatId: string;
   botInteractionEnabled: boolean;
   botAllowedUsers: string[];
+  botBlockedUsers: string[];
 };
 
 export type HistoryBackfillTask = {

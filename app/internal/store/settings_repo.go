@@ -42,6 +42,7 @@ func normalizeAppSettings(settings model.AppSettings) model.AppSettings {
 		settings.BotIgnoreMessagesFromBots = true
 	}
 	settings.BotPrivateAllowedUsers = compactStrings(settings.BotPrivateAllowedUsers)
+	settings.BotBlockedUsers = compactStrings(settings.BotBlockedUsers)
 	return settings
 }
 
@@ -56,7 +57,7 @@ func (r *SettingsRepository) Get(ctx context.Context) (model.AppSettings, error)
 		       openai_model, openai_request_mode, openai_temperature, openai_output_mode, openai_max_output_tokens,
 		       summary_parallelism, summary_retry_limit, summary_retry_backoff_base_minutes,
 		       summary_retry_backoff_multiplier, default_timezone, language, summary_output_language, bot_enabled, bot_token,
-		       bot_target_chat_id, bot_ignore_messages_from_bots, bot_private_allowed_users, created_at, updated_at
+			       bot_target_chat_id, bot_ignore_messages_from_bots, bot_private_allowed_users, bot_blocked_users, created_at, updated_at
 		from app_settings
 		order by id
 		limit 1
@@ -83,6 +84,7 @@ func (r *SettingsRepository) Get(ctx context.Context) (model.AppSettings, error)
 		&row.BotTargetChatID,
 		&row.BotIgnoreMessagesFromBots,
 		&row.BotPrivateAllowedUsers,
+		&row.BotBlockedUsers,
 		&row.CreatedAt,
 		&row.UpdatedAt,
 	)
@@ -141,8 +143,9 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 		    bot_token = $18,
 		    bot_target_chat_id = $19,
 		    bot_ignore_messages_from_bots = $20,
-		    bot_private_allowed_users = $21,
-		    updated_at = now()
+			    bot_private_allowed_users = $21,
+			    bot_blocked_users = $22,
+			    updated_at = now()
 		where id = (select id from app_settings order by id limit 1)
 		returning id, created_at, updated_at
 	`,
@@ -167,6 +170,7 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 		settings.BotTargetChatID,
 		settings.BotIgnoreMessagesFromBots,
 		settings.BotPrivateAllowedUsers,
+		settings.BotBlockedUsers,
 	).Scan(&saved.ID, &saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		return model.AppSettings{}, fmt.Errorf("save settings: %w", err)
@@ -193,5 +197,6 @@ func (r *SettingsRepository) Save(ctx context.Context, settings model.AppSetting
 	saved.BotTargetChatID = settings.BotTargetChatID
 	saved.BotIgnoreMessagesFromBots = settings.BotIgnoreMessagesFromBots
 	saved.BotPrivateAllowedUsers = settings.BotPrivateAllowedUsers
+	saved.BotBlockedUsers = settings.BotBlockedUsers
 	return saved, nil
 }
